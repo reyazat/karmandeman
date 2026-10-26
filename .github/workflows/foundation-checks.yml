@@ -50,6 +50,10 @@ jobs:
       - run: composer analyse
       - run: php artisan test
       - run: docker compose --env-file .env.production.example -f compose.prod.reference.yaml config --quiet
+        env:
+          # Empty test-only bot values must not override required example values.
+          TELEGRAM_BOT_TOKEN: ci-placeholder-bot-token
+          TELEGRAM_WEBHOOK_SECRET: ci-placeholder-webhook-secret
 
   frontend-foundation:
     runs-on: ubuntu-latest
