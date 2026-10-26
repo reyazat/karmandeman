@@ -1,5 +1,10 @@
 # Deployment reference audit
 
+> Historical reference audit. The repository now contains partial application
+> features and locked dependencies. See [the 2026-10-26 application audit](PROJECT_AUDIT_2026-10-26.md)
+> for current test evidence and remaining release blockers. Claims below about
+> missing source or unexecuted checks describe the earlier bootstrap state.
+
 This is a local review of the single-VPS Docker Compose template, not a
 production certification. The repository does not contain Laravel/Vue source,
 Composer/NPM lockfiles, workflow exports, a PDF renderer or a running server.

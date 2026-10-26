@@ -1,10 +1,14 @@
 # Karmandeman - Agent Guidance
 
-This repository contains a freshly bootstrapped Laravel 13 skeleton plus
-specifications and deployment templates. The canonical directory tree exists
-but MVP features, migrations, workflows and tests are still unimplemented. Do
-not claim a build, release or production deployment is working until it has
-been tested against actual application behaviour. Check the file layout
+This repository contains a Laravel 13 application with initial Telegram
+identity, workspace/employee provisioning, brand/profile memory, project
+creation and gift-credit ledger code and tests. These are partial foundations,
+not a completed MVP. Asset intake, product extraction/revisions/approval,
+exports, full wallet lifecycle and n8n workflows are still missing. Read
+`docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and
+`docs/DEVELOPMENT_PLAN.md` for the implementation order. Do not claim a build,
+release or production deployment is working until it has been tested against
+actual application behaviour. Check the file layout
 before following paths in historical documents: the reference infra files
 currently live at the repository root and `deploy/`.
 

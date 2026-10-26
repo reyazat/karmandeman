@@ -1,5 +1,10 @@
 # Repository bootstrap checklist
 
+> Current implementation status and verification supersede this historical
+> bootstrap checklist: see [PROJECT_AUDIT_2026-10-26.md](PROJECT_AUDIT_2026-10-26.md)
+> and [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Initial identity, workspace,
+> brand, project and gift-ledger features now exist; the full MVP does not.
+
 A Laravel 13 skeleton was bootstrapped into this root (2026-10-26); the
 canonical tree below is created but features are not implemented yet. The
 deployment reference files live at the current repository root

@@ -1,0 +1,135 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Integration;
+
+use App\Actions\Brand\UpdateBrandProfileAction;
+use App\Actions\Identity\HandleTelegramUpdateAction;
+use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Data\Telegram\TelegramUserData;
+use App\Enums\CreditLedgerType;
+use App\Models\User;
+use App\Repositories\Contracts\BrandRepositoryInterface;
+use App\Repositories\Contracts\WalletRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Services\Telegram\TelegramReplyService;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+use Throwable;
+
+final class FoundationConcurrencyTest extends TestCase
+{
+    protected function connectionsToTransact(): array
+    {
+        // Children must see committed fixtures and real row locks.
+        return [];
+    }
+
+    protected function beforeRefreshingDatabase(): void
+    {
+        if (config('database.default') !== 'pgsql' || ! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('Requires disposable PostgreSQL and pcntl. SQLite cannot verify row locking.');
+        }
+        RefreshDatabaseState::$migrated = false;
+    }
+
+    private function concurrently(callable $operation, int $count = 6): array
+    {
+        DB::disconnect();
+        $workers = [];
+        for ($i = 0; $i < $count; $i++) {
+            [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                $this->fail('Could not fork concurrency worker.');
+            }
+            if ($pid === 0) {
+                fclose($parent);
+                fread($child, 1);
+                try {
+                    DB::purge();
+                    fwrite($child, json_encode(['result' => $operation($i)]));
+                    fclose($child);
+                    exit(0);
+                } catch (Throwable $exception) {
+                    fwrite($child, json_encode(['error' => $exception::class, 'message' => $exception->getMessage()]));
+                    fclose($child);
+                    exit(1);
+                }
+            }
+            fclose($child);
+            stream_set_timeout($parent, 20);
+            $workers[] = [$pid, $parent];
+        }
+        foreach ($workers as [, $socket]) {
+            fwrite($socket, 'x');
+        }
+        $results = [];
+        foreach ($workers as [$pid, $socket]) {
+            $result = stream_get_contents($socket);
+            fclose($socket);
+            pcntl_waitpid($pid, $status);
+            $this->assertSame(0, pcntl_wexitstatus($status), $result);
+            $results[] = json_decode($result, true, flags: JSON_THROW_ON_ERROR)['result'];
+        }
+        DB::purge();
+
+        return $results;
+    }
+
+    public function test_parallel_first_registration_provisions_exactly_one_account_and_gift(): void
+    {
+        config(['karmandeman.gift_credits' => 100]);
+        $ids = $this->concurrently(fn () => app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(789))->id);
+        $this->assertCount(1, array_unique($ids));
+        foreach (['users', 'user_identities', 'workspaces', 'workspace_memberships', 'employees', 'wallets', 'credit_ledger'] as $table) {
+            $this->assertDatabaseCount($table, 1);
+        }
+        $this->assertSame(100, (int) DB::table('wallets')->value('balance_cached'));
+    }
+
+    public function test_parallel_grant_retries_return_one_entry_and_one_balance_increment(): void
+    {
+        $wallets = app(WalletRepositoryInterface::class);
+        $wallet = $wallets->ensureWallet(app(WorkspaceRepositoryInterface::class)->createForOwner(User::factory()->create()));
+        $ids = $this->concurrently(fn () => app(WalletRepositoryInterface::class)->appendEntry($wallet, CreditLedgerType::Grant, 100, 'parallel-grant')->id);
+        $this->assertCount(1, array_unique($ids));
+        $this->assertDatabaseCount('credit_ledger', 1);
+        $this->assertSame(100, $wallet->fresh()->balance_cached);
+    }
+
+    public function test_parallel_duplicate_webhooks_commit_one_project_and_outbox_message(): void
+    {
+        $update = ['update_id' => 1, 'message' => [
+            'text' => '/new concurrent', 'from' => ['id' => 789], 'chat' => ['id' => 789, 'type' => 'private'],
+        ]];
+        $statuses = $this->concurrently(fn () => app(HandleTelegramUpdateAction::class)->execute($update));
+        $this->assertSame(1, count(array_filter($statuses, fn ($status) => $status === 'ok')));
+        $this->assertDatabaseCount('projects', 1);
+        $this->assertDatabaseCount('conversation_events', 1);
+        $this->assertDatabaseCount('jobs', 1);
+    }
+
+    public function test_parallel_brand_updates_preserve_version_and_memory_revision(): void
+    {
+        $workspace = app(WorkspaceRepositoryInterface::class)->createForOwner(User::factory()->create());
+        app(BrandRepositoryInterface::class)->ensureFor($workspace);
+        $this->concurrently(fn ($i) => app(UpdateBrandProfileAction::class)->execute($workspace, ['name' => "Brand {$i}"])->id);
+        $this->assertSame(7, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
+        $this->assertSame(6, (int) DB::table('memory_items')->value('revision'));
+        $this->assertDatabaseCount('memory_items', 1);
+    }
+
+    public function test_outbox_is_invisible_to_other_connections_until_commit(): void
+    {
+        config(['database.connections.observer' => config('database.connections.pgsql')]);
+        DB::beginTransaction();
+        app(TelegramReplyService::class)->sendMessage(789, 'test-only');
+        $this->assertSame(0, DB::connection('observer')->table('jobs')->count());
+        DB::commit();
+        $this->assertSame(1, DB::connection('observer')->table('jobs')->count());
+        DB::purge('observer');
+    }
+}

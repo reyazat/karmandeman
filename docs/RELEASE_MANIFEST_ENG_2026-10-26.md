@@ -2,7 +2,9 @@
 
 Versions: PRD 1.3, Strategy 1.3, Ops 1.1, Engineering Standard 1.0, Infra Reference 1.1.
 
-All files are specifications/reference templates, not a deployed Laravel application.
+This manifest identifies the original documentation package. Its hashes do not
+certify the current working tree or an application release. Partial Laravel
+features now exist; see `PROJECT_AUDIT_2026-10-26.md` for executed checks.
 
 ## SHA256
 - `Karmandeman_Telegram_MVP_PRD_v1.3.md`: `62db443c16c460e5c759c04f84810066be5f11c0275cd88504ebb0782fa8b075`

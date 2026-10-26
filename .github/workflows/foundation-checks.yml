@@ -1,0 +1,77 @@
+name: Foundation checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: karmandeman_testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 12
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: karmandeman_testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: test-only
+      DB_URL: ''
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      TELEGRAM_BOT_TOKEN: ''
+      TELEGRAM_WEBHOOK_SECRET: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, pdo_sqlite, mbstring, intl, bcmath, pcntl, redis, zip
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer audit --no-interaction
+      - run: vendor/bin/pint --test
+      - run: composer analyse
+      - run: php artisan test
+      - run: docker compose --env-file .env.production.example -f compose.prod.reference.yaml config --quiet
+
+  frontend-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit
+      - run: npm run typecheck
+      - run: npm run lint -- --max-warnings=0
+      - run: npm run build
+      - name: Frontend feature-test gate is still open
+        run: echo '::warning::No frontend feature tests exist yet. Vitest/E2E and remaining release gates are required before pilot release; these foundation checks do not certify MVP readiness.'
+
+  images:
+    needs: [backend, frontend-foundation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target web --file deploy/Dockerfile --tag karmandeman:ci-web .
+      - run: docker build --target app --file deploy/Dockerfile --tag karmandeman:ci-app .
+      - run: docker run --rm --network none --user www-data karmandeman:ci-app composer check-platform-reqs --no-dev

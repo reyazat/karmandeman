@@ -27,7 +27,8 @@ x-app-common: &app-common
     REDIS_PORT: "6379"
     REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     REDIS_CLIENT: phpredis
-    N8N_INTERNAL_URL: http://n8n:5678
+    N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
+    KM_GIFT_CREDITS: ${KM_GIFT_CREDITS:-0}
     # n8n public REST API for workflow management/execution. Default targets the
     # bundled service; for the standalone on-host container use
     # https://ai.smartystudio.co.uk or its container name on a shared network.
@@ -68,6 +69,11 @@ services:
       - app_db
       - queue
       - workflow
+  telegram_worker:
+    <<: *app-common
+    command: ["php", "artisan", "queue:work", "telegram", "--queue=telegram", "--sleep=1", "--timeout=20", "--tries=5"]
+    networks:
+      - app_db
   scheduler:
     <<: *app-common
     command: ["php", "artisan", "schedule:work"]

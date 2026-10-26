@@ -5,7 +5,10 @@
     request_body {
         max_size 25MB
     }
-    php_fastcgi app:9000
+    php_fastcgi app:9000 {
+        # PHP and the static web image intentionally use different filesystem roots.
+        root /var/www/html/public
+    }
     file_server
     header {
         X-Content-Type-Options "nosniff"
