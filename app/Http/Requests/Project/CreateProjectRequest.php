@@ -20,6 +20,12 @@ class CreateProjectRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:128', 'regex:/^[A-Za-z0-9_-]+$/'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge(['idempotency_key' => $this->header('Idempotency-Key')]);
     }
 }

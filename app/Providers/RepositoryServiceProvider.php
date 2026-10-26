@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\ConversationEventRepositoryInterface;
 use App\Repositories\Contracts\EmployeeRepositoryInterface;
@@ -12,6 +13,7 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
 use App\Repositories\Eloquents\Brand\EloquentBrandRepository;
 use App\Repositories\Eloquents\ConversationEvent\EloquentConversationEventRepository;
 use App\Repositories\Eloquents\Employee\EloquentEmployeeRepository;
@@ -26,6 +28,7 @@ class RepositoryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(ApiIdempotencyRepositoryInterface::class, EloquentApiIdempotencyRepository::class);
         $this->app->bind(UserRepositoryInterface::class, EloquentUserRepository::class);
         $this->app->bind(WorkspaceRepositoryInterface::class, EloquentWorkspaceRepository::class);
         $this->app->bind(EmployeeRepositoryInterface::class, EloquentEmployeeRepository::class);

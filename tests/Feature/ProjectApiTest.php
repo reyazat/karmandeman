@@ -43,7 +43,7 @@ class ProjectApiTest extends TestCase
     {
         Sanctum::actingAs($this->onboardedUser());
 
-        $this->postJson('/api/v1/projects', ['name' => 'کیف‌های جدید'])
+        $this->postJson('/api/v1/projects', ['name' => 'کیف‌های جدید'], ['Idempotency-Key' => 'project-key-1'])
             ->assertCreated()
             ->assertJsonPath('data.state', 'collecting_input')
             ->assertJsonPath('data.name', 'کیف‌های جدید');
@@ -59,7 +59,7 @@ class ProjectApiTest extends TestCase
         $userB = $this->onboardedUser(902);
 
         Sanctum::actingAs($userA);
-        $this->postJson('/api/v1/projects', [])->assertCreated();
+        $this->postJson('/api/v1/projects', [], ['Idempotency-Key' => 'project-key-2'])->assertCreated();
 
         // QA-14 style: user B must not see user A's projects.
         Sanctum::actingAs($userB);
@@ -83,5 +83,30 @@ class ProjectApiTest extends TestCase
             'name' => 'کیف جدید',
             'state' => 'collecting_input',
         ]);
+    }
+
+    public function test_project_retry_returns_same_snapshot_and_reused_key_with_other_input_conflicts(): void
+    {
+        Sanctum::actingAs($this->onboardedUser());
+        $headers = ['Idempotency-Key' => 'project-retry-1'];
+        $first = $this->postJson('/api/v1/projects', ['name' => 'Original'], $headers)->assertCreated();
+        $this->postJson('/api/v1/projects', ['name' => 'Original'], $headers)
+            ->assertOk()->assertJsonPath('data.id', $first->json('data.id'));
+        $this->postJson('/api/v1/projects', ['name' => 'Changed'], $headers)
+            ->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_KEY_CONFLICT');
+        $this->assertDatabaseCount('projects', 1);
+    }
+
+    public function test_project_requires_key_and_keys_are_scoped_to_owner(): void
+    {
+        $userA = $this->onboardedUser(910);
+        $userB = $this->onboardedUser(911);
+        Sanctum::actingAs($userA);
+        $this->postJson('/api/v1/projects', [])->assertUnprocessable();
+        $this->postJson('/api/v1/projects', ['name' => 'A'], ['Idempotency-Key' => 'same-key-1'])->assertCreated();
+        Sanctum::actingAs($userB);
+        $this->postJson('/api/v1/projects', ['name' => 'B'], ['Idempotency-Key' => 'same-key-1'])->assertCreated();
+        $this->getJson('/api/v1/projects')->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'B');
+        $this->assertDatabaseCount('projects', 2);
     }
 }

@@ -9,6 +9,7 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\MemoryItemRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use DomainException;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateBrandProfileAction
@@ -23,11 +24,14 @@ final readonly class UpdateBrandProfileAction
      * Apply user-confirmed brand profile changes. Confirmed brand fields are
      * also stored as workspace-scoped memory items with source attribution.
      */
-    public function execute(Workspace $workspace, array $attributes, ?int $confirmedBy = null): Brand
+    public function execute(Workspace $workspace, array $attributes, ?int $confirmedBy = null, ?int $expectedVersion = null): Brand
     {
-        return DB::transaction(function () use ($workspace, $attributes, $confirmedBy): Brand {
+        return DB::transaction(function () use ($workspace, $attributes, $confirmedBy, $expectedVersion): Brand {
             $this->workspaces->lock($workspace);
             $brand = $this->brands->ensureFor($workspace);
+            if ($expectedVersion !== null && $brand->profile_version !== $expectedVersion) {
+                throw new DomainException('BRAND_VERSION_CONFLICT');
+            }
             $brand = $this->brands->updateProfile($brand, $attributes);
 
             foreach ($attributes as $key => $value) {

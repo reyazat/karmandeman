@@ -19,6 +19,8 @@ class UpdateBrandProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:128', 'regex:/^[A-Za-z0-9_-]+$/'],
+            'expected_version' => ['required', 'integer', 'min:1'],
             'name' => ['sometimes', 'string', 'max:255'],
             'category' => ['sometimes', 'nullable', 'string', 'max:255'],
             'currency_display_unit' => ['sometimes', 'string', 'in:toman,irr'],
@@ -44,6 +46,11 @@ class UpdateBrandProfileRequest extends FormRequest
      */
     public function brandAttributes(): array
     {
-        return $this->safe()->only(array_keys($this->rules()));
+        return $this->safe()->except(['idempotency_key', 'expected_version']);
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge(['idempotency_key' => $this->header('Idempotency-Key')]);
     }
 }

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Actions\Brand\UpdateApiBrandAction;
 use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\HandleTelegramUpdateAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\CreditLedgerType;
 use App\Models\User;
@@ -120,6 +122,36 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(7, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
         $this->assertSame(6, (int) DB::table('memory_items')->value('revision'));
         $this->assertDatabaseCount('memory_items', 1);
+    }
+
+    public function test_parallel_api_project_retries_create_one_project(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91234));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $ids = $this->concurrently(fn () => app(CreateApiProjectAction::class)
+            ->execute($workspace, $user->id, 'parallel-project-key', 'Batch')[0]->id);
+        $this->assertCount(1, array_unique($ids));
+        $this->assertDatabaseCount('projects', 1);
+        $this->assertDatabaseCount('api_idempotency_records', 1);
+    }
+
+    public function test_parallel_api_brand_updates_reject_stale_version(): void
+    {
+        $user = User::factory()->create();
+        $workspace = app(WorkspaceRepositoryInterface::class)->createForOwner($user);
+        $results = $this->concurrently(function (int $i) use ($workspace, $user): string {
+            try {
+                app(UpdateApiBrandAction::class)->execute($workspace, $user->id, "brand-parallel-{$i}", 1, ['name' => "Brand {$i}"]);
+
+                return 'updated';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+        $this->assertSame(1, count(array_filter($results, fn ($result) => $result === 'updated')));
+        $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'BRAND_VERSION_CONFLICT')));
+        $this->assertSame(2, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
+        $this->assertDatabaseCount('api_idempotency_records', 1);
     }
 
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void

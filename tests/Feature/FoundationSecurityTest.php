@@ -64,7 +64,7 @@ final class FoundationSecurityTest extends TestCase
         $this->patchJson('/api/v1/brands/current', ['currency_display_unit' => 'bad'])
             ->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_FAILED')->assertJsonStructure(['error' => ['details']]);
         for ($i = 0; $i < 21; $i++) {
-            $this->postJson('/api/v1/projects', ['name' => "P{$i}"])->assertCreated();
+            $this->postJson('/api/v1/projects', ['name' => "P{$i}"], ['Idempotency-Key' => "page-project-{$i}"])->assertCreated();
         }
         $this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(20, 'data')
             ->assertJsonPath('meta.total', 21)->assertJsonPath('meta.api_version', 'v1')->assertJsonStructure(['links' => ['next']]);
@@ -156,7 +156,7 @@ final class FoundationSecurityTest extends TestCase
         config(['karmandeman.gift_credits' => 20]);
         $userB = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(992));
         Sanctum::actingAs($userA);
-        $this->patchJson('/api/v1/brands/current', ['name' => 'Private A'])->assertOk();
+        $this->patchJson('/api/v1/brands/current', ['name' => 'Private A', 'expected_version' => 1], ['Idempotency-Key' => 'private-brand-1'])->assertOk();
         Sanctum::actingAs($userB);
         $this->getJson('/api/v1/brands/current?workspace_id='.$userA->workspaces()->first()->id)
             ->assertOk()->assertJsonPath('data.name', null);

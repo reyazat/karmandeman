@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\API\V1\Project;
 
-use App\Actions\Project\CreateProjectAction;
+use App\Actions\Project\CreateApiProjectAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Project\CreateProjectRequest;
 use App\Http\Resources\Project\ProjectResource;
@@ -36,7 +36,7 @@ class ProjectController extends Controller
     public function store(
         CreateProjectRequest $request,
         WorkspaceRepositoryInterface $workspaces,
-        CreateProjectAction $createProject,
+        CreateApiProjectAction $createProject,
     ): JsonResponse {
         $workspace = $workspaces->currentFor($request->user());
 
@@ -45,11 +45,20 @@ class ProjectController extends Controller
         }
 
         try {
-            $project = $createProject->execute($workspace, $request->string('name')->toString() ?: null);
+            [$project, $replayed] = $createProject->execute(
+                $workspace,
+                $request->user()->id,
+                $request->validated('idempotency_key'),
+                $request->string('name')->toString() ?: null,
+            );
         } catch (DomainException $e) {
+            if ($e->getMessage() === 'IDEMPOTENCY_KEY_CONFLICT') {
+                return ApiResponse::error('IDEMPOTENCY_KEY_CONFLICT', 'این کلید قبلاً برای درخواست دیگری استفاده شده است.', 409);
+            }
+
             return ApiResponse::error($e->getMessage(), 'کارمند فعالی برای این فضای کاری یافت نشد.', 409);
         }
 
-        return ApiResponse::success(new ProjectResource($project), 201);
+        return ApiResponse::success(new ProjectResource($project), $replayed ? 200 : 201);
     }
 }

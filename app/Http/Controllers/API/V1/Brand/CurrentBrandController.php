@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\API\V1\Brand;
 
 use App\Actions\Brand\EnsureBrandAction;
-use App\Actions\Brand\UpdateBrandProfileAction;
+use App\Actions\Brand\UpdateApiBrandAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Brand\UpdateBrandProfileRequest;
 use App\Http\Resources\Brand\BrandResource;
 use App\Http\Responses\ApiResponse;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -33,7 +34,7 @@ class CurrentBrandController extends Controller
     public function update(
         UpdateBrandProfileRequest $request,
         WorkspaceRepositoryInterface $workspaces,
-        UpdateBrandProfileAction $updateBrand,
+        UpdateApiBrandAction $updateBrand,
     ): JsonResponse {
         $workspace = $workspaces->currentFor($request->user());
 
@@ -41,11 +42,21 @@ class CurrentBrandController extends Controller
             return ApiResponse::error('WORKSPACE_NOT_FOUND', 'فضای کاری یافت نشد.', 404);
         }
 
-        $brand = $updateBrand->execute(
-            $workspace,
-            $request->brandAttributes(),
-            confirmedBy: $request->user()->id,
-        );
+        try {
+            [$brand] = $updateBrand->execute(
+                $workspace,
+                $request->user()->id,
+                $request->validated('idempotency_key'),
+                $request->integer('expected_version'),
+                $request->brandAttributes(),
+            );
+        } catch (DomainException $e) {
+            if (in_array($e->getMessage(), ['BRAND_VERSION_CONFLICT', 'IDEMPOTENCY_KEY_CONFLICT'], true)) {
+                return ApiResponse::error($e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409);
+            }
+
+            throw $e;
+        }
 
         return ApiResponse::success(new BrandResource($brand));
     }

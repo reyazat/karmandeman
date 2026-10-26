@@ -51,9 +51,17 @@
 
 ## نواقص باقی‌مانده و اولویت بعدی
 
+### پیشرفت گام ۱ پس از ممیزی اولیه (۲۶ اکتبر ۲۰۲۶)
+
+`POST /api/v1/projects` و `PATCH /api/v1/brands/current` اکنون هدر اجباری `Idempotency-Key` (۸ تا ۱۲۸ نویسه ASCII شامل حروف، رقم، `_` و `-`) دارند. PATCH علاوه بر آن `expected_version` عدد صحیح مثبت در بدنه می‌خواهد؛ نسخه جاری از `GET /api/v1/brands/current` با `profile_version` خوانده می‌شود. درخواست بدون پیش‌شرط `422`، نسخه منقضی یا استفاده از کلید با payload دیگر `409` برمی‌گرداند. تکرار دقیق POST پس از `201` با `200` و همان snapshot داده پاسخ می‌گیرد؛ تکرار PATCH با `200` و snapshot نسخه اولیه پاسخ داده می‌شود (`meta.request_id` تازه است). scope رکوردهای تکرار `(workspace_id, user_id, operation, key)` و اثر ایجاد پروژه/حافظه همراه رکورد تکرار در یک تراکنش است؛ قفل Workspace و unique index برای هم‌زمانی استفاده می‌شوند. مسیر `/new` تلگرام همچنان از dedupe مستقل `update_id` استفاده می‌کند.
+
+Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` فقط روی دیتابیس تست ایزوله از طریق تست‌ها اعمال شد؛ روی دیتابیس اصلی اعمال نشده است. این جدول snapshot خام مدل برند (شامل داده برند) را نگه می‌دارد؛ retention/deletion با سیاست مصوب گام ۰/۲ باید تعریف شود و پیش از اجرای migration در staging/production به backup، rehearsal و rollback نیاز است. snapshot همان داده ثبت‌شده را نگه می‌دارد، نه side effect تازه؛ هنوز تاریخچه حافظه محسوب نمی‌شود.
+
+شاهد جدید: PostgreSQL `karmandeman_testing`، PHP 8.4: **۵۸ تست پاس / ۳۴۷ assertion**، شامل دو تست هم‌زمانی جدید برای replay پروژه و conflict نسخه برند. SQLite حافظه‌ای: **۵۱ تست پاس / ۲۸۳ assertion، ۷ integration skip**؛ SQLite مبنای آزمون قفل نیست. Pint `--test` روی ۱۰۳ فایل و PHPStan سطح ۵ بدون خطا. تست اتصال واقعی Telegram، AI، UI، CI میزبانی‌شده یا مهاجرت staging انجام نشده است. جدول شواهد پایین نتایج ممیزی اولیه را حفظ کرده است.
+
 | شدت / زمان رفع | محل و سناریوی مشخص | اقدام بعدی |
 |---|---|---|
-| P1 / پیش از کار واقعی | `routes/api.php:28–29` و Requests: POST پروژه و PATCH برند هنوز Idempotency-Key و expected_version ندارند؛ retry API می‌تواند پروژه اضافه بسازد یا ویرایش قبلی را بپوشاند | قرارداد idempotency scoped + hash ورودی + 409 و تست concurrent/replay؛ dedupe webhook این APIها را پوشش نمی‌دهد |
+| P1 / گام ۱ در جریان | POST پروژه و PATCH برند اکنون کلید scoped و کنترل نسخه دارند؛ این حفاظت هنوز به همه mutationهای آینده تعمیم نیافته | تکمیل قرارداد برای هر mutation جدید، سیاست نگه‌داری snapshot و تست migration/rollback در staging؛ dedupe webhook مستقل است |
 | P1 / پیش از intake | FR-002، FR-084 و نبود endpoint رضایت/حذف | رضایت نسخه‌دار، سیاست retention، رسید/اجرای حذف و دسترسی اپراتور؛ پیام صادقانه فعلی جای قابلیت را نمی‌گیرد |
 | P1 / پیش از پردازش هزینه‌دار | `EloquentWalletRepository::appendEntry` فقط grant است؛ ledger هنوز از update/delete سطح DB محافظت نشده | Reserve/Capture/Release/Refund، balance invariants، append-only و reconciliation؛ هیچ پرداختی فعال نشود |
 | P1 / پیش از انتشار | `EloquentMemoryItemRepository.php:40` revision را زیاد و value را جایگزین می‌کند؛ مقدار قبلی برای بازبینی نگه‌داری نمی‌شود | history immutable، revocation API، actor/source و AuditLog واقعی؛ atomic update فعلی معادل history نیست |
