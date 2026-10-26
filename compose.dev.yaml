@@ -1,0 +1,35 @@
+# Local development override — exposes infra on localhost so a natively-run
+# Laravel app (`php artisan serve`, `php artisan horizon`) can reach them.
+# Usage:
+#   docker compose --env-file .env -f compose.prod.reference.yaml -f compose.dev.yaml up -d postgres_app redis
+# Then set DB_HOST=127.0.0.1 DB_PORT=55432 and REDIS_HOST=127.0.0.1
+# REDIS_PORT=56379 in .env for native runs, or keep the docker service names if
+# the app also runs inside compose. Ports bind to loopback only; high ports are
+# used because this host already runs native postgres/redis on 5432/6379.
+services:
+  postgres_app:
+    ports:
+      - "127.0.0.1:55432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:56379:6379"
+  # Ad-hoc PHP CLI for local dev: `docker compose --env-file .env
+  #   -f compose.prod.reference.yaml -f compose.dev.yaml run --rm workspace php artisan migrate`
+  # Uses in-docker hostnames, so run with DB_HOST=postgres_app DB_PORT=5432
+  # REDIS_HOST=redis REDIS_PORT=6379 overrides (see command in README of this file's header).
+  workspace:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dev
+    env_file: .env
+    environment:
+      DB_HOST: postgres_app
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    networks:
+      - app_db
+      - queue

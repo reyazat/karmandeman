@@ -1,0 +1,201 @@
+# Reference topology, NOT production-ready until applied to real Laravel+Vue source,
+# image digests, runtime secret management, PDF renderer, backups, and staging smoke tests.
+# From this directory: docker compose --env-file .env.production -f compose.prod.reference.yaml config
+name: karmandeman
+x-app-common: &app-common
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+    target: app
+  environment:
+    APP_NAME: Karmandeman
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_URL: ${APP_URL:?APP_URL required}
+    APP_KEY: ${APP_KEY:?APP_KEY required}
+    LOG_CHANNEL: stderr
+    QUEUE_CONNECTION: redis
+    CACHE_STORE: redis
+    SESSION_DRIVER: redis
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres_app
+    DB_PORT: "5432"
+    DB_DATABASE: ${PG_APP_DB:?PG_APP_DB required}
+    DB_USERNAME: ${PG_APP_USER:?PG_APP_USER required}
+    DB_PASSWORD: ${PG_APP_PASSWORD:?PG_APP_PASSWORD required}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    REDIS_CLIENT: phpredis
+    N8N_INTERNAL_URL: http://n8n:5678
+    # n8n public REST API for workflow management/execution. Default targets the
+    # bundled service; for the standalone on-host container use
+    # https://ai.smartystudio.co.uk or its container name on a shared network.
+    N8N_API_URL: ${N8N_API_URL:-http://n8n:5678}
+    N8N_API_KEY: ${N8N_API_KEY:?N8N_API_KEY required}
+    N8N_WORKFLOW_AUTH_TOKEN: ${N8N_WORKFLOW_AUTH_TOKEN:?N8N_WORKFLOW_AUTH_TOKEN required}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN required}
+    TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?TELEGRAM_WEBHOOK_SECRET required}
+    FILESYSTEM_DISK: s3
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID required}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY required}
+    AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:?AWS_DEFAULT_REGION required}
+    AWS_BUCKET: ${AWS_BUCKET:?AWS_BUCKET required}
+    AWS_ENDPOINT: ${AWS_ENDPOINT:?AWS_ENDPOINT required}
+    AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-false}
+  user: www-data
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  networks:
+    - web_backend
+    - app_db
+    - queue
+    - workflow
+  depends_on:
+    postgres_app:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+services:
+  app:
+    <<: *app-common
+    command: ["php-fpm", "-F"]
+  horizon:
+    <<: *app-common
+    command: ["php", "artisan", "horizon"]
+    networks:
+      - app_db
+      - queue
+      - workflow
+  scheduler:
+    <<: *app-common
+    command: ["php", "artisan", "schedule:work"]
+    networks:
+      - app_db
+      - queue
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: web
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?PUBLIC_DOMAIN required}
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - web_backend
+  postgres_app:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: ${PG_APP_USER:?PG_APP_USER required}
+      POSTGRES_PASSWORD: ${PG_APP_PASSWORD:?PG_APP_PASSWORD required}
+      POSTGRES_DB: ${PG_APP_DB:?PG_APP_DB required}
+    volumes:
+      - pg_app:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    networks:
+      - app_db
+  # n8n runs as a standalone container on the same host (ai.smartystudio.co.uk).
+  # `postgres_n8n`/`n8n` below are gated behind profile "bundled-n8n" and are NOT
+  # started by default; enable them only for a self-contained install without the
+  # external instance. To reach the standalone n8n either:
+  #   a) set N8N_API_URL=https://ai.smartystudio.co.uk (traffic leaves and re-enters
+  #      the host through that proxy), or
+  #   b) attach `app`/`horizon` to the existing n8n container's docker network via an
+  #      `external: true` network and point N8N_API_URL at its container name:5678.
+  postgres_n8n:
+    profiles: ["bundled-n8n"]
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: ${N8N_DB_USER:?N8N_DB_USER required}
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD:?N8N_DB_PASSWORD required}
+      POSTGRES_DB: ${N8N_DB_NAME:?N8N_DB_NAME required}
+    volumes:
+      - pg_n8n:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    networks:
+      - n8n_db
+  redis:
+    image: redis:7.2-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    # Keep the password out of process argv; environment is still visible to Docker admins.
+    command: ["sh", "-ec", "case \"$$REDIS_PASSWORD\" in ''|*[!a-zA-Z0-9_-]*) echo 'Invalid Redis password format' >&2; exit 1;; esac; umask 077; printf 'requirepass %s\\n' \"$$REDIS_PASSWORD\" > /tmp/redis.conf; chown redis:redis /tmp/redis.conf; exec /usr/local/bin/docker-entrypoint.sh redis-server /tmp/redis.conf --appendonly yes"]
+    tmpfs:
+      - /tmp
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+    networks:
+      - queue
+  n8n:
+    profiles: ["bundled-n8n"]
+    image: docker.n8n.io/n8nio/n8n:2.44.6
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres_n8n
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:?N8N_DB_NAME required}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER:?N8N_DB_USER required}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?N8N_DB_PASSWORD required}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY required}
+      GENERIC_TIMEZONE: Asia/Tehran
+      TZ: Asia/Tehran
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: none
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres_n8n:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - n8n_db
+      - workflow
+volumes:
+  pg_app:
+  pg_n8n:
+  redis_data:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+networks:
+  web_backend:
+    driver: bridge
+  app_db:
+    driver: bridge
+  n8n_db:
+    driver: bridge
+  queue:
+    driver: bridge
+  workflow:
+    driver: bridge

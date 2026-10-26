@@ -1,0 +1,13 @@
+# Dev-only PHP CLI image for local `artisan`/test runs inside docker.
+# Local PHP lacks pgsql; the prod image runs php-fpm with --no-dev.
+# NOT for production. Build via compose.dev.yaml service `workspace`.
+FROM php:8.4-cli-alpine
+RUN apk add --no-cache icu-libs libpq libzip \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev postgresql-dev libzip-dev oniguruma-dev \
+    && docker-php-ext-install -j$(nproc) bcmath intl mbstring opcache pcntl pdo_pgsql zip \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && apk del .build-deps
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+WORKDIR /var/www/html
+CMD ["php", "-a"]

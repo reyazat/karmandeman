@@ -1,0 +1,6 @@
+---
+description: Karmandeman Laravel backend clean architecture and test rules
+alwaysApply: true
+---
+
+Read and obey `docs/ENGINEERING_STANDARDS.md` on all backend-related changes. Enforce feature Actions, thin `Controllers/API/V1`, feature Requests/Resources, Models (Eloquent only), `Repositories/Contracts` and `Repositories/Eloquents/{Model}`, Services only for orchestration/integrations, Providers for DI, pure Helpers, Scopes for reusable Eloquent scopes. Follow SOLID/DRY/KISS, typed code, constructor DI, Policies and explicit workspace authorization. Never put queries, business logic or inline validation in API controllers. Always add/update tests and stable API contracts.

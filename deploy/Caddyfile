@@ -1,0 +1,20 @@
+# PUBLIC_DOMAIN must resolve to the VPS public IP before automatic TLS works.
+{$PUBLIC_DOMAIN} {
+    encode zstd gzip
+    root * /srv/public
+    request_body {
+        max_size 25MB
+    }
+    php_fastcgi app:9000
+    file_server
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Frame-Options "DENY"
+        -Server
+    }
+    log {
+        output stdout
+        format json
+    }
+}

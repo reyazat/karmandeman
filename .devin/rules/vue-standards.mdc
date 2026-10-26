@@ -1,0 +1,6 @@
+---
+description: Karmandeman Vue 3 TypeScript frontend modularity rules
+alwaysApply: true
+---
+
+Read `docs/ENGINEERING_STANDARDS.md`. Frontend: Vue 3, TypeScript, Pinia and Vue Router; `resources/js/src/modules/{feature}`, `shared/{components,composables,types,utils,api}`, `stores`, `router`. Avoid giant components, duplicate business rules, unsafe HTML, untyped API response. Backend Policies are authoritative. Follow RTL/mobile accessibility, typecheck/lint/unit/E2E tests.
