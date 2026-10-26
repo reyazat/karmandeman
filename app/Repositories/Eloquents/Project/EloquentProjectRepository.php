@@ -34,6 +34,12 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->find($projectId);
     }
 
+    public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project
+    {
+        return Project::query()->where('workspace_id', $workspace->id)
+            ->where('public_id', $publicId)->first();
+    }
+
     public function paginateFor(Workspace $workspace, int $perPage = 20): LengthAwarePaginator
     {
         return Project::query()

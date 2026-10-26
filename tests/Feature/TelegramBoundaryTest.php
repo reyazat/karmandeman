@@ -23,6 +23,8 @@ final class TelegramBoundaryTest extends TestCase
 
     private const HEADERS = ['X-Telegram-Bot-Api-Secret-Token' => 'test-secret'];
 
+    private const AUTH_HEADERS = ['Idempotency-Key' => 'telegram-boundary-1'];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -56,7 +58,7 @@ final class TelegramBoundaryTest extends TestCase
             $this->signed(['id' => 777]).'&auth_date='.time(),
             'hash=bad&user[]=unexpected&auth_date=1',
         ] as $payload) {
-            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $payload])->assertUnauthorized();
+            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $payload], self::AUTH_HEADERS)->assertUnauthorized();
         }
         $this->assertDatabaseCount('users', 0);
     }
@@ -64,7 +66,7 @@ final class TelegramBoundaryTest extends TestCase
     public function test_signed_but_invalid_user_fields_never_create_an_account(): void
     {
         foreach ([['id' => 0], ['id' => -1], ['id' => '777'], ['id' => 777, 'first_name' => ['bad']], ['id' => 777, 'username' => str_repeat('x', 256)]] as $user) {
-            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $this->signed($user)])->assertUnauthorized();
+            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $this->signed($user)], self::AUTH_HEADERS)->assertUnauthorized();
         }
         $this->assertDatabaseCount('users', 0);
     }
@@ -72,12 +74,12 @@ final class TelegramBoundaryTest extends TestCase
     public function test_tokens_expire_and_suspended_identity_cannot_mint_tokens(): void
     {
         $payload = ['initData' => $this->signed(['id' => 777])];
-        $this->postJson('/api/v1/auth/telegram/verify', $payload)->assertOk();
+        $this->postJson('/api/v1/auth/telegram/verify', $payload, self::AUTH_HEADERS)->assertOk();
         $this->assertNotNull(DB::table('personal_access_tokens')->value('expires_at'));
         $expires = DB::table('personal_access_tokens')->value('expires_at');
         $this->assertTrue(now()->addHours(9)->greaterThan($expires));
         DB::table('users')->update(['status' => 'suspended']);
-        $this->postJson('/api/v1/auth/telegram/verify', $payload)->assertForbidden();
+        $this->postJson('/api/v1/auth/telegram/verify', $payload, self::AUTH_HEADERS)->assertForbidden();
         $this->assertDatabaseCount('personal_access_tokens', 1);
     }
 
@@ -98,9 +100,9 @@ final class TelegramBoundaryTest extends TestCase
     public function test_auth_rate_limit_preserves_error_envelope_and_retry_header(): void
     {
         for ($i = 0; $i < 10; $i++) {
-            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => 'bad'])->assertUnauthorized();
+            $this->postJson('/api/v1/auth/telegram/verify', ['initData' => 'bad'], self::AUTH_HEADERS)->assertUnauthorized();
         }
-        $this->postJson('/api/v1/auth/telegram/verify', ['initData' => 'bad'])
+        $this->postJson('/api/v1/auth/telegram/verify', ['initData' => 'bad'], self::AUTH_HEADERS)
             ->assertStatus(429)->assertJsonPath('error.code', 'RATE_LIMITED')->assertHeader('Retry-After');
     }
 

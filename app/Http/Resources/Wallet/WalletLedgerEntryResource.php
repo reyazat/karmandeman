@@ -17,7 +17,7 @@ class WalletLedgerEntryResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->id,
+            'id' => $this->public_id,
             'type' => $this->type->value,
             'amount' => $this->amount,
             'reason' => $this->reason,

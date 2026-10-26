@@ -7,6 +7,7 @@ namespace Tests\Integration;
 use App\Actions\Brand\UpdateApiBrandAction;
 use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\HandleTelegramUpdateAction;
+use App\Actions\Identity\IssueTelegramTokenAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
@@ -152,6 +153,16 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'BRAND_VERSION_CONFLICT')));
         $this->assertSame(2, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
         $this->assertDatabaseCount('api_idempotency_records', 1);
+    }
+
+    public function test_parallel_token_retries_issue_one_token(): void
+    {
+        app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92010));
+        $tokens = $this->concurrently(fn () => app(IssueTelegramTokenAction::class)
+            ->execute(new TelegramUserData(92010), 'verified-init-data-fixture', 'parallel-auth-key')[1]);
+        $this->assertCount(1, array_unique($tokens));
+        $this->assertDatabaseCount('personal_access_tokens', 1);
+        $this->assertDatabaseCount('telegram_auth_requests', 1);
     }
 
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void

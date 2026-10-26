@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property string $public_id */
 class Brand extends Model
 {
+    use HasPublicId;
+
     protected $fillable = [
         'workspace_id',
         'name',

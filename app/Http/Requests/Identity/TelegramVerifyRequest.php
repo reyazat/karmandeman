@@ -20,6 +20,12 @@ class TelegramVerifyRequest extends FormRequest
     {
         return [
             'initData' => ['required', 'string', 'max:8192'],
+            'idempotency_key' => ['required', 'string', 'min:8', 'max:128', 'regex:/^[A-Za-z0-9_-]+$/'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge(['idempotency_key' => $this->header('Idempotency-Key')]);
     }
 }

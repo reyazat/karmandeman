@@ -26,6 +26,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/workspaces/current', CurrentWorkspaceController::class);
             Route::get('/brands/current', [CurrentBrandController::class, 'show']);
             Route::patch('/brands/current', [CurrentBrandController::class, 'update']);
+            Route::get('/projects/{project}', [ProjectController::class, 'show'])->whereUuid('project');
             Route::apiResource('/projects', ProjectController::class)->only(['index', 'store']);
             Route::get('/wallet/ledger', WalletLedgerController::class);
         });

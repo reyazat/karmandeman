@@ -17,7 +17,7 @@ class WorkspaceResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->id,
+            'id' => $this->public_id,
             'name' => $this->name,
             'status' => $this->status,
             'credit_balance' => $this->whenLoaded('wallet', fn () => $this->wallet === null ? 0 : $this->wallet->balance_cached),

@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-/** @property-read Wallet|null $wallet */
+/**
+ * @property string $public_id
+ * @property-read Wallet|null $wallet
+ */
 class Workspace extends Model
 {
+    use HasPublicId;
+
     protected $fillable = [
         'owner_id',
         'name',

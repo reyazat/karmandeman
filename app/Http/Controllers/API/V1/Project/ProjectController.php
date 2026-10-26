@@ -17,6 +17,20 @@ use Illuminate\Http\Request;
 
 class ProjectController extends Controller
 {
+    public function show(
+        string $project,
+        Request $request,
+        WorkspaceRepositoryInterface $workspaces,
+        ProjectRepositoryInterface $projects,
+    ): JsonResponse {
+        $workspace = $workspaces->currentFor($request->user());
+        $found = $workspace === null ? null : $projects->findPublicForWorkspace($workspace, $project);
+
+        return $found === null
+            ? ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404)
+            : ApiResponse::success(new ProjectResource($found));
+    }
+
     public function index(
         Request $request,
         WorkspaceRepositoryInterface $workspaces,

@@ -17,14 +17,13 @@ class BrandResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->id,
+            'id' => $this->public_id,
             'name' => $this->name,
             'category' => $this->category,
             'currency_display_unit' => $this->currency_display_unit,
             'tone' => $this->tone,
             'target_audience' => $this->target_audience,
             'brand_description' => $this->brand_description,
-            'logo_asset_id' => $this->logo_asset_id,
             'color_palette' => $this->color_palette,
             'contact_channels' => $this->contact_channels,
             'catalog_price_visibility_default' => $this->catalog_price_visibility_default,

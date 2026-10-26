@@ -15,6 +15,8 @@ interface ProjectRepositoryInterface
 
     public function findForWorkspace(Workspace $workspace, int $projectId): ?Project;
 
+    public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project;
+
     /**
      * @return LengthAwarePaginator<int, Project>
      */

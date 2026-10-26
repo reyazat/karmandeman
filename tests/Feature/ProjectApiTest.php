@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -108,5 +109,28 @@ class ProjectApiTest extends TestCase
         $this->postJson('/api/v1/projects', ['name' => 'B'], ['Idempotency-Key' => 'same-key-1'])->assertCreated();
         $this->getJson('/api/v1/projects')->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'B');
         $this->assertDatabaseCount('projects', 2);
+    }
+
+    public function test_public_project_id_is_opaque_and_lookup_is_tenant_scoped(): void
+    {
+        $owner = $this->onboardedUser(913);
+        $other = $this->onboardedUser(914);
+        Sanctum::actingAs($owner);
+        $created = $this->postJson('/api/v1/projects', ['name' => 'Private'], [
+            'Idempotency-Key' => 'public-project-1',
+        ])->assertCreated();
+        $publicId = $created->json('data.id');
+        $this->assertTrue(Str::isUuid($publicId));
+        $this->getJson("/api/v1/projects/{$publicId}")->assertOk()->assertJsonPath('data.id', $publicId);
+        $this->getJson('/api/v1/projects/1')->assertNotFound();
+
+        Sanctum::actingAs($other);
+        $this->getJson("/api/v1/projects/{$publicId}")->assertNotFound()
+            ->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
+        $this->getJson('/api/v1/projects')->assertJsonCount(0, 'data');
+
+        Sanctum::actingAs($owner);
+        $owner->update(['status' => 'suspended']);
+        $this->getJson("/api/v1/projects/{$publicId}")->assertForbidden();
     }
 }
