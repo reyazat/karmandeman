@@ -67,12 +67,12 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 
 | داده | وضعیت فعلی | هدف |
 |---|---|---|
-| `brands` (نام، دسته، لحن، مخاطب، توضیح، رنگ، تماس، خروجی‌ها) | plaintext | کلید حساب/Workspace |
-| `memory_items.value_json`، `memory_item_revisions.value_json` | plaintext | کلید حساب/Workspace |
-| `workspaces.name`، `projects.name` | plaintext | کلید حساب/Workspace |
-| `telegram_onboardings.draft` | `encrypted` با APP_KEY مشترک | کلید حساب/Workspace |
-| `service_requests.details` و `details_hash` | APP_KEY و HMAC با APP_KEY | کلید حساب؛ HMAC با کلید همان حساب |
-| `api_idempotency_records.result_attributes` | **snapshot plaintext فیلدهای برند** | کلید حساب یا عدم نگهداری فیلد خصوصی |
+| `brands` (نام، دسته، لحن، مخاطب، توضیح، رنگ، تماس، خروجی‌ها) | **کلید Workspace (S2)**؛ واحد پول، `required_product_fields`، نمایش قیمت و نسخه تنظیمات غیرشخصی و plaintext ماندند | کلید حساب/Workspace |
+| `memory_items.value_json`، `memory_item_revisions.value_json` | **کلید Workspace (S2)**؛ `key`، منبع و وضعیت plaintext | کلید حساب/Workspace |
+| `workspaces.name`، `projects.name` | `projects.name` **کلید Workspace (S2)**؛ `workspaces.name` هنوز plaintext (همراه ستون‌های هویت) | کلید حساب/Workspace |
+| `telegram_onboardings.draft` | **کلید Workspace (S2)** | کلید حساب/Workspace |
+| `service_requests.details` و `details_hash` | **کلید Workspace (S2)**؛ hash با HMAC کلید مشتق‌شده (HKDF) از DEK همان Workspace | کلید حساب؛ HMAC با کلید همان حساب |
+| `api_idempotency_records.result_attributes` | snapshot خام مدل؛ از S2 فیلدهای خصوصی برند/پروژه در آن ciphertext کلید Workspace‌اند؛ snapshot قدیمی plaintext مانع migration است | کلید حساب یا عدم نگهداری فیلد خصوصی |
 | `users.name` (نام نمایشی تلگرام) | plaintext | کلید حساب (مدل تک‌مالک) |
 | `user_identities.external_id` و `meta` (شناسه و username تلگرام) | plaintext | **تصمیم باز ۱** |
 | `conversation_events.message_key` | sha256 بدون کلید از chat/message id؛ برای شناسه معلوم قابل حدس | HMAC کلیددار و retention کوتاه |
@@ -95,6 +95,14 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 - کلید Transit و DEK فقط هنگام اولین رمزنگاری یک Workspace **فعال** و زیر قفل همان Workspace ساخته می‌شوند؛ حساب در حال حذف کلید تازه نمی‌گیرد. adapter از `transit/encrypt` استفاده نمی‌کند، ولی `disable_upsert=true` روی mount و جداکردن policy ساخت/حذف کلید از runtime عادی هنوز در پیکربندی استقرار انجام نشده‌اند.
 - **هیچ ستون موجودی هنوز رمز نشده است.** soft delete در T0، purge، حذف قطعی key ring و پایش مهلت پیاده نشده‌اند.
 - آزمون: PostgreSQL موقت و OpenBao 2.4.1 در حالت dev، **۱۰۹ تست / ۷۹۹ assertion** شامل ۳ آزمون integration روی Transit واقعی (round trip، idempotent بودن ساخت، soft delete و حذف قطعی بدون اثر بر کلید دیگر، عدم نشت token)؛ آزمون feature با fake برای جابه‌جایی بین tenant/فیلد، دست‌کاری ciphertext و حساب در حال حذف. آزمون OpenBao در CI اجرا نمی‌شود مگر `OPENBAO_TEST_ADDR` و `OPENBAO_TEST_TOKEN` داده شوند.
+
+## وضعیت پیاده‌سازی (مرحله دوم، S2، ۲۷ اکتبر ۲۰۲۶)
+
+- cast `App\Models\Casts\WorkspaceEncrypted` ستون‌های جدول بالا را با `WorkspaceFieldCipher` و context برابر `table.column` رمز می‌کند؛ `:array` برای JSON. خواندن مقدار plaintext قدیمی، ciphertext منتقل‌شده از Workspace/ستون دیگر، کلید soft-delete یا نابودشده خطا می‌دهد و fallback به plaintext یا APP_KEY ندارد. چون Eloquent cast را بدون constructor injection می‌سازد، cipher scoped از container گرفته می‌شود؛ این استثنای ثبت‌شده KM-ENG-001 §۱ است. `workspace_id` باید پیش از فیلد رمزی مقداردهی شود وگرنه `LogicException`.
+- **اصلاح cache کلید:** کلید داده‌ای که داخل تراکنش باز دیده شده، پیش از هر استفاده با ردیف `workspace_data_keys` دوباره تطبیق می‌شود؛ قبلاً rollback تراکنش بیرونی کلیدی را در حافظه نگه می‌داشت که ردیفش وجود نداشت و داده بعدی در همان request/job برای همیشه غیرقابل رمزگشایی می‌شد. آزمون rollback روی کد قبلی شکست و روی کد جدید پاس است.
+- migration `2026_10_27_000005_encrypt_workspace_private_fields` فقط نوع ستون‌ها را به `text` تغییر می‌دهد و **داده را بازنویسی نمی‌کند**: اگر مقدار plaintext/APP_KEY، snapshot قدیمی `brand.update`/`project.create` یا `details_hash` قدیمی وجود داشته باشد، اجرا متوقف می‌شود. down در حضور ciphertext متوقف می‌شود؛ مسیر بازگشت restore بکاپ است. داده توسعه محلی موجود باید پس از بکاپ پاک یا دوباره وارد شود؛ هیچ داده پایلوت/production وجود ندارد.
+- باقی‌مانده S2: `users.name`، `workspaces.name`، `user_identities` (وابسته به تصمیم باز ۱)، `conversation_events.message_key` و payload صف/failed_jobs. **runtime همچنان کلید Transit را هنگام اولین رمزنگاری Workspace فعال می‌سازد** (`ensureKey`)؛ پس token runtime مجوز create روی `transit/keys/*` لازم دارد و این با جمله «runtime عادی کلید را خودسرانه ایجاد نکند» فقط به این شرط سازگار است که ساخت زیر قفل Workspace فعال انجام شود و مجوز config/delete فقط با worker حذف باشد. جداسازی policy در استقرار هنوز انجام نشده است.
+- شواهد: PostgreSQL موقت و fake کلید: **۱۱۸ تست / ۸۷۲ assertion** شامل ۱۱ integration هم‌زمانی؛ SQLite **۱۰۴ پاس و ۱۴ skip**؛ Pint و PHPStan بدون خطا؛ rollback و اجرای دوباره migration روی PostgreSQL موقت موفق. OpenBao واقعی در این نوبت فقط با ۳ آزمون adapter سنجیده شد، نه مسیر کامل API.
 
 ## گزینه‌های کنارگذاشته‌شده و منابع
 

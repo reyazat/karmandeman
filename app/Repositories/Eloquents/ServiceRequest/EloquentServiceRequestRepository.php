@@ -8,10 +8,13 @@ use App\Models\ServiceRequest;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ServiceRequestRepositoryInterface;
+use App\Services\Crypto\WorkspaceFieldCipher;
 use DomainException;
 
-final class EloquentServiceRequestRepository implements ServiceRequestRepositoryInterface
+final readonly class EloquentServiceRequestRepository implements ServiceRequestRepositoryInterface
 {
+    public function __construct(private WorkspaceFieldCipher $cipher) {}
+
     public function record(Workspace $workspace, User $user, string $kind, string $key, ?string $details = null): ServiceRequest
     {
         $existing = ServiceRequest::query()->where('external_key', $key)->first();
@@ -30,7 +33,7 @@ final class EloquentServiceRequestRepository implements ServiceRequestRepository
             'kind' => $kind,
             'external_key' => $key,
             'details' => $details,
-            'details_hash' => $details === null ? null : $this->detailsHash($details),
+            'details_hash' => $details === null ? null : $this->detailsHash($workspace, $details),
             'status' => 'received',
         ]);
     }
@@ -45,11 +48,12 @@ final class EloquentServiceRequestRepository implements ServiceRequestRepository
     {
         return ServiceRequest::query()->where('workspace_id', $workspace->id)
             ->where('kind', 'support')->where('status', 'received')
-            ->where('details_hash', $this->detailsHash($details))->first();
+            ->where('details_hash', $this->detailsHash($workspace, $details))->first();
     }
 
-    private function detailsHash(string $details): string
+    /** Keyed by the workspace's own data key, so the digest is erased with it (ADR-013). */
+    private function detailsHash(Workspace $workspace, string $details): string
     {
-        return hash_hmac('sha256', $details, config('app.key'));
+        return $this->cipher->mac($workspace, 'service_requests.details_hash', $details);
     }
 }

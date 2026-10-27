@@ -9,6 +9,7 @@ use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\Brand;
 use App\Models\MemoryItem;
 use App\Models\MemoryItemRevision;
+use App\Models\Project;
 use App\Models\ServiceRequest;
 use App\Models\TelegramOnboarding;
 use App\Models\Wallet;
@@ -127,7 +128,7 @@ final class TelegramOnboardingTest extends TestCase
         $this->assertDatabaseCount('memory_items', 3);
         $this->assertDatabaseCount('memory_item_revisions', 3);
         $this->send('/new کیف جدید')->assertOk();
-        $this->assertDatabaseHas('projects', ['name' => 'کیف جدید', 'state' => 'collecting_input']);
+        $this->assertPrivateValue(Project::class, ['state' => 'collecting_input'], 'name', 'کیف جدید');
         $this->assertSame(100, Wallet::sole()->balance_cached);
         $this->assertDatabaseCount('credit_ledger', 1);
         Queue::assertPushed(AnswerTelegramCallback::class, 4);

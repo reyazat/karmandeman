@@ -19,9 +19,10 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             throw new \DomainException('INVALID_PROJECT_EMPLOYEE');
         }
 
+        // workspace_id first: the encrypted name needs its workspace key.
         return Project::create([
-            'name' => $attributes['name'] ?? null,
             'workspace_id' => $workspace->id,
+            'name' => $attributes['name'] ?? null,
             'employee_id' => $employee->id,
             'state' => ProjectState::CollectingInput,
         ]);
@@ -42,9 +43,13 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
 
     public function paginateFor(Workspace $workspace, int $perPage = 20): LengthAwarePaginator
     {
-        return Project::query()
+        $page = Project::query()
             ->where('workspace_id', $workspace->id)
             ->orderByDesc('id')
             ->paginate($perPage);
+        // Encrypted names decrypt with this workspace's key without one lookup per row.
+        $page->getCollection()->each->setRelation('workspace', $workspace);
+
+        return $page;
     }
 }

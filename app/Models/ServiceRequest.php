@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Casts\WorkspaceEncrypted;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 
@@ -15,6 +16,6 @@ class ServiceRequest extends Model
 
     protected function casts(): array
     {
-        return ['details' => 'encrypted'];
+        return ['details' => WorkspaceEncrypted::class];
     }
 }

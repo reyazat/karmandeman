@@ -143,6 +143,19 @@ final class WorkspaceFieldCipherTest extends TestCase
         $this->assertSame('kept', $this->freshCipher()->decrypt($workspace, 'brands.name', $value));
     }
 
+    public function test_mac_is_stable_per_workspace_and_differs_across_workspaces_and_contexts(): void
+    {
+        $workspace = $this->workspace();
+        $other = $this->workspace();
+        $cipher = app(WorkspaceFieldCipher::class);
+        $mac = $cipher->mac($workspace, 'service_requests.details_hash', 'same');
+
+        $this->assertSame($mac, $this->freshCipher()->mac($workspace, 'service_requests.details_hash', 'same'));
+        $this->assertNotSame($mac, $cipher->mac($other, 'service_requests.details_hash', 'same'));
+        $this->assertNotSame($mac, $cipher->mac($workspace, 'other.context', 'same'));
+        $this->assertNotSame($mac, hash_hmac('sha256', 'same', (string) config('app.key')));
+    }
+
     private function expectUnreadable(Workspace $workspace, string $value): void
     {
         try {

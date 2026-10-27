@@ -16,9 +16,13 @@ final class InMemoryWorkspaceKeyManager implements WorkspaceKeyManager
 
     public int $unwrapCalls = 0;
 
+    /** @var array<string, true> */
+    private array $destroyed = [];
+
     public function ensureKey(string $keyName): void
     {
-        $this->keys[$keyName] ??= ['key' => random_bytes(32), 'soft_deleted' => false];
+        $this->keys[$keyName] ??= ['key' => $this->derive($keyName), 'soft_deleted' => false];
+        unset($this->destroyed[$keyName]);
     }
 
     public function createDataKey(string $keyName): DataKey
@@ -51,14 +55,21 @@ final class InMemoryWorkspaceKeyManager implements WorkspaceKeyManager
     public function destroy(string $keyName): void
     {
         unset($this->keys[$keyName]);
+        $this->destroyed[$keyName] = true;
     }
 
     private function usable(string $keyName): string
     {
-        if (! isset($this->keys[$keyName]) || $this->keys[$keyName]['soft_deleted']) {
+        if (isset($this->destroyed[$keyName]) || ($this->keys[$keyName]['soft_deleted'] ?? false)) {
             throw new RuntimeException('OpenBao rejected the request (400).');
         }
 
-        return $this->keys[$keyName]['key'];
+        // Like a shared key store: a key made by a forked concurrency worker is known here too.
+        return $this->keys[$keyName]['key'] ?? $this->derive($keyName);
+    }
+
+    private function derive(string $keyName): string
+    {
+        return hash_hmac('sha256', $keyName, 'km-test-only-kek', true);
     }
 }

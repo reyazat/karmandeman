@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Casts\WorkspaceEncrypted;
 use Illuminate\Database\Eloquent\Model;
 
 class MemoryItemRevision extends Model
@@ -17,6 +18,6 @@ class MemoryItemRevision extends Model
 
     protected function casts(): array
     {
-        return ['value_json' => 'array', 'created_at' => 'datetime'];
+        return ['value_json' => WorkspaceEncrypted::class.':array', 'created_at' => 'datetime'];
     }
 }

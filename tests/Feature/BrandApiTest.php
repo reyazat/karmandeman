@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Brand;
 use App\Models\MemoryItem;
 use App\Models\User;
 use App\Models\Workspace;
@@ -130,7 +131,7 @@ class BrandApiTest extends TestCase
         $this->updateBrand(['name' => 'اول', 'expected_version' => 1], 'brand-retry-1')
             ->assertOk()->assertJsonPath('data.name', $first->json('data.name'))
             ->assertJsonPath('data.profile_version', 2);
-        $this->assertDatabaseHas('brands', ['workspace_id' => $workspace->id, 'name' => 'دوم', 'profile_version' => 3]);
+        $this->assertPrivateValue(Brand::class, ['workspace_id' => $workspace->id, 'profile_version' => 3], 'name', 'دوم');
         $this->assertDatabaseHas('memory_items', ['workspace_id' => $workspace->id, 'key' => 'brand.name', 'revision' => 2]);
     }
 
@@ -142,7 +143,7 @@ class BrandApiTest extends TestCase
             ->assertStatus(409)->assertJsonPath('error.code', 'BRAND_VERSION_CONFLICT');
         $this->updateBrand(['name' => 'دوم', 'expected_version' => 1], 'brand-conflict-1')
             ->assertStatus(409)->assertJsonPath('error.code', 'IDEMPOTENCY_KEY_CONFLICT');
-        $this->assertDatabaseHas('brands', ['workspace_id' => $workspace->id, 'name' => 'اول', 'profile_version' => 2]);
+        $this->assertPrivateValue(Brand::class, ['workspace_id' => $workspace->id, 'profile_version' => 2], 'name', 'اول');
         $this->assertDatabaseCount('memory_items', 1);
     }
 
@@ -164,7 +165,7 @@ class BrandApiTest extends TestCase
         $this->updateBrand(['name' => 'A', 'expected_version' => 1], 'shared-brand-key')->assertOk();
         [$other, $otherWorkspace] = $this->userWithWorkspace();
         $this->updateBrand(['name' => 'B', 'expected_version' => 1], 'shared-brand-key')->assertOk();
-        $this->assertDatabaseHas('brands', ['workspace_id' => $workspace->id, 'name' => 'A']);
-        $this->assertDatabaseHas('brands', ['workspace_id' => $otherWorkspace->id, 'name' => 'B']);
+        $this->assertPrivateValue(Brand::class, ['workspace_id' => $workspace->id], 'name', 'A');
+        $this->assertPrivateValue(Brand::class, ['workspace_id' => $otherWorkspace->id], 'name', 'B');
     }
 }

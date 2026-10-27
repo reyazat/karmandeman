@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Services\Crypto\WorkspaceKeyManager;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Tests\Fakes\InMemoryWorkspaceKeyManager;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -36,5 +39,21 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         Http::preventStrayRequests();
+        // Private columns are encrypted under workspace keys; tests never reach OpenBao.
+        $this->app->instance(WorkspaceKeyManager::class, new InMemoryWorkspaceKeyManager);
+    }
+
+    /**
+     * Private columns hold workspace ciphertext (ADR-013 S2): assert the
+     * decrypted model value and that the stored value is not plaintext.
+     *
+     * @param  class-string<Model>  $model
+     * @param  array<string, mixed>  $where
+     */
+    protected function assertPrivateValue(string $model, array $where, string $column, mixed $expected): void
+    {
+        $record = $model::query()->where($where)->latest('id')->firstOrFail();
+        $this->assertSame($expected, $record->getAttribute($column));
+        $this->assertStringStartsWith('kmv1:', (string) $record->getRawOriginal($column));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Casts\WorkspaceEncrypted;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,11 +41,17 @@ class Brand extends Model
 
     protected function casts(): array
     {
+        // Private brand profile fields use the workspace key (NFR-11, ADR-013).
         return [
-            'color_palette' => 'array',
-            'contact_channels' => 'array',
+            'name' => WorkspaceEncrypted::class,
+            'category' => WorkspaceEncrypted::class,
+            'tone' => WorkspaceEncrypted::class,
+            'target_audience' => WorkspaceEncrypted::class,
+            'brand_description' => WorkspaceEncrypted::class,
+            'color_palette' => WorkspaceEncrypted::class.':array',
+            'contact_channels' => WorkspaceEncrypted::class.':array',
+            'default_outputs' => WorkspaceEncrypted::class.':array',
             'catalog_price_visibility_default' => 'boolean',
-            'default_outputs' => 'array',
             'required_product_fields' => 'array',
         ];
     }

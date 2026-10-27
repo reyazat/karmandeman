@@ -163,6 +163,17 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - شواهد: PostgreSQL موقت به‌همراه OpenBao 2.4.1 در حالت dev **۱۰۹ تست / ۷۹۹ assertion** شامل ۳ آزمون integration روی Transit واقعی؛ SQLite **۹۶ پاس و ۱۳ skip**؛ Pint و PHPStan بدون خطا. آزمون OpenBao در CI اجرا نمی‌شود (skip بدون `OPENBAO_TEST_ADDR`). حالت dev روی حافظه است و جای raft، AppRole، TLS، unseal و snapshot زمان‌بندی‌شده نیست.
 - باز: تصمیم lookup شناسه تلگرام (ADR-013، تصمیم باز ۱)، میزبان و unseal، S2 تا S4، و QA-20/21.
 
+### بازبینی پس از S1 و NFR-11 مرحله S2 (۲۷ اکتبر ۲۰۲۶)
+
+بازبینی مستقل diff از 12eef83 تا f2641dd نشت بین tenant یا مسیر fail-open رمزنگاری نیافت. موارد تأییدشده و اصلاح‌شده:
+
+- **cache کلید پس از rollback (متوسط):** `WorkspaceFieldCipher` کلید تازه را پیش از commit تراکنش بیرونی cache می‌کرد؛ پس از rollback، داده بعدی همان request/job زیر کلیدی رمز می‌شد که در هیچ جا ذخیره نبود. اکنون کلید دیده‌شده داخل تراکنش پیش از استفاده با ردیف ذخیره‌شده تطبیق می‌شود. آزمون جدید روی کد قبلی شکست خورد.
+- **deadlock صدور token و حذف (متوسط):** sign-in قفل `FOR UPDATE` کاربر و سپس Workspace می‌گرفت؛ حذف Mini App قفل Workspace و سپس key-share کلید خارجی `account_deletions.user_id` روی همان کاربر. قفل‌های کاربر به `FOR NO KEY UPDATE` تغییر کردند و حذف هم ترتیب سراسری «کاربر، سپس Workspace» را رعایت می‌کند. آزمون هم‌زمانی تازه (۸ فرایند) بدون اصلاح در ۴ از ۵ اجرا `deadlock detected` داد و با اصلاح در ۹ اجرای پیاپی پاس شد.
+- **migration شناسه پیام (کم):** `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS` ایندکس INVALID باقی‌مانده از شکست قبلی را نگه می‌داشت. اکنون ایندکس نامعتبر حذف و دوباره ساخته می‌شود و افزودن ستون‌ها تکرارپذیر است؛ بازسازی ایندکس INVALID و اجرای دوباره روی PostgreSQL موقت آزموده شد.
+- **ثبت برای تصمیم Product/Security (کم):** احراز مجدد FR-085 همان initData باز شدن Mini App است که برای token هم استفاده شده و تا ۵ دقیقه قابل استفاده است؛ مطابق ADR-012 پذیرفته‌شده، ولی اثبات «تازه بودن» تعامل کاربر نیست.
+- **S2:** ستون‌های خصوصی برند، حافظه و تاریخچه آن، نام پروژه، draft onboarding و متن/hash پشتیبانی زیر کلید Workspace رمز می‌شوند؛ snapshotهای تازه idempotency هم ciphertext نگه می‌دارند. جزئیات، محدودیت‌ها و باقی‌مانده در [ADR-013](adr/ADR-013-openbao-transit-key-service.md). migration جدید داده را بازنویسی نمی‌کند و با وجود plaintext قدیمی متوقف می‌شود؛ روی دیتابیس اصلی یا staging اجرا نشده است.
+- شواهد: PostgreSQL موقت **۱۱۸ تست / ۸۷۲ assertion** (۱۱ integration هم‌زمانی و ۳ آزمون OpenBao 2.4.1 واقعی)؛ SQLite **۱۰۴ پاس، ۱۴ skip**؛ Pint روی ۱۹۲ فایل و PHPStan سطح ۵ بدون خطا؛ frontend در کپی تمیز: `npm ci`، audit صفر، typecheck، lint، **Vitest ۷ تست** و build موفق. `node_modules` محلی مخزن کهنه است (`@vue/test-utils` ندارد و فایل root-owned دارد) و typecheck محلی را می‌شکند؛ lockfile سالم است و `npm ci` آن را رفع می‌کند. CI میزبانی‌شده، ربات زنده و OpenBao با TLS/AppRole آزموده نشده‌اند.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\ProjectState;
+use App\Models\Casts\WorkspaceEncrypted;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -44,6 +45,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'name' => WorkspaceEncrypted::class,
             'state' => ProjectState::class,
         ];
     }

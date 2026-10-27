@@ -14,6 +14,8 @@ use App\Data\Telegram\TelegramUserData;
 use App\Jobs\Telegram\AnswerTelegramCallback;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AccountDeletion;
+use App\Models\Brand;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
@@ -111,7 +113,7 @@ final class AccountDeletionTest extends TestCase
         $this->assertDatabaseCount('account_deletions', 0);
         $this->assertSame('active', $workspace->fresh()->status);
         $this->send('/new Still works')->assertOk();
-        $this->assertDatabaseHas('projects', ['name' => 'Still works']);
+        $this->assertPrivateValue(Project::class, [], 'name', 'Still works');
     }
 
     public function test_confirmation_contains_account_from_t0_and_replays_one_receipt(): void
@@ -179,7 +181,7 @@ final class AccountDeletionTest extends TestCase
         $this->assertDatabaseCount('account_deletions', 1);
         $this->assertSame('active', $other->fresh()->status);
         $this->send('/new Other tenant', 556)->assertOk();
-        $this->assertDatabaseHas('projects', ['workspace_id' => $other->id, 'name' => 'Other tenant']);
+        $this->assertPrivateValue(Project::class, ['workspace_id' => $other->id], 'name', 'Other tenant');
     }
 
     public function test_unknown_telegram_user_gets_no_account_from_delete_request(): void
@@ -217,7 +219,7 @@ final class AccountDeletionTest extends TestCase
         }
         $this->assertDatabaseCount('projects', 0);
         $this->assertDatabaseCount('api_idempotency_records', 0);
-        $this->assertDatabaseMissing('brands', ['tone' => 'late']);
+        $this->assertNotSame('late', Brand::query()->where('workspace_id', $workspace->id)->first()?->tone);
     }
 
     public function test_only_the_workspace_owner_can_request_deletion(): void

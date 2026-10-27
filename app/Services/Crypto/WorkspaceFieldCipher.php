@@ -64,6 +64,15 @@ final class WorkspaceFieldCipher
         return $plaintext;
     }
 
+    /**
+     * Keyed HMAC for equality lookups (e.g. duplicate detection) under the
+     * workspace's data key, so the digest dies with the key (ADR-013).
+     */
+    public function mac(Workspace $workspace, string $context, #[\SensitiveParameter] string $value): string
+    {
+        return hash_hmac('sha256', $value, hash_hkdf('sha256', $this->dataKey($workspace), 32, "km-mac:{$context}"));
+    }
+
     public function keyName(Workspace $workspace): string
     {
         return config('services.openbao.key_prefix').$workspace->public_id;
