@@ -10,10 +10,21 @@
         root /var/www/html/public
     }
     file_server
+
+    # Telegram Web clients open the Mini App in an iframe from web.telegram.org;
+    # mobile/desktop clients use a webview. Only /app may be framed, only by Telegram.
+    @miniapp path /app /app/*
+    header @miniapp {
+        Content-Security-Policy "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors https://web.telegram.org"
+    }
+    @notMiniapp not path /app /app/*
+    header @notMiniapp {
+        X-Frame-Options "DENY"
+        Content-Security-Policy "frame-ancestors 'none'"
+    }
     header {
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
-        X-Frame-Options "DENY"
         -Server
     }
     log {
