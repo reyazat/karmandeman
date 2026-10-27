@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Idempotency;
 
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Brand;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
-use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Closure;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -18,7 +18,7 @@ final readonly class RunIdempotentMutationAction
 {
     public function __construct(
         private ApiIdempotencyRepositoryInterface $records,
-        private WorkspaceRepositoryInterface $workspaces,
+        private LockActiveWorkspaceAction $lockActive,
     ) {}
 
     /**
@@ -34,7 +34,7 @@ final readonly class RunIdempotentMutationAction
         $hash = hash('sha256', json_encode($this->canonicalize($input), JSON_THROW_ON_ERROR));
 
         return DB::transaction(function () use ($workspace, $userId, $operation, $key, $hash, $mutation): array {
-            $this->workspaces->lock($workspace);
+            $this->lockActive->execute($workspace);
             $record = $this->records->find($workspace, $userId, $operation, $key);
             if ($record !== null) {
                 if (! hash_equals($record->request_hash, $hash)) {

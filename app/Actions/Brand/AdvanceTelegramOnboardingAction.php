@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Brand;
 
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\OnboardingReply;
 use App\Models\TelegramOnboarding;
 use App\Models\User;
@@ -11,7 +12,6 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\MemoryItemRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
-use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +21,7 @@ final readonly class AdvanceTelegramOnboardingAction
 {
     public function __construct(
         private TelegramOnboardingRepositoryInterface $onboardings,
-        private WorkspaceRepositoryInterface $workspaces,
+        private LockActiveWorkspaceAction $lockActive,
         private BrandRepositoryInterface $brands,
         private MemoryItemRepositoryInterface $memory,
         private UpdateBrandProfileAction $updateBrand,
@@ -33,7 +33,7 @@ final readonly class AdvanceTelegramOnboardingAction
         Gate::forUser($user)->authorize('access', $workspace);
 
         return DB::transaction(function () use ($workspace, $user, $event, $value): OnboardingReply {
-            $this->workspaces->lock($workspace);
+            $this->lockActive->execute($workspace);
             $state = $this->onboardings->ensure($workspace);
             $policy = $this->policies->current();
             if (! $policy->isApproved()) {

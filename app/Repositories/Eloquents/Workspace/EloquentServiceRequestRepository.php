@@ -41,12 +41,6 @@ final class EloquentServiceRequestRepository implements ServiceRequestRepository
             ->where('public_id', $publicId)->first();
     }
 
-    public function pendingDeletionFor(Workspace $workspace): ?ServiceRequest
-    {
-        return ServiceRequest::query()->where('workspace_id', $workspace->id)
-            ->where('kind', 'data_deletion')->where('status', 'received')->first();
-    }
-
     public function pendingSupportFor(Workspace $workspace, string $details): ?ServiceRequest
     {
         return ServiceRequest::query()->where('workspace_id', $workspace->id)

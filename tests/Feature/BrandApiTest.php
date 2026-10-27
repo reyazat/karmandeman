@@ -11,10 +11,13 @@ use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
 class BrandApiTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
     private int $keyCounter = 0;
 
     private function updateBrand(array $attributes, ?string $key = null): TestResponse
@@ -24,11 +27,18 @@ class BrandApiTest extends TestCase
         ]);
     }
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useApprovedPilotPolicy();
+    }
+
     private function userWithWorkspace(): array
     {
         $user = User::factory()->create();
         $workspace = app(WorkspaceRepositoryInterface::class)
             ->createForOwner($user);
+        $this->grantPilotConsent($user);
         Sanctum::actingAs($user);
 
         return [$user, $workspace];

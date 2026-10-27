@@ -16,4 +16,6 @@ interface TelegramAuthRequestRepositoryInterface
     public function tokenIsActive(User $user, TelegramAuthRequest $record): bool;
 
     public function record(User $user, string $key, string $hash, string $token, int $tokenId): void;
+
+    public function forgetFor(User $user): void;
 }

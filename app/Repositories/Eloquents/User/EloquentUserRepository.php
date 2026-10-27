@@ -46,4 +46,9 @@ final class EloquentUserRepository implements UserRepositoryInterface
             return $this->findByIdentity($provider, (string) $telegramUser->id) ?? throw $exception;
         }
     }
+
+    public function revokeAccessTokens(User $user): void
+    {
+        $user->tokens()->delete();
+    }
 }

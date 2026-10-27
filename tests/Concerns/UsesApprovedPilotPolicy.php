@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Concerns;
 
+use App\Models\User;
+use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -35,6 +38,14 @@ trait UsesApprovedPilotPolicy
         $manifest['approval']['bundle_sha256'] = app(PilotPolicyService::class)->current()->digest;
         $files->put($path.'/manifest.json', json_encode($manifest, JSON_THROW_ON_ERROR));
         $this->beforeApplicationDestroyed(fn () => $files->deleteDirectory($path));
+    }
+
+    private function grantPilotConsent(User $user): void
+    {
+        $policy = app(PilotPolicyService::class)->current();
+        app(TelegramOnboardingRepositoryInterface::class)->accept(
+            app(WorkspaceRepositoryInterface::class)->currentFor($user), $user, $policy->version, $policy->digest,
+        );
     }
 
     private function policyConsentToken(): string

@@ -11,9 +11,15 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 
 final class EloquentWorkspaceRepository implements WorkspaceRepositoryInterface
 {
-    public function lock(Workspace $workspace): void
+    public function lock(Workspace $workspace): Workspace
     {
-        Workspace::query()->whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+        return Workspace::query()->whereKey($workspace->id)->lockForUpdate()->firstOrFail();
+    }
+
+    public function markDeletionPending(Workspace $workspace): void
+    {
+        Workspace::query()->whereKey($workspace->id)->update(['status' => 'deletion_pending']);
+        $workspace->status = 'deletion_pending';
     }
 
     public function createForOwner(User $owner, array $attributes = []): Workspace

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Brand;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
+use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Models\Brand;
 use App\Models\Workspace;
 
@@ -13,6 +14,7 @@ final readonly class UpdateApiBrandAction
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private UpdateBrandProfileAction $brands,
+        private EnsurePolicyConsentAction $consent,
     ) {}
 
     /** @return array{Brand, bool} */
@@ -22,7 +24,11 @@ final readonly class UpdateApiBrandAction
         $result = $this->idempotency->execute(
             $workspace, $userId, 'brand.update', $key,
             ['expected_version' => $expectedVersion, 'attributes' => $attributes],
-            fn (): Brand => $this->brands->execute($workspace, $attributes, $userId, $expectedVersion),
+            function () use ($workspace, $attributes, $userId, $expectedVersion): Brand {
+                $this->consent->execute($workspace);
+
+                return $this->brands->execute($workspace, $attributes, $userId, $expectedVersion);
+            },
         );
 
         return $result;

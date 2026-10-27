@@ -163,9 +163,17 @@ final class PilotPolicyTest extends TestCase
         $this->assertDatabaseCount('brands', 0);
         $this->assertDatabaseCount('projects', 0);
         $this->assertDatabaseCount('memory_items', 0);
-        $this->assertDatabaseCount('service_requests', 2);
+        $this->assertDatabaseCount('service_requests', 1);
         $this->assertNull(TelegramOnboarding::sole()->draft);
         Queue::assertPushed(SendTelegramMessage::class, fn ($job) => str_contains($job->text, 'تأیید نشده') && $job->buttons === []);
+
+        $confirm = Queue::pushed(SendTelegramMessage::class)->last()->buttons[0][0]['callback_data'];
+        $this->assertStringStartsWith('delete:confirm:', $confirm);
+        $this->postJson('/api/webhooks/telegram', ['update_id' => ++$i, 'callback_query' => [
+            'id' => 'deletion-callback', 'data' => $confirm, 'from' => ['id' => 504],
+            'message' => ['chat' => ['id' => 504, 'type' => 'private']],
+        ]], ['X-Telegram-Bot-Api-Secret-Token' => 'policy-test-secret'])->assertOk();
+        $this->assertDatabaseCount('account_deletions', 1);
     }
 
     public function test_approved_documents_are_accessible_without_consent_and_split_to_safe_messages(): void

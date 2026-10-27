@@ -124,6 +124,15 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - بسته جاری `pilot-20261027-v3` با بکاپ ۱۴روزه و حذف کامل ۷روزه انتخاب شد؛ v1/v2 سابقه‌اند. متن نهایی، اعداد دیگر، شواهد رمزنگاری/حذف و فعال‌سازی تأیید نشده‌اند. فقط اسناد، بسته سیاست و ارجاع config/fixture اصلاح شده‌اند؛ عملیات حذف، رمزنگاری جامع، migration، تغییر کلید، backup/restore واقعی یا استقرار انجام نشده است.
 - بررسی این بازبینی: SQLite حافظه‌ای **۷۲ تست پاس / ۵۰۲ assertion، ۹ integration skip**؛ Pint برای سه فایل PHP تغییرکرده و `git diff --check` پاس. `policy:check` بسته v3 را عمداً با `ready=false` و exit code برابر ۱ گزارش کرد. این نتایج اتصال متن/نسخه و رفتار gate را می‌سنجند، نه اجرای حذف رمزنگارانه، key service یا QA-19…21 آینده. PostgreSQL concurrency و restore واقعی در این نوبت دوباره اجرا نشدند.
 
+### برش FR-086: فرآیند واحد حذف و مهار از T0 (۲۷ اکتبر ۲۰۲۶)
+
+- `/delete_data` دیگر رسید `service_requests` نمی‌سازد؛ هشدار برگشت‌ناپذیری با دکمه تأیید و انصراف می‌فرستد. داده دکمه `delete:confirm:<زمان>:<HMAC>` به کاربر، workspace و زمان صدور بسته و ده دقیقه معتبر است؛ امضای جعلی، منقضی یا متعلق به کاربر دیگر و انصراف هیچ تغییری نمی‌دهند. کاربر تلگرامِ ثبت‌نشده با این دستور حساب نمی‌گیرد. رسیدهای قدیمی `data_deletion` به فرآیند جدید ارتقا داده نمی‌شوند.
+- `RequestAccountDeletionAction` نقطه ورود مشترک کانال‌هاست: Policy مالکیت `requestDeletion`، قفل workspace، یک ردیف یکتا در `account_deletions` با `requested_at` (T0) و `deadline_at` برابر T0+۱۶۸ ساعت طبق ADR-011، تغییر وضعیت workspace به `deletion_pending`، حذف Sanctum tokenها و رکوردهای replay توکن Mini App در همان تراکنش. تکرار یا کلیک هم‌زمان همان رسید را برمی‌گرداند.
+- از T0، هر پیام یا callback تلگرام بدون ثبت‌نام، هدیه یا mutation فقط رسید، مهلت و وضعیت «در حال رسیدگی» را برمی‌گرداند. API با token قبلی 401 و صدور token تازه 403 است. `LockActiveWorkspaceAction` وضعیت را زیر قفل ردیف دوباره می‌خواند و در برند، پروژه، onboarding، پشتیبانی و idempotency اجرا می‌شود؛ درخواستی که پیش از T0 مجوز گرفته پس از commit با `ACCOUNT_DELETION_PENDING` رد می‌شود.
+- `PATCH /api/v1/brands/current` و `POST /api/v1/projects` بدون پذیرش نسخه و hash دقیق سیاست مصوب برای همان workspace با `403 POLICY_CONSENT_REQUIRED` رد می‌شوند؛ خواندن باز است و replay درخواست موفق قبلی همان snapshot را برمی‌گرداند. پذیرش فعلاً فقط از مسیر تلگرام ثبت می‌شود.
+- ساخته نشده: purge داده زنده/فایل/تاریخچه/صف/لاگ و بکاپ و کلید (FR-087، NFR-11)، دکمه Mini App با احراز مجدد (FR-085)، endpoint حذف در API (منتظر احراز مجدد FR-085)، مسیر اپراتور، زمان‌بند و هشدار مهلت (NFR-12)، و مهار jobهای AI/n8n آینده که هنوز وجود ندارند. پیام‌های outbox تلگرامِ ثبت‌شده پیش از T0 هنوز ارسال می‌شوند. rollback migration ردیف‌ها را حذف می‌کند ولی workspaceهای `deletion_pending` را عمداً فعال نمی‌کند.
+- شواهد محلی با PHP 8.4: PostgreSQL موقت روی tmpfs **۹۱ تست پاس / ۷۰۸ assertion** شامل ۱۰ integration هم‌زمانی (کلیک هم‌زمان تأیید حذف)؛ SQLite حافظه‌ای **۸۱ پاس / ۶۱۴ assertion و ۱۰ skip**؛ Pint روی ۱۶۴ فایل و PHPStan سطح ۵ بدون خطا؛ rollback و اجرای مجدد migration جدید روی همان PostgreSQL موقت موفق. دیتابیس اصلی، staging، ربات زنده و CI میزبانی‌شده آزموده نشده‌اند.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

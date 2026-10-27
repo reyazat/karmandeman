@@ -12,4 +12,6 @@ interface UserRepositoryInterface
     public function findByIdentity(string $provider, string $externalId): ?User;
 
     public function createWithIdentity(TelegramUserData $telegramUser, string $provider): User;
+
+    public function revokeAccessTokens(User $user): void;
 }

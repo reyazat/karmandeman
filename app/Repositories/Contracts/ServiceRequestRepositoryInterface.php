@@ -14,7 +14,5 @@ interface ServiceRequestRepositoryInterface
 
     public function findFor(Workspace $workspace, string $publicId): ?ServiceRequest;
 
-    public function pendingDeletionFor(Workspace $workspace): ?ServiceRequest;
-
     public function pendingSupportFor(Workspace $workspace, string $details): ?ServiceRequest;
 }

@@ -169,7 +169,7 @@ final class TelegramOnboardingTest extends TestCase
         $this->assertStringContainsString('نام برندتان', $this->lastReply()->text);
     }
 
-    public function test_support_and_deletion_receipts_are_persisted_and_tenant_scoped(): void
+    public function test_support_receipts_are_persisted_and_tenant_scoped(): void
     {
         $this->send('/support مشکل در حساب')->assertOk();
         preg_match('/رسید: ([0-9a-f-]{36})/', $this->lastReply()->text, $matches);
@@ -181,12 +181,7 @@ final class TelegramOnboardingTest extends TestCase
         $this->assertStringContainsString($receipt, $this->lastReply()->text);
         $this->send("/ticket {$receipt}")->assertOk();
         $this->assertStringContainsString('received', $this->lastReply()->text);
-
-        $this->send('/delete_data')->assertOk();
-        $deletionReceipt = ServiceRequest::query()->where('kind', 'data_deletion')->firstOrFail()->public_id;
-        $this->send('/delete_data')->assertOk();
-        $this->assertStringContainsString($deletionReceipt, $this->lastReply()->text);
-        $this->assertDatabaseCount('service_requests', 2);
+        $this->assertDatabaseCount('service_requests', 1);
         $this->send("/ticket {$receipt}", 556)->assertOk();
         $this->assertSame('رسید یافت نشد.', $this->lastReply()->text);
     }

@@ -9,7 +9,10 @@ use App\Models\Workspace;
 
 interface WorkspaceRepositoryInterface
 {
-    public function lock(Workspace $workspace): void;
+    /** Lock the row and return its current state. */
+    public function lock(Workspace $workspace): Workspace;
+
+    public function markDeletionPending(Workspace $workspace): void;
 
     public function createForOwner(User $owner, array $attributes = []): Workspace;
 

@@ -48,7 +48,7 @@ final class TelegramWebhookRequest extends FormRequest
             'callback_query.message.chat.id' => ['required_with:callback_query', 'integer', $integer],
             'callback_query.message.chat.type' => ['required_with:callback_query', 'string', 'in:private,group,supergroup,channel'],
             'callback_query.data' => ['required_with:callback_query', 'string', 'max:128',
-                'regex:/^onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)$/'],
+                'regex:/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel))$/'],
         ];
     }
 }

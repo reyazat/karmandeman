@@ -8,15 +8,19 @@ use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
 class ProjectApiTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
     private const SECRET = 'test-webhook-secret';
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->useApprovedPilotPolicy();
 
         config([
             'services.telegram.webhook_secret' => self::SECRET,
@@ -37,7 +41,10 @@ class ProjectApiTest extends TestCase
             ],
         ], ['X-Telegram-Bot-Api-Secret-Token' => self::SECRET])->assertOk();
 
-        return User::query()->latest('id')->firstOrFail();
+        $user = User::query()->latest('id')->firstOrFail();
+        $this->grantPilotConsent($user);
+
+        return $user;
     }
 
     public function test_create_and_list_projects_via_api(): void

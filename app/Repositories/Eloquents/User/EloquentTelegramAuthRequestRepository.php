@@ -37,4 +37,9 @@ final class EloquentTelegramAuthRequestRepository implements TelegramAuthRequest
             'created_at' => now(),
         ]);
     }
+
+    public function forgetFor(User $user): void
+    {
+        TelegramAuthRequest::query()->where('user_id', $user->id)->delete();
+    }
 }

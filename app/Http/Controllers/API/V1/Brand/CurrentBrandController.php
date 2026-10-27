@@ -54,6 +54,9 @@ class CurrentBrandController extends Controller
             if (in_array($e->getMessage(), ['BRAND_VERSION_CONFLICT', 'IDEMPOTENCY_KEY_CONFLICT'], true)) {
                 return ApiResponse::error($e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409);
             }
+            if ($response = ApiResponse::fromPrivacyGate($e)) {
+                return $response;
+            }
 
             throw $e;
         }

@@ -10,6 +10,7 @@ use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\HandleTelegramUpdateAction;
 use App\Actions\Identity\IssueTelegramTokenAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\CreditLedgerType;
@@ -148,6 +149,7 @@ final class FoundationConcurrencyTest extends TestCase
     {
         $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91234));
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
         $ids = $this->concurrently(fn () => app(CreateApiProjectAction::class)
             ->execute($workspace, $user->id, 'parallel-project-key', 'Batch')[0]->id);
         $this->assertCount(1, array_unique($ids));
@@ -159,6 +161,7 @@ final class FoundationConcurrencyTest extends TestCase
     {
         $user = User::factory()->create();
         $workspace = app(WorkspaceRepositoryInterface::class)->createForOwner($user);
+        $this->grantPilotConsent($user);
         $results = $this->concurrently(function (int $i) use ($workspace, $user): string {
             try {
                 app(UpdateApiBrandAction::class)->execute($workspace, $user->id, "brand-parallel-{$i}", 1, ['name' => "Brand {$i}"]);
@@ -203,6 +206,20 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertDatabaseCount('memory_items', 2);
         $this->assertDatabaseCount('memory_item_revisions', 2);
         $this->assertDatabaseCount('workspace_consents', 1);
+    }
+
+    public function test_parallel_deletion_confirmations_commit_one_request_and_contain_workspace(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92012));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $user->createToken('mini-app');
+
+        $ids = $this->concurrently(fn () => app(RequestAccountDeletionAction::class)
+            ->execute($workspace, $user, 'telegram')[0]->public_id);
+        $this->assertCount(1, array_unique($ids));
+        $this->assertDatabaseCount('account_deletions', 1);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertSame('deletion_pending', $workspace->fresh()->status);
     }
 
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void

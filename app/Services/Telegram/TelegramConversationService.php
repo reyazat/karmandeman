@@ -7,15 +7,19 @@ namespace App\Services\Telegram;
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Brand\EnsureBrandAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Project\CreateProjectAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Telegram\TelegramUserData;
+use App\Models\AccountDeletion;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
@@ -25,6 +29,8 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
+    private const DELETION_CONFIRMATION_TTL = 600;
+
     public function __construct(
         private RegisterTelegramUserAction $register,
         private WorkspaceRepositoryInterface $workspaces,
@@ -36,6 +42,8 @@ final readonly class TelegramConversationService
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
         private PilotPolicyService $policies,
+        private UserRepositoryInterface $users,
+        private RequestAccountDeletionAction $deletion,
     ) {}
 
     public function handleUpdate(array $update): void
@@ -63,6 +71,13 @@ final readonly class TelegramConversationService
         if ($chatId === null) {
             return;
         }
+        // From T0 nothing may register, grant or mutate for this account (FR-086).
+        $pending = $this->pendingDeletion($message['from']['id'] ?? null);
+        if ($pending !== null) {
+            $this->bot->sendMessage($chatId, $this->deletionStatus($pending));
+
+            return;
+        }
 
         if ($text === '') {
             $this->replyOnboarding($message, $chatId, 'prompt');
@@ -85,8 +100,8 @@ final readonly class TelegramConversationService
             '/terms' => $this->handlePolicyDocument($chatId, 'terms'),
             '/privacy' => $this->handlePolicyDocument($chatId, 'privacy'),
             '/retention' => $this->handlePolicyDocument($chatId, 'retention'),
-            '/support' => $this->handleServiceRequest($message, $chatId, $update['update_id'], 'support', trim(mb_substr($text, mb_strlen('/support')))),
-            '/delete_data' => $this->handleServiceRequest($message, $chatId, $update['update_id'], 'data_deletion'),
+            '/support' => $this->handleSupport($message, $chatId, $update['update_id'], trim(mb_substr($text, mb_strlen('/support')))),
+            '/delete_data' => $this->promptDeletion($message, $chatId),
             '/ticket' => $this->handleTicket($message, $chatId, trim(mb_substr($text, mb_strlen('/ticket')))),
             default => str_starts_with($text, '/')
                 ? $this->bot->sendMessage($chatId, 'دستور شناخته نشد؛ /help را بفرستید.')
@@ -198,7 +213,22 @@ final readonly class TelegramConversationService
         if (($chat['type'] ?? null) !== 'private' || ($chat['id'] ?? null) !== ($from['id'] ?? null)) {
             return;
         }
-        $data = explode(':', $callback['data'] ?? '');
+        $pending = $this->pendingDeletion($from['id'] ?? null);
+        if ($pending !== null) {
+            $this->bot->sendMessage($chat['id'], $this->deletionStatus($pending));
+        } elseif (str_starts_with($callback['data'] ?? '', 'delete:')) {
+            $this->handleDeletionCallback($from, $chat['id'], $callback['data']);
+        } else {
+            $this->handleOnboardingCallback($from, $chat, $callback['data'] ?? '');
+        }
+        if (isset($callback['id'])) {
+            $this->bot->acknowledge($callback['id']);
+        }
+    }
+
+    private function handleOnboardingCallback(array $from, array $chat, string $callbackData): void
+    {
+        $data = explode(':', $callbackData);
         $event = $data[1] ?? '';
         $value = match ($event) {
             'accept', 'unit', 'skip' => $data[2] ?? null,
@@ -206,9 +236,82 @@ final readonly class TelegramConversationService
             default => null,
         };
         $this->replyOnboarding(['from' => $from, 'chat' => $chat], $chat['id'], $event, $value);
-        if (isset($callback['id'])) {
-            $this->bot->acknowledge($callback['id']);
+    }
+
+    private function promptDeletion(array $message, int|string $chatId): void
+    {
+        $user = $this->users->findByIdentity('telegram', (string) ($message['from']['id'] ?? ''));
+        $workspace = $user === null ? null : $this->workspaces->currentFor($user);
+        if ($user === null || $workspace === null) {
+            $this->bot->sendMessage($chatId, 'حسابی با این تلگرام ثبت نشده است؛ داده حسابی برای حذف وجود ندارد.');
+
+            return;
         }
+        $issuedAt = now()->getTimestamp();
+        $this->bot->sendMessage(
+            $chatId,
+            "حذف کامل داده‌ها و حساب\n".
+            'با تأیید، از همین لحظه حساب مسدود می‌شود: هیچ تغییر یا پردازش تازه‌ای انجام نمی‌شود و ورودهای Mini App باطل می‌شوند. '.
+            'حساب، برند، حافظه و تاریخچه، پروژه‌ها، رسیدها و نسخه‌های پشتیبان باید حداکثر '.RequestAccountDeletionAction::DEADLINE_HOURS.' ساعت (۷ روز) پس از تأیید پاک شوند. '.
+            "این کار برگشت‌ناپذیر است و تا اثبات تکمیل، وضعیت «در حال رسیدگی» نمایش داده می‌شود.\n".
+            'این دکمه ۱۰ دقیقه معتبر است.',
+            [
+                [['text' => 'بله، همه داده‌ها و حساب حذف شود', 'callback_data' => 'delete:confirm:'.$issuedAt.':'.$this->deletionSignature($user, $workspace, $issuedAt)]],
+                [['text' => 'انصراف', 'callback_data' => 'delete:cancel']],
+            ],
+        );
+    }
+
+    private function handleDeletionCallback(array $from, int|string $chatId, string $callbackData): void
+    {
+        $data = explode(':', $callbackData);
+        if (($data[1] ?? null) === 'cancel') {
+            $this->bot->sendMessage($chatId, 'درخواست حذف ثبت نشد و حساب بدون تغییر ماند.');
+
+            return;
+        }
+        $user = $this->users->findByIdentity('telegram', (string) ($from['id'] ?? ''));
+        $workspace = $user === null ? null : $this->workspaces->currentFor($user);
+        $issuedAt = (int) ($data[2] ?? 0);
+        $age = now()->getTimestamp() - $issuedAt;
+        if ($user === null || $workspace === null || $age < -60 || $age > self::DELETION_CONFIRMATION_TTL
+            || ! hash_equals($this->deletionSignature($user, $workspace, $issuedAt), $data[3] ?? '')) {
+            $this->bot->sendMessage($chatId, 'این تأیید معتبر یا تازه نیست؛ برای حذف دوباره /delete_data را بفرستید.');
+
+            return;
+        }
+        try {
+            [$deletion] = $this->deletion->execute($workspace, $user, 'telegram');
+        } catch (AuthorizationException) {
+            $this->bot->sendMessage($chatId, 'ثبت حذف از این حساب ممکن نیست؛ با /support پیگیری کنید.');
+
+            return;
+        }
+        $this->bot->sendMessage($chatId, "درخواست حذف کامل ثبت شد.\n".$this->deletionStatus($deletion));
+    }
+
+    private function deletionSignature(User $user, Workspace $workspace, int $issuedAt): string
+    {
+        return substr(hash_hmac('sha256', "account-deletion:{$user->id}:{$workspace->public_id}:{$issuedAt}", (string) config('app.key')), 0, 16);
+    }
+
+    private function pendingDeletion(mixed $telegramId): ?AccountDeletion
+    {
+        if (! is_int($telegramId)) {
+            return null;
+        }
+        $user = $this->users->findByIdentity('telegram', (string) $telegramId);
+        $workspace = $user === null ? null : $this->workspaces->currentFor($user);
+
+        return $workspace === null ? null : $this->deletion->pendingFor($workspace);
+    }
+
+    private function deletionStatus(AccountDeletion $deletion): string
+    {
+        return "رسید حذف: {$deletion->public_id}\n".
+            'زمان ثبت (UTC): '.$deletion->requested_at->utc()->format('Y-m-d H:i')."\n".
+            'مهلت تکمیل (UTC): '.$deletion->deadline_at->utc()->format('Y-m-d H:i')."\n".
+            'وضعیت: در حال رسیدگی. تا پایان حذف، دستور دیگری برای این حساب انجام نمی‌شود.';
     }
 
     private function replyOnboarding(array $message, int|string $chatId, string $event, ?string $value = null): void
@@ -231,24 +334,23 @@ final readonly class TelegramConversationService
         return true;
     }
 
-    private function handleServiceRequest(array $message, int|string $chatId, int $updateId, string $kind, ?string $details = null): void
+    private function handleSupport(array $message, int|string $chatId, int $updateId, string $details): void
     {
-        if ($kind === 'support' && ($details === null || $details === '')) {
+        if ($details === '') {
             $this->bot->sendMessage($chatId, 'برای پشتیبانی، /support و سپس شرح کوتاه مشکل را بفرستید.');
 
             return;
         }
-        if ($details !== null && mb_strlen($details) > 500) {
+        if (mb_strlen($details) > 500) {
             $this->bot->sendMessage($chatId, 'شرح درخواست باید حداکثر ۵۰۰ نویسه باشد.');
 
             return;
         }
         $user = $this->resolveUser($message);
         $ticket = $this->serviceRequests->execute(
-            $this->workspaceFor($user), $user, $kind, 'telegram:'.$updateId, $details
+            $this->workspaceFor($user), $user, 'support', 'telegram:'.$updateId, $details
         );
-        $label = $kind === 'data_deletion' ? 'درخواست حذف داده' : 'درخواست پشتیبانی';
-        $this->bot->sendMessage($chatId, "{$label} ثبت شد؛ رسید: {$ticket->public_id}\nبرای وضعیت /ticket {$ticket->public_id} را بفرستید. ثبت درخواست حذف به معنی اجرای فوری آن نیست.");
+        $this->bot->sendMessage($chatId, "درخواست پشتیبانی ثبت شد؛ رسید: {$ticket->public_id}\nبرای وضعیت /ticket {$ticket->public_id} را بفرستید.");
     }
 
     private function handleTicket(array $message, int|string $chatId, string $publicId): void
@@ -293,7 +395,7 @@ final readonly class TelegramConversationService
             '/privacy — حریم خصوصی و حذف داده',
             '/terms — شرایط استفاده',
             '/retention — مدت نگهداری هر گروه داده',
-            '/delete_data — ثبت درخواست حذف داده و دریافت رسید',
+            '/delete_data — حذف کامل داده‌ها و حساب (با تأیید)',
             '/support متن — ثبت درخواست پشتیبانی و دریافت رسید',
             '/ticket شناسه — پیگیری رسید',
             '/help — همین راهنما',

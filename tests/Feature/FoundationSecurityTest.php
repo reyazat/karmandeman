@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Actions\Wallet\GrantInitialCreditsAction;
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\CreditLedgerType;
 use App\Models\User;
@@ -20,10 +21,13 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use RuntimeException;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
 final class FoundationSecurityTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
     public function test_api_without_accept_header_still_returns_json_unauthorized(): void
     {
         $this->get('/api/v1/me')->assertUnauthorized()->assertJsonPath('error.code', 'UNAUTHENTICATED');
@@ -59,7 +63,9 @@ final class FoundationSecurityTest extends TestCase
     public function test_api_envelope_handles_auth_validation_and_pagination(): void
     {
         $this->getJson('/api/v1/projects')->assertUnauthorized()->assertJsonStructure(['error' => ['code'], 'meta' => ['request_id', 'api_version']]);
+        $this->useApprovedPilotPolicy();
         $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(987));
+        $this->grantPilotConsent($user);
         Sanctum::actingAs($user);
         $this->patchJson('/api/v1/brands/current', ['currency_display_unit' => 'bad'])
             ->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_FAILED')->assertJsonStructure(['error' => ['details']]);
@@ -80,7 +86,7 @@ final class FoundationSecurityTest extends TestCase
         $brand = $brands->ensureFor($workspace);
         $memory = Mockery::mock(MemoryItemRepositoryInterface::class);
         $memory->shouldReceive('put')->once()->andThrow(new RuntimeException('simulated storage failure'));
-        $action = new UpdateBrandProfileAction($brands, $memory, app(WorkspaceRepositoryInterface::class));
+        $action = new UpdateBrandProfileAction($brands, $memory, app(LockActiveWorkspaceAction::class));
         try {
             $action->execute($workspace, ['name' => 'should roll back'], $user->id);
             $this->fail('Expected the memory failure.');
@@ -155,6 +161,8 @@ final class FoundationSecurityTest extends TestCase
         $userA = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(991));
         config(['karmandeman.gift_credits' => 20]);
         $userB = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(992));
+        $this->useApprovedPilotPolicy();
+        $this->grantPilotConsent($userA);
         Sanctum::actingAs($userA);
         $this->patchJson('/api/v1/brands/current', ['name' => 'Private A', 'expected_version' => 1], ['Idempotency-Key' => 'private-brand-1'])->assertOk();
         Sanctum::actingAs($userB);

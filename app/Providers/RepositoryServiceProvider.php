@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Repositories\Contracts\AccountDeletionRepositoryInterface;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\ConversationEventRepositoryInterface;
@@ -16,6 +17,7 @@ use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Repositories\Eloquents\AccountDeletion\EloquentAccountDeletionRepository;
 use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
 use App\Repositories\Eloquents\Brand\EloquentBrandRepository;
 use App\Repositories\Eloquents\ConversationEvent\EloquentConversationEventRepository;
@@ -34,6 +36,7 @@ class RepositoryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->bind(AccountDeletionRepositoryInterface::class, EloquentAccountDeletionRepository::class);
         $this->app->bind(ApiIdempotencyRepositoryInterface::class, EloquentApiIdempotencyRepository::class);
         $this->app->bind(TelegramAuthRequestRepositoryInterface::class, EloquentTelegramAuthRequestRepository::class);
         $this->app->bind(TelegramOnboardingRepositoryInterface::class, EloquentTelegramOnboardingRepository::class);

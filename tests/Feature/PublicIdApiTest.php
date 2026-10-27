@@ -8,14 +8,20 @@ use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Data\Telegram\TelegramUserData;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
 final class PublicIdApiTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
     public function test_all_exposed_foundation_ids_are_opaque_and_distinct(): void
     {
         config(['karmandeman.gift_credits' => 10]);
-        Sanctum::actingAs(app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91901)));
+        $this->useApprovedPilotPolicy();
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91901));
+        $this->grantPilotConsent($user);
+        Sanctum::actingAs($user);
 
         $ids = [
             $this->getJson('/api/v1/me')->assertOk()->json('data.id'),

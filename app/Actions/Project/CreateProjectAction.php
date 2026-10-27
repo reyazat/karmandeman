@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\EmployeeRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 
 final readonly class CreateProjectAction
 {
     public function __construct(
         private ProjectRepositoryInterface $projects,
         private EmployeeRepositoryInterface $employees,
+        private LockActiveWorkspaceAction $lockActive,
     ) {}
 
     /**
@@ -22,15 +25,17 @@ final readonly class CreateProjectAction
      */
     public function execute(Workspace $workspace, ?string $name = null): Project
     {
-        $employee = $this->employees->defaultFor($workspace);
+        return DB::transaction(function () use ($workspace, $name): Project {
+            $this->lockActive->execute($workspace);
+            $employee = $this->employees->defaultFor($workspace);
 
-        if ($employee === null) {
-            throw new DomainException('NO_ACTIVE_EMPLOYEE');
-        }
+            if ($employee === null) {
+                throw new DomainException('NO_ACTIVE_EMPLOYEE');
+            }
 
-        return $this->projects->create($workspace, $employee, [
-            'name' => $name ?: 'پروژه '.now()->format('Y-m-d'),
-        ]);
-
+            return $this->projects->create($workspace, $employee, [
+                'name' => $name ?: 'پروژه '.now()->format('Y-m-d'),
+            ]);
+        });
     }
 }

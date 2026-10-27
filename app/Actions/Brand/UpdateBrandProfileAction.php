@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Brand;
 
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Brand;
 use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\MemoryItemRepositoryInterface;
-use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -17,7 +17,7 @@ final readonly class UpdateBrandProfileAction
     public function __construct(
         private BrandRepositoryInterface $brands,
         private MemoryItemRepositoryInterface $memory,
-        private WorkspaceRepositoryInterface $workspaces,
+        private LockActiveWorkspaceAction $lockActive,
     ) {}
 
     /**
@@ -27,7 +27,7 @@ final readonly class UpdateBrandProfileAction
     public function execute(Workspace $workspace, array $attributes, ?int $confirmedBy = null, ?int $expectedVersion = null): Brand
     {
         return DB::transaction(function () use ($workspace, $attributes, $confirmedBy, $expectedVersion): Brand {
-            $this->workspaces->lock($workspace);
+            $this->lockActive->execute($workspace);
             $brand = $this->brands->ensureFor($workspace);
             if ($expectedVersion !== null && $brand->profile_version !== $expectedVersion) {
                 throw new DomainException('BRAND_VERSION_CONFLICT');

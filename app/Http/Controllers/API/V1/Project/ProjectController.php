@@ -69,6 +69,9 @@ class ProjectController extends Controller
             if ($e->getMessage() === 'IDEMPOTENCY_KEY_CONFLICT') {
                 return ApiResponse::error('IDEMPOTENCY_KEY_CONFLICT', 'این کلید قبلاً برای درخواست دیگری استفاده شده است.', 409);
             }
+            if ($response = ApiResponse::fromPrivacyGate($e)) {
+                return $response;
+            }
 
             return ApiResponse::error($e->getMessage(), 'کارمند فعالی برای این فضای کاری یافت نشد.', 409);
         }

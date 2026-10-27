@@ -46,9 +46,14 @@ The Persian pilot terms and retention schedule are in the
 [policy approval guide](docs/PILOT_DATA_POLICY_v1.0.md). The current bundle is
 **pending approval**: Telegram onboarding cannot collect final consent or
 continue until its exact content and implementation evidence are approved.
-Support and deletion-request receipts remain available. This does not implement
-full account erasure, backup purging, or a policy-consent gate for the current
-brand/project API; those remain release requirements.
+Support receipts and account deletion remain available. `/delete_data` asks for
+a signed, ten-minute confirmation; confirming records one `account_deletions`
+row with T0 and a T0+168h deadline, marks the workspace `deletion_pending`,
+revokes API tokens and rejects every later mutation (FR-086). API brand and
+project mutations require consent to the exact approved policy. Purge of data,
+backups and keys (FR-087), the Mini App delete button (FR-085), the operator
+path and deadline monitoring are not implemented; they remain release
+requirements.
 
 The owner-directed requirements in
 [ADR-011](docs/adr/ADR-011-seven-day-complete-erasure.md) set a
