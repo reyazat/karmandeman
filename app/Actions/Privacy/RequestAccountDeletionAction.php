@@ -38,6 +38,10 @@ final readonly class RequestAccountDeletionAction
         Gate::forUser($user)->authorize('requestDeletion', $workspace);
 
         return DB::transaction(function () use ($workspace, $user, $channel): array {
+            // Global lock order is user, then workspace (as in registration and
+            // token issuance); the account_deletions FK also takes a key-share
+            // lock on the user row, so the reverse order deadlocks with sign-in.
+            $this->authRequests->lock($user);
             $this->workspaces->lock($workspace);
             $existing = $this->deletions->forWorkspace($workspace);
             if ($existing !== null) {

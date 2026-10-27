@@ -124,6 +124,25 @@ final class WorkspaceFieldCipherTest extends TestCase
         }
     }
 
+    public function test_key_created_in_a_rolled_back_transaction_is_never_reused(): void
+    {
+        $workspace = $this->workspace();
+        $cipher = app(WorkspaceFieldCipher::class);
+        try {
+            DB::transaction(function () use ($cipher, $workspace): void {
+                $cipher->encrypt($workspace, 'brands.name', 'lost');
+                throw new DomainException('ROLLBACK');
+            });
+        } catch (DomainException) {
+        }
+        $this->assertDatabaseCount('workspace_data_keys', 0);
+
+        // Same scope: a new key row is written, so later data stays decryptable.
+        $value = $cipher->encrypt($workspace, 'brands.name', 'kept');
+        $this->assertDatabaseCount('workspace_data_keys', 1);
+        $this->assertSame('kept', $this->freshCipher()->decrypt($workspace, 'brands.name', $value));
+    }
+
     private function expectUnreadable(Workspace $workspace, string $value): void
     {
         try {

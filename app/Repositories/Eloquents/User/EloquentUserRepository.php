@@ -18,7 +18,7 @@ final class EloquentUserRepository implements UserRepositoryInterface
             ->whereHas('identities', function ($query) use ($provider, $externalId): void {
                 $query->where('provider', $provider)->where('external_id', $externalId);
             })
-            ->lockForUpdate()->first();
+            ->lock('for no key update')->first();
     }
 
     public function createWithIdentity(TelegramUserData $telegramUser, string $provider): User

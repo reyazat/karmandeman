@@ -12,7 +12,9 @@ final class EloquentTelegramAuthRequestRepository implements TelegramAuthRequest
 {
     public function lock(User $user): void
     {
-        User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
+        // NO KEY UPDATE serializes sign-in without blocking FK inserts that
+        // reference the user (key-share locks), which caused deadlocks.
+        User::query()->whereKey($user->id)->lock('for no key update')->firstOrFail();
     }
 
     public function find(User $user, string $key): ?TelegramAuthRequest

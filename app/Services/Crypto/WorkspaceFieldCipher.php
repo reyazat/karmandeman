@@ -24,7 +24,7 @@ final class WorkspaceFieldCipher
 
     private const TAG_BYTES = 16;
 
-    /** @var array<int, string> */
+    /** @var array<int, array{wrapped: string, key: string, committed: bool}> */
     private array $keys = [];
 
     public function __construct(
@@ -71,31 +71,48 @@ final class WorkspaceFieldCipher
 
     private function dataKey(Workspace $workspace, bool $create = true): string
     {
-        if (isset($this->keys[$workspace->id])) {
-            return $this->keys[$workspace->id];
+        $cached = $this->keys[$workspace->id] ?? null;
+        if ($cached !== null && $cached['committed']) {
+            return $cached['key'];
         }
+        // A key first seen inside an open transaction may vanish on rollback;
+        // re-check its row so nothing is encrypted under a key stored nowhere.
         $stored = $this->dataKeys->forWorkspace($workspace);
         if ($stored !== null) {
-            return $this->keys[$workspace->id] = $this->keyManager->unwrapDataKey($stored->transit_key, $stored->wrapped_key);
+            if ($cached === null || $cached['wrapped'] !== $stored->wrapped_key) {
+                $cached = ['wrapped' => $stored->wrapped_key, 'key' => $this->keyManager->unwrapDataKey($stored->transit_key, $stored->wrapped_key)];
+            }
+
+            return $this->remember($workspace, $cached['wrapped'], $cached['key']);
         }
+        unset($this->keys[$workspace->id]);
         if (! $create) {
             throw new RuntimeException('Workspace has no data key.');
         }
 
         // Only an active workspace gets a new key; the row lock serializes creation.
-        return $this->keys[$workspace->id] = DB::transaction(function () use ($workspace): string {
+        [$wrapped, $key] = DB::transaction(function () use ($workspace): array {
             $this->lockActive->execute($workspace);
             $stored = $this->dataKeys->forWorkspace($workspace);
             if ($stored !== null) {
-                return $this->keyManager->unwrapDataKey($stored->transit_key, $stored->wrapped_key);
+                return [$stored->wrapped_key, $this->keyManager->unwrapDataKey($stored->transit_key, $stored->wrapped_key)];
             }
             $name = $this->keyName($workspace);
             $this->keyManager->ensureKey($name);
             $key = $this->keyManager->createDataKey($name);
             $this->dataKeys->create($workspace, $name, $key->wrapped);
 
-            return $key->plaintext;
+            return [$key->wrapped, $key->plaintext];
         });
+
+        return $this->remember($workspace, $wrapped, $key);
+    }
+
+    private function remember(Workspace $workspace, string $wrapped, #[\SensitiveParameter] string $key): string
+    {
+        $this->keys[$workspace->id] = ['wrapped' => $wrapped, 'key' => $key, 'committed' => DB::transactionLevel() === 0];
+
+        return $key;
     }
 
     private function aad(Workspace $workspace, string $context): string

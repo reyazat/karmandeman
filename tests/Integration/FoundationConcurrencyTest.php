@@ -222,6 +222,29 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame('deletion_pending', $workspace->fresh()->status);
     }
 
+    public function test_parallel_sign_in_and_deletion_do_not_deadlock(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92013));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+
+        // Sign-in locks the user row first; deletion inserts an FK to it under the workspace lock.
+        $results = $this->concurrently(function (int $i) use ($user, $workspace): string {
+            try {
+                return $i % 2 === 0
+                    ? (app(IssueTelegramTokenAction::class)->execute(new TelegramUserData(92013), 'verified-init-data-fixture', "sign-in-key-{$i}")[1] !== '' ? 'token' : 'empty')
+                    : 'deletion:'.app(RequestAccountDeletionAction::class)->execute($workspace, $user, 'mini_app')[0]->public_id;
+            } catch (\DomainException $exception) {
+                return $exception->getMessage();
+            }
+        }, 8);
+
+        $this->assertCount(1, array_unique(array_filter($results, fn ($result) => str_starts_with($result, 'deletion:'))));
+        $this->assertSame([], array_diff($results, ['token', 'ACCOUNT_DELETION_PENDING', ...array_filter($results, fn ($result) => str_starts_with($result, 'deletion:'))]));
+        $this->assertDatabaseCount('account_deletions', 1);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+        $this->assertSame('deletion_pending', $workspace->fresh()->status);
+    }
+
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void
     {
         config(['database.connections.observer' => config('database.connections.pgsql')]);

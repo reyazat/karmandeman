@@ -38,7 +38,7 @@ final readonly class IssueTelegramTokenAction
         $hash = hash('sha256', $initData);
 
         return DB::transaction(function () use ($account, $key, $hash): array {
-            // Same lock order as registration (user, then workspace) to avoid deadlocks.
+            // Global lock order: user, then workspace (registration and deletion match).
             // Deletion may commit between registration and here, so re-check under lock.
             $this->requests->lock($account);
             $this->lockActive->execute($this->workspaces->currentFor($account) ?? throw new DomainException('WORKSPACE_NOT_FOUND'));
