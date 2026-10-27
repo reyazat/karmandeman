@@ -149,7 +149,7 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 | Vitest | **ناموفق: No test files found**؛ gap واقعی است و پنهان نشده |
 | Compose config | production reference و dev override با `--quiet` معتبر؛ مقدار secrets نمایش داده نشد |
 | Gitleaks 8.24 | snapshot فایل‌های tracked و untracked مجاز اسکن شد؛ صفر leak گزارش‌شده؛ `.env` واقعی، cache و تاریخچه Git اسکن نشدند؛ تضمین عدم نشت در runtime نیست |
-| CI | `.github/workflows/foundation-checks.yml` برای PHP/PostgreSQL، frontend و build هر دو image افزوده شد؛ اجرای hosted GitHub هنوز انجام نشده؛ همه gateهای release را پوشش نمی‌دهد |
+| CI | `.github/workflows/foundation-checks.yml` برای PHP/PostgreSQL، frontend و build هر دو image؛ [run 40514840813](https://github.com/reyazat/karmandeman/actions/runs/40514840813) روی dd614e8: backend، frontend-foundation و images موفق، **۹۱ تست / ۷۰۸ assertion** روی PostgreSQL با ۱۰ integration. هشدارهای باقی: actionهای Node 20، نبود تست frontend، مهاجرت ubuntu-latest به Ubuntu 26. همه gateهای release را پوشش نمی‌دهد |
 | اعتبارسنجی workflow و migration جدید | actionlint 1.7.7 پاس؛ rollback یک migration یکتایی و اجرای مجدد آن روی PostgreSQL موقت موفق |
 | Docker image / HTTP | targetهای app و web با lockfile ساخته شدند؛ `/up` و `/api/v1/ping` با 200، `/api/v1/me` بدون Accept با 401، webhook بدون secret با 403 و manifest استاتیک با 200 تست شدند؛ PHP با www-data اجرا شد؛ شبکه موقت بدون اینترنت و بدون انتشار پورت میزبان بود |
 | Platform / فایل محیط در تصویر | `composer check-platform-reqs --no-dev` پاس و بارگذاری واقعی pdo_pgsql/redis/mbstring/gd/bcmath/intl/zip/exif/pcntl/curl/OPcache بررسی شد؛ در filesystem نهایی app فایل dotenv، cached config و Vite hot pointer نبود؛ اسکن همه layerها/SBOM انجام نشد |
