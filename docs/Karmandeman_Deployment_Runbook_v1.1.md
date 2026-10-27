@@ -2,6 +2,7 @@
 
 > **شناسه:** KM-OPS-001  
 > **نسخه:** 1.1 — ۲۶ اکتبر ۲۰۲۶ (قرارداد ساختار Laravel/Vue و CI)  
+> **الحاق نهایی سیاست:** ۲۷ اکتبر ۲۰۲۶ — ADR-010/011؛ سقف عادی بکاپ ۱۴ روز و پایان حذف ۷ روز در §۱۲؛ نیازمند پیاده‌سازی و آزمون واقعی.
 > **وابسته به:** `Karmandeman_Telegram_MVP_PRD_v1.3.md` و `Karmandeman_Product_Strategy_and_Roadmap_v1.3.md`  
 > **مخاطب:** Tech Lead، Backend، Automation Engineer، DevOps، Security، QA  
 > **وضعیت:** سند تصمیم و نمونه پیکربندی؛ پیش از go-live باید روی repository واقعی اجرا و راستی‌آزمایی شود. این سند ادعا نمی‌کند سرور یا ربات اکنون استقرار یافته است.
@@ -200,11 +201,17 @@ Internet / Iran mobile users  --443/TLS--> Caddy web edge
 
 **دارایی‌ها:** PostgreSQL app، PostgreSQL n8n، Object Storage نسخه‌دار، `N8N_ENCRYPTION_KEY`, `APP_KEY`, credential inventory، workflow version JSON، پیکربندی release/DNS، کلید عمومی TLS در صورت نیاز (Caddy می‌تواند مجدداً certificate بگیرد). Redis queue state حیاتی است، ولی System of Record وظیفه را در PostgreSQL نگاه می‌دارد تا replay کنترل‌شده ممکن باشد.
 
-**Policy اولیه:** encrypted daily DB snapshots/pg_dump و نسخه‌های هفتگی خارج از VPS؛ retention پیشنهادی ۷ روز روزانه، ۴ هفته هفتگی، ۳ ماه ماهانه (موضوع سیاست داده و بودجه). Object Storage versioning + lifecycle و offsite replication در صورت توان. بکاپ plain در همان VPS **DR نیست**.
+**Policy تصمیم‌گرفته‌شده مالک محصول — ۲۷ اکتبر ۲۰۲۶:** encrypted daily DB snapshots/pg_dump و نسخه‌های خارج از VPS، با سقف عمر **۱۴ روز / ۳۳۶ ساعت برای همه نسخه‌ها** از زمان ایجاد؛ نسخه هفتگی/ماهانه عمر بلندتر ندارد. این تصمیم [ADR-010](adr/ADR-010-fourteen-day-backups-and-full-erasure.md) جای پیشنهاد پیشین ۷ روز روزانه/۴ هفته هفتگی/۳ ماه ماهانه را می‌گیرد. Object Storage versioning/lifecycle، offsite، snapshot، WAL/PITR، زنجیره incremental، فایل موقت restore و نسخه کلید قابل بازیابی نیز مشمول‌اند؛ انتقال یا کپی، سن داده را صفر نمی‌کند. بکاپ plain در همان VPS **DR نیست**. اجرا و اثبات lifecycle هنوز gate انتشار است.
+
+**مهلت نهایی حذف کامل:** طبق [ADR-011](adr/ADR-011-seven-day-complete-erasure.md)، T0 ثبت درخواست تأییدشده مالک پس از احراز هویت مجدد است؛ پایان حذف همه داده/تاریخچه و کپی‌های تحت کنترل حداکثر **T0+۷ روز / ۱۶۸ ساعت** است. از T0 پردازش تازه/دسترسی لغو و callback/job دیررس مهار شود. مهلت هر کپی حامل داده `min(پایان عمر عادی ۱۴روزه نسخه، T0 + ۷ روز)` است. expire=14d به‌تنهایی کافی نیست و گردش بکاپ به مهلت اضافه نمی‌شود. بکاپ مشترک یا زنجیره بازیابی باید بدون نقض بازیابی دیگران پاک/جایگزین شود؛ حذف رمزنگارانه فقط با اثبات نبود همه کپی‌های قابل بازیابی کلید/داده معتبر است. پس از تکمیل، هیچ داده شخصی یا تاریخچه درخواست/رسید تحت کنترل باقی نماند؛ نگه‌داشتن shadow account ممنوع است.
+
+**طرح کلید و گذار لازم:** کلید مستقل حذف‌پذیر حساب/Workspace و envelope encryption، key store جدا از بکاپ معمول، پوشش تمام نسل‌ها و recovery/escrow/replica و حذف قطعی آن‌ها تا روز ۷ لازم است؛ disable یا scheduled deletion طولانی‌تر کافی نیست. کلید مشترک APP_KEY، plaintext/متادیتای خوانا و بکاپ قدیمی با حذف کلید حساب پوشش داده نمی‌شوند؛ آن نسخه‌ها تا روز ۷ باید پاک/پالایش شوند. پیش از عرضه، مهاجرت داده و پاک‌سازی/جایگزینی بکاپ قدیمی با backup، rehearsal و rollback آزموده انجام شود. این طرح در نسخه فعلی پیاده نشده است.
+
+**رمزنگاری خصوصی و کلید:** پیش از عرضه، فهرست محل‌های واقعی داده خصوصی (DB، حافظه و revisions، فایل/نسخه، replay، توکن/session/cache، صف، تیکت/لاگ و بکاپ) و روش پوشش آن‌ها تهیه شود. کانال انتقال امن، رمزنگاری احرازشده در ذخیره، جداسازی کلید، دسترسی محدود و rotation/recovery آزموده الزامی است؛ secrets در source/log/image نباشد. APP_KEY مشترک به‌تنهایی طراحی حذف انتخابی کاربر نیست. تنظیم این سیاست یا وجود encrypted cast اثبات رمزنگاری همه داده‌ها نیست.
 
 **اهداف:** RPO 24h و RTO 8h صرفاً اهداف داخلی اولیه. برای کسب‌وکار پولی با حجم بالاتر باید Point-in-Time Recovery (WAL/archive) و RPO کوتاه‌تر بررسی شود.
 
-**Restore drill:** هر ماه در staging ایزوله، restore هر دو DB و کاتالوگ نمونه/خروجی + key n8n، проверка gateway/webhook inactive، verify checksum و authorization، ثبت زمان و gap. داده مشتری را برای drill در محیط عمومی قرار ندهید. پس از restore، job queue dedup/ledger reconcile قبل بازگشایی webhook.
+**Restore drill:** هر ماه در staging ایزوله، restore هر دو DB و کاتالوگ نمونه/خروجی + key n8n، بررسی gateway/webhook inactive، verify checksum و authorization، ثبت زمان و gap. داده مشتری را برای drill در محیط عمومی قرار ندهید. مرجع حذف و key service نباید از بکاپ عقب‌گرد کنند؛ پیش از بازگشایی webhook، عدم بازگشت داده/هویت/کلید/job حساب حذف‌شده اثبات شود؛ فهرست موقت جلوگیری از بازگشت هم مشمول مهلت حذف است. job queue dedup/ledger reconcile انجام شود. با ساعت کنترل‌شده، قبل/مرز/بعد ۷ روز برای حذف و ۱۴ روز برای عمر بکاپ، بکاپ قبل/پس از T0، recovery کلید قدیمی و قطعی پاک‌سازی تست شود (PRD QA-19…21). سلامت بازیابی tenant دیگر و سن نسخه‌ها/هشدار نقض ثبت شود. تا شواهد واقعی، دکمه فقط مجاز به نمایش «در حال رسیدگی» است.
 
 **مسئول:** Tech Lead owner backup freshness، عملیات DB و restore؛ Founder/Product owner سیاست نگه‌داری و اطلاع‌رسانی.
 

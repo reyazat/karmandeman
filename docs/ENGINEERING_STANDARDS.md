@@ -21,6 +21,7 @@
 - **Providers:** interface bindings با constructor injection؛ Container resolve دستی در منطق تجاری ممنوع مگر دلیل فنی ثبت‌شده.
 - **Scopes:** `app/Scopes` برای Eloquent global reusable scopes؛ authorization و tenant isolation علاوه بر Scope باید در Policy، repository filters و آزمون‌های امنیتی تضمین شوند.
 - **Helpers:** فقط توابع pure و مستقل از DB/I/O/Service Container؛ هیچ state mutation یا business logic.
+- **داده خصوصی و حذف:** طبق PRD FR-084…088، NFR-11…12 و [ADR-011](adr/ADR-011-seven-day-complete-erasure.md)، رمزنگاری احرازشده همه داده خصوصی در ذخیره‌سازی و کانال امن انتقال، کلید جدا و دسترسی محدود، و فرآیند حذف کامل با دکمه احرازشده الزامی است. Laravel مالک وضعیت/مجوز/مهلت حذف است؛ UI، Telegram و n8n مرجع حذف نیستند. عمر همه بکاپ‌ها حداکثر ۱۴ روز از ایجاد و پایان حذف همه کپی‌های کاربر حداکثر ۷ روز از درخواست تأییدشده است؛ retry/restore/بکاپ تازه مهلت را تمدید نمی‌کند. این الزامات، ادعای پیاده‌سازی فعلی نیستند و بدون شواهد QA-19…21 gate انتشار باز می‌ماند.
 
 ## ۲. ساختار Canonical مخزن
 
