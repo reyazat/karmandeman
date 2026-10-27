@@ -1,0 +1,24 @@
+{
+    "version": "pilot-20261027-v1",
+    "status": "pending_approval",
+    "scope": "telegram_onboarding",
+    "operator": {
+        "name": "وحید ریاضت و تیم کارمند من",
+        "country": "ایران",
+        "audience": "کسب‌وکارهای ایرانی",
+        "privacy_contact": "/support",
+        "deletion_contact": "/delete_data"
+    },
+    "approval": {
+        "product_owner": null,
+        "privacy_reviewer": null,
+        "approved_at": null,
+        "bundle_sha256": null
+    },
+    "release_evidence": {
+        "retention_enforcement": null,
+        "complete_erasure_and_restore": null,
+        "encryption_and_key_separation": null,
+        "support_and_processor_inventory": null
+    }
+}

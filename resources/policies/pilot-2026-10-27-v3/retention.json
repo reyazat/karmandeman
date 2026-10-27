@@ -1,0 +1,30 @@
+{
+    "version": "retention-20261027-v3",
+    "status": "partially_approved_product_decision",
+    "decision_scope": "Final owner reply on 2026-10-27 requires complete erasure within seven days of a verified request. Ordinary backup maximum age remains fourteen days; account erasure overrides it. Private-data encryption and account deletion button remain required. Other category limits, implementation and final policy approval are pending. See ADR-011.",
+    "deletion": {
+        "live_target_days": 7,
+        "clock": "Verified owner request recorded after re-authentication (T0); receipts, retries and workers do not restart it.",
+        "backup_max_age_days": 14,
+        "complete_max_days_from_verified_request": 7,
+        "post_request_backup_rule": "Every recoverable copy containing the account data expires by min(original backup age limit of 14 days, T0 + 7 days); copying, retries and the live cleanup target do not extend this deadline.",
+        "completion_rule": "No personal data or recoverable keys in controlled live systems, processors or backups before marking complete. No retained personal deletion-history copy.",
+        "priority": "Verified erasure request overrides ordinary retention; notify the user of a substantiated legal conflict instead of claiming complete erasure."
+    },
+    "categories": [
+        {"id":"account_brand_memory","label":"حساب، برند تأییدشده، حافظه و تاریخچه","limit":"تا حذف حساب یا ۱۸۰ روز بی‌فعالیتی؛ اخطار ۱۴ روز پیش از پایان","clock":"آخرین اقدام واقعی کاربر؛ اجرای داخلی زمان را تمدید نمی‌کند","current":true},
+        {"id":"onboarding_draft","label":"پیش‌نویس تأییدنشده برند","limit":"۷ روز","clock":"آخرین ورودی کاربر؛ با لغو یا تکمیل زودتر پاک شود","current":true},
+        {"id":"api_snapshot","label":"محتوای snapshot پاسخ تکرار API","limit":"۷ روز","clock":"ثبت نتیجه؛ پس از آن replay باید خطای انقضا بدهد و عملیات دوباره اجرا نشود","current":true},
+        {"id":"idempotency_keys","label":"کلید و hash حداقلی جلوگیری از تکرار","limit":"تا پایان حساب، بدون محتوای برند/توکن؛ سپس حذف کامل","clock":"حذف payload نباید کلید را برای اجرای دوباره آزاد کند","current":true},
+        {"id":"auth_replay","label":"توکن رمز‌شده replay ورود","limit":"عمر توکن ۸ ساعت؛ پاک‌سازی ciphertext حداکثر یک ساعت پس از انقضا یا لغو","clock":"صدور/انقضا/لغو؛ حداکثر ۹ ساعت از صدور برای ciphertext","current":true},
+        {"id":"notification_queue","label":"پیام صف اعلان و تلاش ناموفق","limit":"صف فعال حداکثر ۲۴ ساعت؛ payload شکست‌خورده حداکثر ۷ روز","clock":"زمان ایجاد اولیه؛ retry زمان را تمدید نمی‌کند؛ موفقیت، payload را حذف می‌کند","current":true},
+        {"id":"redacted_events_logs","label":"رخداد و لاگ فنی حداقلی و پالایش‌شده","limit":"۷ روز","clock":"ثبت رخداد؛ بدون متن برند، فایل، توکن و متن پشتیبانی","current":true},
+        {"id":"audit_consent","label":"رسید رضایت و ممیزی حداقلی","limit":"تا پایان حساب؛ ممیزی عملیاتی عادی ۳۰ روز؛ سپس حذف در درخواست حذف کامل","clock":"رسید نباید حاوی کپی داده تجاری باشد","current":true},
+        {"id":"service_request","label":"متن تیکت پشتیبانی","limit":"۳۰ روز پس از بسته‌شدن؛ درخواست باز در روز ۷ و سپس هر ۳۰ روز بازبینی شود","clock":"درخواست حذف حل‌نشده نباید خودکار ناپدید شود؛ در حذف کامل، رسید شخصی هم پاک می‌شود","current":true},
+        {"id":"original_assets","label":"فایل اصلی عکس، صدا و CSV","limit":"۹۰ روز","clock":"آخرین استفاده موفقِ مورد درخواست کاربر؛ درخواست حذف مقدم است","current":false},
+        {"id":"artifacts_catalog","label":"خروجی و کاتالوگ عمومی یا خصوصی","limit":"۹۰ روز از تولید؛ لغو لینک عمومی فوراً دسترسی را می‌بندد","clock":"تاریخ تولید هر نسخه؛ لغو لینک با حذف فایل یکسان نیست","current":false},
+        {"id":"ai_payload","label":"payload مشتری در n8n و ارائه‌دهنده AI","limit":"عدم نگهداری payload در تاریخچه n8n؛ metadata خطا حداکثر ۷ روز","clock":"ارائه‌دهنده با نگهداری مبهم یا حذف ناممکن فعال نمی‌شود","current":false},
+        {"id":"backups","label":"نسخه‌های پشتیبان رمز‌شده و کلیدها","limit":"عمر عادی حداکثر ۱۴ روز / ۳۳۶ ساعت برای همه نسخه‌ها؛ درخواست حذف حساب مهلت کوتاه‌تر ۷روزه دارد","clock":"ساخت اولیه نسخه؛ انتقال/کپی زمان را تمدید نمی‌کند؛ داده در انتظار حذف در هیچ کپی‌ای دیرتر از ۷ روز از درخواست تأییدشده مالک قابل بازیابی نماند","current":false},
+        {"id":"complete_account_erasure","label":"پایان حذف کامل حساب و تاریخچه","limit":"حداکثر ۷ روز از درخواست تأییدشده؛ سامانه زنده، بکاپ و کلیدها همگی در همین بازه، بدون افزودن زمان گردش بکاپ","clock":"ثبت درخواست تأییدشده مالک پس از احراز هویت مجدد؛ همه کپی‌ها و کلیدهای قابل بازیابی پوشش یابند؛ completed فقط پس از اثبات تکمیل و بدون نگهداری رسید شخصی","current":false}
+    ]
+}

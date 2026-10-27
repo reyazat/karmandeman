@@ -41,3 +41,29 @@ The Compose reference includes `telegram_worker`; it has not been started.
 Horizon only consumes Redis queues. See [ADR-008](docs/adr/ADR-008-foundation-hardening.md)
 for transaction semantics, delivery limits and release requirements. The
 reference worker has not been deployed or started.
+
+The Persian pilot terms and retention schedule are in the
+[policy approval guide](docs/PILOT_DATA_POLICY_v1.0.md). The current bundle is
+**pending approval**: Telegram onboarding cannot collect final consent or
+continue until its exact content and implementation evidence are approved.
+Support and deletion-request receipts remain available. This does not implement
+full account erasure, backup purging, or a policy-consent gate for the current
+brand/project API; those remain release requirements.
+
+The owner-directed requirements in
+[ADR-011](docs/adr/ADR-011-seven-day-complete-erasure.md) set a
+fourteen-day maximum backup age and complete erasure within seven days of a
+verified request, including backups. Private-data encryption and an authenticated
+account deletion button are P0 requirements in the PRD. The selected policy
+candidate is `pilot-20261027-v3`; the v1/v2 proposals are archived. Recording these
+requirements does not implement or activate them.
+
+Read the current policy status without changing data:
+
+```sh
+docker compose --env-file .env -f compose.prod.reference.yaml -f compose.dev.yaml run --rm --no-deps workspace php artisan policy:check
+```
+
+Exit code 1 with `ready=false` is expected for the current candidate. See
+[ADR-009](docs/adr/ADR-009-pilot-policy-and-erasure.md) for approval, migration
+and release gates; test fixtures never approve the real bundle.
