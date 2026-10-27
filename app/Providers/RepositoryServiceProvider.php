@@ -17,6 +17,7 @@ use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Repositories\Eloquents\AccountDeletion\EloquentAccountDeletionRepository;
 use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
@@ -32,6 +33,7 @@ use App\Repositories\Eloquents\User\EloquentUserRepository;
 use App\Repositories\Eloquents\WalletLedger\EloquentWalletRepository;
 use App\Repositories\Eloquents\Workspace\EloquentWorkspaceRepository;
 use App\Repositories\Eloquents\WorkspaceConsent\EloquentWorkspaceConsentRepository;
+use App\Repositories\Eloquents\WorkspaceDataKey\EloquentWorkspaceDataKeyRepository;
 use Illuminate\Support\ServiceProvider;
 
 final class RepositoryServiceProvider extends ServiceProvider
@@ -45,6 +47,7 @@ final class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(ServiceRequestRepositoryInterface::class, EloquentServiceRequestRepository::class);
         $this->app->bind(UserRepositoryInterface::class, EloquentUserRepository::class);
         $this->app->bind(WorkspaceConsentRepositoryInterface::class, EloquentWorkspaceConsentRepository::class);
+        $this->app->bind(WorkspaceDataKeyRepositoryInterface::class, EloquentWorkspaceDataKeyRepository::class);
         $this->app->bind(WorkspaceRepositoryInterface::class, EloquentWorkspaceRepository::class);
         $this->app->bind(EmployeeRepositoryInterface::class, EloquentEmployeeRepository::class);
         $this->app->bind(ProjectRepositoryInterface::class, EloquentProjectRepository::class);

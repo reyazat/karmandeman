@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Services\Crypto\OpenBaoTransitKeyManager;
+use App\Services\Crypto\WorkspaceFieldCipher;
+use App\Services\Crypto\WorkspaceKeyManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -16,7 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(WorkspaceKeyManager::class, OpenBaoTransitKeyManager::class);
+        // Scoped: unwrapped data keys live only for one request or queued job.
+        $this->app->scoped(WorkspaceFieldCipher::class);
     }
 
     /**

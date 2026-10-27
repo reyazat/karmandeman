@@ -155,6 +155,14 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - **framing و CSP (بازبینی deployment-readiness):** `deploy/Caddyfile` اکنون فقط برای `/app` و `/app/*` هدر `Content-Security-Policy` با `frame-ancestors https://web.telegram.org`، `script-src 'self' https://telegram.org`، `connect-src 'self'` و `object-src 'none'` می‌فرستد و `X-Frame-Options` ندارد؛ بقیه مسیرها `X-Frame-Options: DENY` و `frame-ancestors 'none'` دارند. `caddy validate` روی `caddy:2.10-alpine` معتبر بود و کانتینر محلی بدون پورت میزبان هدرها را برای `/app/privacy`، `/app/`، `/appendix` (بدون تطبیق) و `/build/*` درست برگرداند. `style-src` به‌خاطر احتمال تزریق استایل توسط SDK تلگرام `'unsafe-inline'` دارد. آزمون نشده: باز شدن واقعی در Telegram Web/Desktop/موبایل، استقرار، TLS و HSTS (Caddy به‌طور پیش‌فرض HSTS نمی‌فرستد)، تنظیم BotFather و URL عمومی.
 - شواهد: PostgreSQL موقت **۱۰۰ تست / ۷۶۴ assertion**؛ SQLite **۹۰ پاس / ۶۷۰ assertion و ۱۰ skip**؛ Pint روی ۱۷۷ فایل و PHPStan سطح ۵ بدون خطا. frontend در کانتینر ایزوله: `npm ci`، `npm audit` (صفر آسیب‌پذیری)، `vue-tsc`، ESLint با `--max-warnings=0`، **Vitest ۶ تست پاس** و `vite build` موفق. CI اکنون Vitest را اجرا می‌کند؛ E2E مرورگر/تلگرام واقعی و ربات زنده آزموده نشده‌اند. `@vue/test-utils` و `jsdom` به devDependencies افزوده شدند و `no-undef` برای فایل‌های TS/Vue خاموش شد چون vue-tsc همین را بررسی می‌کند.
 
+### NFR-11 مرحله S1: کلید Workspace با OpenBao Transit (۲۷ اکتبر ۲۰۲۶)
+
+- مالک پروژه OpenBao Transit خودمیزبان با کلید مستقل هر Workspace، میزبان جدا، بکاپ کلید حداکثر ۴۸ ساعت و حذف قطعی تا روز هفتم را انتخاب کرد؛ طراحی، فهرست پوشش داده خصوصی و تصمیم‌های باز در [ADR-013](adr/ADR-013-openbao-transit-key-service.md) ثبت شد.
+- رفتار OpenBao 2.4.1 در کانتینر محلی آزموده شد: کلید پیش‌فرض غیرقابل export، حذف فقط با `deletion_allowed`، soft-delete رمزگشایی را فوراً متوقف و قابل برگشت است، حذف قطعی در cluster زنده نهایی است، و **restore از raft snapshot کلید حذف‌شده را برمی‌گرداند و ciphertext قدیمی دوباره باز می‌شود**؛ پس سقف ۴۸ساعته بکاپ key store و هدف حذف key ring زنده تا ۲۴ ساعت از T0 (طبق ADR-013) شرط مهلت ۷ روزه است.
+- کد S1: قرارداد `WorkspaceKeyManager`، آداپتور `OpenBaoTransitKeyManager` (بدون نشت token در خطا)، جدول `workspace_data_keys` که فقط DEK wrapped را نگه می‌دارد، و `WorkspaceFieldCipher` با AES-256-GCM، nonce تصادفی و AAD شامل Workspace و فیلد؛ DEK باز فقط در scope یک request/job. Workspace غیرفعال کلید تازه نمی‌گیرد. **هیچ ستون موجودی هنوز رمز نشده است** (مرحله S2).
+- شواهد: PostgreSQL موقت به‌همراه OpenBao 2.4.1 در حالت dev **۱۰۹ تست / ۷۹۹ assertion** شامل ۳ آزمون integration روی Transit واقعی؛ SQLite **۹۶ پاس و ۱۳ skip**؛ Pint و PHPStan بدون خطا. آزمون OpenBao در CI اجرا نمی‌شود (skip بدون `OPENBAO_TEST_ADDR`). حالت dev روی حافظه است و جای raft، AppRole، TLS، unseal و snapshot زمان‌بندی‌شده نیست.
+- باز: تصمیم lookup شناسه تلگرام (ADR-013، تصمیم باز ۱)، میزبان و unseal، S2 تا S4، و QA-20/21.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

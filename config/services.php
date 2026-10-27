@@ -37,6 +37,15 @@ return [
         'workflow_auth_token' => env('N8N_WORKFLOW_AUTH_TOKEN'),
     ],
 
+    // Per-workspace keys live in self-hosted OpenBao Transit, never in the app DB (ADR-013).
+    'openbao' => [
+        'addr' => env('OPENBAO_ADDR'),
+        'token' => env('OPENBAO_TOKEN'),
+        'transit_mount' => env('OPENBAO_TRANSIT_MOUNT', 'transit'),
+        'key_prefix' => env('OPENBAO_KEY_PREFIX', 'ws-'),
+        'timeout' => (int) env('OPENBAO_TIMEOUT', 5),
+    ],
+
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
