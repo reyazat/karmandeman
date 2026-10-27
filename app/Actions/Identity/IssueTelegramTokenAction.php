@@ -8,6 +8,7 @@ use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
+use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -16,14 +17,23 @@ final readonly class IssueTelegramTokenAction
 {
     public function __construct(
         private RegisterTelegramUserAction $register,
+        private UserRepositoryInterface $users,
         private TelegramAuthRequestRepositoryInterface $requests,
         private WorkspaceRepositoryInterface $workspaces,
         private LockActiveWorkspaceAction $lockActive,
     ) {}
 
-    /** @return array{User, string} */
+    /**
+     * Sign-in only: accounts are created by the bot's /start flow, never by
+     * opening the Mini App, so an unknown Telegram user gets no account or gift.
+     *
+     * @return array{User, string}
+     */
     public function execute(TelegramUserData $telegramUser, string $initData, string $key): array
     {
+        if ($this->users->findByIdentity('telegram', (string) $telegramUser->id) === null) {
+            throw new DomainException('ACCOUNT_NOT_FOUND');
+        }
         $account = $this->register->execute($telegramUser);
         $hash = hash('sha256', $initData);
 

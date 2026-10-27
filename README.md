@@ -55,8 +55,11 @@ privacy page at `/app/privacy` (FR-085) re-authenticates with fresh signed
 initData and calls `POST /api/v1/account/deletion`, the same FR-086 flow.
 Purge of data, backups and keys (FR-087), private-data encryption (NFR-11),
 the operator path and deadline monitoring are not implemented; they remain
-release requirements. `deploy/Caddyfile` still sends `X-Frame-Options: DENY`,
-which blocks Telegram Web clients from framing the Mini App.
+release requirements. The Mini App only signs in accounts created by the bot's
+`/start` ([ADR-012](docs/adr/ADR-012-mini-app-reauthentication-and-sign-in.md)).
+`deploy/Caddyfile` lets only `/app` be framed, and only by
+`https://web.telegram.org`, with a restrictive CSP; every other path keeps
+`X-Frame-Options: DENY`.
 
 The owner-directed requirements in
 [ADR-011](docs/adr/ADR-011-seven-day-complete-erasure.md) set a

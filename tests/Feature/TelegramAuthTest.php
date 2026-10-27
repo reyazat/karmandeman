@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -29,6 +31,11 @@ class TelegramAuthTest extends TestCase
         Http::fake();
     }
 
+    private function botUser(int $telegramId): User
+    {
+        return app(RegisterTelegramUserAction::class)->execute(new TelegramUserData($telegramId));
+    }
+
     private function buildInitData(array $user): string
     {
         $fields = [
@@ -50,19 +57,30 @@ class TelegramAuthTest extends TestCase
         return http_build_query($fields);
     }
 
-    public function test_valid_init_data_issues_token_and_registers_user(): void
+    public function test_valid_init_data_signs_in_a_bot_registered_user_without_new_gift(): void
     {
+        $user = $this->botUser(777);
         $initData = $this->buildInitData(['id' => 777, 'first_name' => 'مریم']);
 
         $response = $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $initData], self::HEADERS);
 
         $response->assertOk()
             ->assertJsonStructure(['data' => ['token', 'token_type', 'user' => ['id']]])
+            ->assertJsonPath('data.user.id', $user->public_id)
             ->assertJsonPath('meta.api_version', 'v1');
-
-        $this->assertDatabaseHas('user_identities', ['provider' => 'telegram', 'external_id' => '777']);
-        $this->assertDatabaseHas('credit_ledger', ['amount' => 50, 'type' => 'grant']);
+        $this->assertDatabaseCount('credit_ledger', 1);
         $this->assertTrue(Str::isUuid($response->json('data.user.id')));
+    }
+
+    public function test_unknown_telegram_user_gets_no_account_from_mini_app(): void
+    {
+        $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $this->buildInitData(['id' => 779])], self::HEADERS)
+            ->assertNotFound()->assertJsonPath('error.code', 'ACCOUNT_NOT_FOUND');
+
+        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('workspaces', 0);
+        $this->assertDatabaseCount('credit_ledger', 0);
+        $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
     public function test_forged_init_data_is_rejected(): void
@@ -91,6 +109,7 @@ class TelegramAuthTest extends TestCase
 
     public function test_wallet_ledger_is_scoped_to_own_workspace(): void
     {
+        $this->botUser(42);
         $initData = $this->buildInitData(['id' => 42, 'first_name' => 'A']);
         $token = $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $initData], self::HEADERS)
             ->json('data.token');
@@ -108,6 +127,8 @@ class TelegramAuthTest extends TestCase
 
     public function test_token_request_replay_and_conflict_are_scoped_to_verified_user(): void
     {
+        $this->botUser(777);
+        $this->botUser(778);
         $initData = $this->buildInitData(['id' => 777, 'first_name' => 'A']);
         $first = $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $initData], self::HEADERS)
             ->assertOk()->json('data.token');
@@ -132,6 +153,7 @@ class TelegramAuthTest extends TestCase
 
     public function test_auth_requires_key_and_revoked_token_cannot_be_replayed(): void
     {
+        $this->botUser(777);
         $initData = $this->buildInitData(['id' => 777]);
         $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $initData])
             ->assertUnprocessable();

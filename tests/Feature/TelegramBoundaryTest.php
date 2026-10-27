@@ -92,6 +92,7 @@ final class TelegramBoundaryTest extends TestCase
 
     public function test_tokens_expire_and_suspended_identity_cannot_mint_tokens(): void
     {
+        app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(777));
         $payload = ['initData' => $this->signed(['id' => 777])];
         $this->postJson('/api/v1/auth/telegram/verify', $payload, self::AUTH_HEADERS)->assertOk();
         $this->assertNotNull(DB::table('personal_access_tokens')->value('expires_at'));

@@ -42,6 +42,9 @@ final class TelegramAuthController extends Controller
             if (in_array($e->getMessage(), ['IDEMPOTENCY_KEY_CONFLICT', 'AUTH_REPLAY_EXPIRED'], true)) {
                 return ApiResponse::error($e->getMessage(), 'کلید درخواست با ورود قبلی سازگار نیست.', 409);
             }
+            if ($e->getMessage() === 'ACCOUNT_NOT_FOUND') {
+                return ApiResponse::error('ACCOUNT_NOT_FOUND', 'حسابی یافت نشد؛ ابتدا ربات کارمند من را در تلگرام با /start شروع کنید.', 404);
+            }
             if ($e->getMessage() === 'ACCOUNT_DELETION_PENDING') {
                 $deletion = $containedAccounts->execute($telegramUser->id)?->deletion;
 

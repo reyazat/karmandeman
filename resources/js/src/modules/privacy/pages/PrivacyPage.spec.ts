@@ -90,6 +90,18 @@ describe('PrivacyPage', () => {
         expect(wrapper.find('button').exists()).toBe(false);
     });
 
+    it('sends unknown Telegram users to the bot instead of creating an account', async () => {
+        fetchMock.mockResolvedValueOnce(respond(404, {
+            error: { code: 'ACCOUNT_NOT_FOUND', message: 'ابتدا ربات را با /start شروع کنید.' },
+        }));
+        const wrapper = mount(PrivacyPage);
+        await flushPromises();
+
+        expect(wrapper.text()).toContain('/start');
+        expect(wrapper.find('button').exists()).toBe(false);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('asks to reopen the Mini App when re-authentication is stale', async () => {
         const wrapper = await mountReady(fetchMock);
         fetchMock.mockResolvedValueOnce(respond(401, { error: { code: 'REAUTHENTICATION_REQUIRED', message: 'stale' } }));
