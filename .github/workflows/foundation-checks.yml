@@ -43,6 +43,8 @@ jobs:
           php-version: '8.4'
           extensions: pdo_pgsql, pdo_sqlite, mbstring, intl, bcmath, pcntl, redis, zip
           coverage: none
+      - name: Prepare test environment from placeholders
+        run: cp .env.example .env
       - run: composer validate --strict
       - run: composer install --no-interaction --prefer-dist
       - run: composer audit --no-interaction

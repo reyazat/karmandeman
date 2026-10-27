@@ -27,6 +27,13 @@ instance**, never the app DB with a renamed connection. Use Node 24 and `npm ci`
 frontend. Empty frontend routes mean there is no working review UI yet; do not
 add dummy tests to conceal that gap.
 
+When building through Docker on WSL, run Node as the workspace user so Vite's
+temporary files and build outputs remain writable on the next local run:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/app" -w /app node:24-trixie-slim npm run build
+```
+
 Telegram responses now use an encrypted database outbox on connection/queue
 `telegram`, in the same transaction as domain changes. A dedicated worker is
 required: `php artisan queue:work telegram --queue=telegram --sleep=1 --timeout=20 --tries=5`.
