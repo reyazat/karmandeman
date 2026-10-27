@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Repositories\Eloquents\User;
+namespace App\Repositories\Eloquents\TelegramAuthRequest;
 
 use App\Models\TelegramAuthRequest;
 use App\Models\User;

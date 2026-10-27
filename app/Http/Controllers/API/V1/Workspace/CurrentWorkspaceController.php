@@ -11,7 +11,7 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class CurrentWorkspaceController extends Controller
+final class CurrentWorkspaceController extends Controller
 {
     public function __invoke(
         Request $request,

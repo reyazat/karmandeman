@@ -5,6 +5,7 @@
 > **وضعیت:** **Normative / Mandatory** برای کد جدید و بازآرایی کد قبلی  
 > **محدوده:** Laravel API و Backend، Vue 3 + TypeScript، ادغام n8n، تست، بازبینی و تحویل کد  
 > **وابسته به:** `Karmandeman_Telegram_MVP_PRD_v1.3.md`، `Karmandeman_Deployment_Runbook_v1.1.md`  
+> **نسخه جاری:** همین فایل مرجع است. `Karmandeman_Engineering_Standards_v1.0.md` نسخه بایگانی بسته اولیه (با hash در RELEASE_MANIFEST) است و فقط بند داده خصوصی/حذف بخش ۱ را ندارد؛ ارجاع PRD، Runbook و Strategy به آن نام به این فایل اشاره دارد.  
 > **توجه:** این سند یک قرارداد طراحی است؛ وجود کلاس‌ها/تست‌های ذکرشده، به معنای پیاده‌سازی یا تست شدن آن‌ها نیست.
 
 ## ۱. اصول الزام‌آور

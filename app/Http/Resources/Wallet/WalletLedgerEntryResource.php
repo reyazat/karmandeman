@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin CreditLedgerEntry */
-class WalletLedgerEntryResource extends JsonResource
+final class WalletLedgerEntryResource extends JsonResource
 {
     /**
      * @return array<string, mixed>

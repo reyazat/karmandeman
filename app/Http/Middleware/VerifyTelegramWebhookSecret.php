@@ -8,7 +8,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-class VerifyTelegramWebhookSecret
+final class VerifyTelegramWebhookSecret
 {
     private const HEADER = 'X-Telegram-Bot-Api-Secret-Token';
 

@@ -6,10 +6,12 @@ namespace App\Actions\Identity;
 
 use App\Actions\Employee\EnsureDefaultEmployeeAction;
 use App\Actions\Wallet\GrantInitialCreditsAction;
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Actions\Workspace\ProvisionWorkspaceAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Repositories\Contracts\UserRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -22,6 +24,8 @@ final readonly class RegisterTelegramUserAction
         private ProvisionWorkspaceAction $provisionWorkspace,
         private EnsureDefaultEmployeeAction $ensureEmployee,
         private GrantInitialCreditsAction $grantCredits,
+        private WorkspaceRepositoryInterface $workspaces,
+        private LockActiveWorkspaceAction $lockActive,
     ) {}
 
     /**
@@ -36,6 +40,11 @@ final readonly class RegisterTelegramUserAction
                 ?? $this->users->createWithIdentity($telegramUser, self::PROVIDER);
 
             abort_unless($user->status === 'active', 403);
+            // An existing workspace is checked under its row lock before any write (FR-086).
+            $existing = $this->workspaces->currentFor($user);
+            if ($existing !== null) {
+                $this->lockActive->execute($existing);
+            }
             $workspace = $this->provisionWorkspace->execute($user);
             Gate::forUser($user)->authorize('access', $workspace);
             $this->ensureEmployee->execute($workspace);

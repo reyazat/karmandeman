@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\MemoryItemRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,7 @@ final readonly class AdvanceTelegramOnboardingAction
         private MemoryItemRepositoryInterface $memory,
         private UpdateBrandProfileAction $updateBrand,
         private PilotPolicyService $policies,
+        private WorkspaceConsentRepositoryInterface $consents,
     ) {}
 
     public function execute(Workspace $workspace, User $user, string $event = 'prompt', ?string $value = null): OnboardingReply
@@ -40,7 +42,12 @@ final readonly class AdvanceTelegramOnboardingAction
                 return new OnboardingReply($policy->unavailableNotice());
             }
             $version = $policy->version;
-            if (! $this->onboardings->hasConsent($workspace, $version, $policy->digest)) {
+            $consent = $this->consents->find($workspace, $version);
+            if ($consent !== null && $consent->policy_document_hash !== $policy->digest) {
+                // Same version, different text: never rebind an old receipt, never fail the webhook.
+                return new OnboardingReply("متن نسخه {$version} پس از پذیرش شما تغییر کرده است. تا انتشار نسخه تازه، ادامه ممکن نیست؛ برای پیگیری /support را بفرستید.");
+            }
+            if ($consent === null) {
                 if ($event !== 'accept' || $value !== $policy->consentToken()) {
                     return new OnboardingReply(
                         "پیش از شناخت برند، پذیرش نسخه {$version} لازم است.\n".
@@ -49,7 +56,7 @@ final readonly class AdvanceTelegramOnboardingAction
                         [[['text' => 'شرایط و سیاست داده را می‌پذیرم', 'callback_data' => 'onboard:accept:'.$policy->consentToken()]]],
                     );
                 }
-                $this->onboardings->accept($workspace, $user, $version, $policy->digest);
+                $this->consents->record($workspace, $user, $version, $policy->digest);
             }
 
             if ($state->step === 'consent') {
@@ -126,10 +133,10 @@ final readonly class AdvanceTelegramOnboardingAction
         if (! $policy->isApproved()) {
             return false;
         }
-        $state = $this->onboardings->ensure($workspace);
+        $state = $this->onboardings->find($workspace);
 
-        return $this->onboardings->hasConsent($workspace, $policy->version, $policy->digest)
-            && $state->step === 'ready'
+        return $this->consents->find($workspace, $policy->version)?->policy_document_hash === $policy->digest
+            && $state?->step === 'ready'
             && $this->brands->forWorkspace($workspace)?->name !== null;
     }
 

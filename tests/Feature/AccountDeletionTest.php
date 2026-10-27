@@ -156,7 +156,7 @@ final class AccountDeletionTest extends TestCase
         $this->assertDatabaseCount('service_requests', 0);
         $this->assertDatabaseCount('credit_ledger', 1);
 
-        $this->expectException(AuthorizationException::class);
+        $this->expectExceptionObject(new DomainException('ACCOUNT_DELETION_PENDING'));
         app(IssueTelegramTokenAction::class)->execute(new TelegramUserData(555), 'init-data-fixture', 'auth-key-2');
     }
 
@@ -233,6 +233,44 @@ final class AccountDeletionTest extends TestCase
             $this->assertDatabaseCount('account_deletions', 0);
             $this->assertSame('active', $workspace->fresh()->status);
         }
+    }
+
+    public function test_contained_workspace_without_receipt_answers_without_retry_loop(): void
+    {
+        $workspace = $this->onboard();
+        Workspace::query()->whereKey($workspace->id)->update(['status' => 'deletion_pending']);
+
+        $this->send('/start')->assertOk()->assertJsonPath('data.status', 'ok');
+        $this->assertStringContainsString('فعال نیست', $this->lastReply()->text);
+        $this->pressButton('onboard:edit')->assertOk();
+        $this->assertDatabaseCount('account_deletions', 0);
+        $this->assertDatabaseCount('credit_ledger', 1);
+    }
+
+    public function test_deterministic_refusal_is_acknowledged_instead_of_retried(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(555));
+        $user->forceFill(['status' => 'suspended'])->save();
+
+        $this->send('/start')->assertOk()->assertJsonPath('data.status', 'rejected');
+        $this->assertDatabaseCount('conversation_events', 0);
+    }
+
+    public function test_unknown_inline_and_foreign_callbacks_are_acknowledged_and_ignored(): void
+    {
+        $this->onboard();
+        foreach ([
+            ['id' => 'cb-unknown', 'from' => ['id' => 555], 'message' => ['chat' => ['id' => 555, 'type' => 'private']], 'data' => 'legacy:button'],
+            ['id' => 'cb-inline', 'from' => ['id' => 555], 'inline_message_id' => 'x', 'data' => 'delete:cancel'],
+            ['id' => 'cb-game', 'from' => ['id' => 555], 'message' => ['chat' => ['id' => 555, 'type' => 'private']]],
+            ['id' => 'cb-group', 'from' => ['id' => 555], 'message' => ['chat' => ['id' => -100, 'type' => 'group']], 'data' => 'onboard:edit'],
+        ] as $i => $callback) {
+            $this->postJson('/api/webhooks/telegram', ['update_id' => 900 + $i, 'callback_query' => $callback], [
+                'X-Telegram-Bot-Api-Secret-Token' => self::SECRET,
+            ])->assertOk()->assertJsonPath('data.status', 'ok');
+        }
+        Queue::assertPushed(AnswerTelegramCallback::class, 4);
+        Queue::assertNotPushed(SendTelegramMessage::class);
     }
 
     public function test_api_routes_are_closed_for_a_contained_workspace(): void

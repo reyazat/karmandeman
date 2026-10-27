@@ -138,6 +138,24 @@ final class PilotPolicyTest extends TestCase
         $this->assertSame('name', TelegramOnboarding::sole()->step);
     }
 
+    public function test_same_version_with_changed_text_refuses_without_failing_the_update(): void
+    {
+        $this->useApprovedPilotPolicy();
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(506));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $policy = app(PilotPolicyService::class)->current();
+        WorkspaceConsent::create([
+            'workspace_id' => $workspace->id, 'user_id' => $user->id, 'policy_version' => $policy->version,
+            'policy_document_hash' => str_repeat('0', 64), 'accepted_at' => now(),
+        ]);
+
+        $reply = app(AdvanceTelegramOnboardingAction::class)->execute($workspace, $user, 'accept', $policy->consentToken());
+
+        $this->assertStringContainsString('تغییر کرده', $reply->text);
+        $this->assertDatabaseCount('workspace_consents', 1);
+        $this->assertDatabaseHas('workspace_consents', ['policy_document_hash' => str_repeat('0', 64)]);
+    }
+
     public function test_accepting_another_workspaces_policy_is_forbidden(): void
     {
         $this->useApprovedPilotPolicy();

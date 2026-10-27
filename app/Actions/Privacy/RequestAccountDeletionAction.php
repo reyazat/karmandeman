@@ -55,9 +55,4 @@ final readonly class RequestAccountDeletionAction
             return [$deletion, false];
         });
     }
-
-    public function pendingFor(Workspace $workspace): ?AccountDeletion
-    {
-        return $this->deletions->forWorkspace($workspace);
-    }
 }

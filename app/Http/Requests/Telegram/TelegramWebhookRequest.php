@@ -43,12 +43,13 @@ final class TelegramWebhookRequest extends FormRequest
             'callback_query.from.first_name' => ['sometimes', 'string', 'max:255'],
             'callback_query.from.last_name' => ['sometimes', 'string', 'max:255'],
             'callback_query.from.username' => ['sometimes', 'string', 'max:255'],
-            'callback_query.message' => ['required_with:callback_query', 'array'],
-            'callback_query.message.chat' => ['required_with:callback_query', 'array'],
-            'callback_query.message.chat.id' => ['required_with:callback_query', 'integer', $integer],
-            'callback_query.message.chat.type' => ['required_with:callback_query', 'string', 'in:private,group,supergroup,channel'],
-            'callback_query.data' => ['required_with:callback_query', 'string', 'max:128',
-                'regex:/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel))$/'],
+            // Unknown, inline or stale callbacks are acknowledged and ignored by the service,
+            // never rejected here: a non-2xx answer makes Telegram retry them.
+            'callback_query.message' => ['sometimes', 'array'],
+            'callback_query.message.chat' => ['required_with:callback_query.message', 'array'],
+            'callback_query.message.chat.id' => ['required_with:callback_query.message', 'integer', $integer],
+            'callback_query.message.chat.type' => ['required_with:callback_query.message', 'string', 'in:private,group,supergroup,channel'],
+            'callback_query.data' => ['sometimes', 'string', 'max:64'],
         ];
     }
 }

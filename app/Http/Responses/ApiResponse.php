@@ -50,6 +50,7 @@ final class ApiResponse
         return match ($exception->getMessage()) {
             'POLICY_CONSENT_REQUIRED' => self::error('POLICY_CONSENT_REQUIRED', 'پیش از این کار، پذیرش نسخه جاری شرایط و سیاست داده لازم است.', 403),
             'ACCOUNT_DELETION_PENDING' => self::error('ACCOUNT_DELETION_PENDING', 'درخواست حذف این حساب ثبت شده و تغییر تازه پذیرفته نمی‌شود.', 409),
+            'WORKSPACE_NOT_ACTIVE' => self::error('FORBIDDEN', 'امکان انجام درخواست وجود ندارد.', 403),
             default => null,
         };
     }

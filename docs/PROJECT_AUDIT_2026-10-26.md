@@ -133,6 +133,19 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - ساخته نشده: purge داده زنده/فایل/تاریخچه/صف/لاگ و بکاپ و کلید (FR-087، NFR-11)، دکمه Mini App با احراز مجدد (FR-085)، endpoint حذف در API (منتظر احراز مجدد FR-085)، مسیر اپراتور، زمان‌بند و هشدار مهلت (NFR-12)، و مهار jobهای AI/n8n آینده که هنوز وجود ندارند. پیام‌های outbox تلگرامِ ثبت‌شده پیش از T0 هنوز ارسال می‌شوند. rollback migration ردیف‌ها را حذف می‌کند ولی workspaceهای `deletion_pending` را عمداً فعال نمی‌کند.
 - شواهد محلی با PHP 8.4: PostgreSQL موقت روی tmpfs **۹۱ تست پاس / ۷۰۸ assertion** شامل ۱۰ integration هم‌زمانی (کلیک هم‌زمان تأیید حذف)؛ SQLite حافظه‌ای **۸۱ پاس / ۶۱۴ assertion و ۱۰ skip**؛ Pint روی ۱۶۴ فایل و PHPStan سطح ۵ بدون خطا؛ rollback و اجرای مجدد migration جدید روی همان PostgreSQL موقت موفق. دیتابیس اصلی، staging، ربات زنده و CI میزبانی‌شده آزموده نشده‌اند.
 
+### بازبینی امنیتی و ساختاری پس از FR-086 (۲۷ اکتبر ۲۰۲۶)
+
+بازبینی مستقل diff از 0d48d54 تا dd614e8 مورد critical نیافت؛ موارد زیر تأیید و اصلاح شدند:
+
+- **صدور token پس از T0 (متوسط):** `IssueTelegramTokenAction` بعد از ثبت‌نام، وضعیت workspace را زیر قفل (به ترتیب user سپس workspace برای جلوگیری از deadlock) دوباره بررسی می‌کند؛ `RegisterTelegramUserAction` پیش از هر نوشتن، workspace موجود را با `LockActiveWorkspaceAction` قفل می‌کند و مسیر Mini App برای حساب در حال حذف `409 ACCOUNT_DELETION_PENDING` می‌گیرد. `LockActiveWorkspaceAction` بدون تراکنش باز خطا می‌دهد و وضعیت غیرفعال غیرحذفی را `WORKSPACE_NOT_ACTIVE` می‌نامد.
+- **حلقه 503 تلگرام (متوسط):** خطاهای قطعی (`AuthorizationException`، `DomainException`، HTTP 4xx) پس از rollback با 200 و وضعیت `rejected` پاسخ داده می‌شوند و فقط خطای گذرا 503 می‌گیرد. پذیرش نسخه‌ای که متنش بدون تغییر شماره عوض شده، دیگر exception نمی‌دهد و پیام راهنما برمی‌گرداند. workspace غیرفعال بدون رسید حذف هم پیام «فعال نیست» می‌گیرد.
+- **callbackها (کم):** همه callbackها ACK می‌شوند؛ callback ناشناخته، inline، بدون data یا گروهی نادیده گرفته می‌شود و دیگر 422 نمی‌گیرد. الگوی مجاز در سرویس بررسی می‌شود.
+- **کلید رسید پشتیبانی (کم):** کلید از chat و `message_id` ساخته می‌شود، نه `update_id` که پس از یک هفته بی‌کاری ممکن است تکرار شود.
+- **migration (کم):** ایندکس یکتای `message_key` روی PostgreSQL با `CONCURRENTLY` ساخته و حذف می‌شود؛ rollback چهار migration اخیر و اجرای دوباره روی PostgreSQL موقت موفق است. rollback همچنان داده جدول‌های جدید را حذف می‌کند و فقط با backup مجاز است.
+- **ساختار:** منطق امضای دکمه حذف و lookup حساب از `TelegramConversationService` به `TelegramDeletionConfirmation` و Actionهای `Prepare/ConfirmTelegramAccountDeletionAction` و `FindContainedTelegramAccountAction` منتقل شد؛ رضایت در `WorkspaceConsentRepositoryInterface` جدا شد و `isReady` دیگر رکورد نمی‌سازد؛ repositoryها در پوشه مدل خود؛ controller، Request، Resource و middleware ها `final`؛ `strict_types` در دو فایل باقی‌مانده؛ تجزیه initData از controller به FormRequest؛ `ProjectController` خطای دامنه ناشناخته را دیگر «بدون کارمند» برچسب نمی‌زند. `ENGINEERING_STANDARDS.md` به‌عنوان نسخه جاری و فایل v1.0 به‌عنوان بایگانی مشخص شد.
+- **باقی‌مانده:** مقادیر `memory_items`/`memory_item_revisions`/`brands` هنوز plaintext‌اند و به طرح کلید NFR-11 (ADR بعدی) وابسته‌اند؛ تراکنش و قاعده grant در `EloquentWalletRepository` با گام ۵ (Reserve/Capture) بازآرایی می‌شود؛ `EnsureBrandAction` در خواندن برند رکورد می‌سازد.
+- شواهد: PostgreSQL موقت **۹۵ تست / ۷۳۲ assertion**؛ SQLite **۸۵ پاس / ۶۳۸ assertion و ۱۰ skip**؛ Pint روی ۱۷۱ فایل و PHPStan سطح ۵ بدون خطا.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

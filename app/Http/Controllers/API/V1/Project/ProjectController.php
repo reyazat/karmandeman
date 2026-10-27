@@ -15,7 +15,7 @@ use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class ProjectController extends Controller
+final class ProjectController extends Controller
 {
     public function show(
         string $project,
@@ -73,7 +73,11 @@ class ProjectController extends Controller
                 return $response;
             }
 
-            return ApiResponse::error($e->getMessage(), 'کارمند فعالی برای این فضای کاری یافت نشد.', 409);
+            if ($e->getMessage() === 'NO_ACTIVE_EMPLOYEE') {
+                return ApiResponse::error('NO_ACTIVE_EMPLOYEE', 'کارمند فعالی برای این فضای کاری یافت نشد.', 409);
+            }
+
+            throw $e;
         }
 
         return ApiResponse::success(new ProjectResource($project), $replayed ? 200 : 201);

@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin Workspace */
-class WorkspaceResource extends JsonResource
+final class WorkspaceResource extends JsonResource
 {
     /**
      * @return array<string, mixed>

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Privacy;
 
 use App\Models\Workspace;
-use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use DomainException;
 
@@ -13,7 +13,7 @@ final readonly class EnsurePolicyConsentAction
 {
     public function __construct(
         private PilotPolicyService $policies,
-        private TelegramOnboardingRepositoryInterface $consents,
+        private WorkspaceConsentRepositoryInterface $consents,
     ) {}
 
     /**
@@ -24,7 +24,7 @@ final readonly class EnsurePolicyConsentAction
     {
         $policy = $this->policies->current();
         if (! $policy->isApproved()
-            || ! $this->consents->hasConsent($workspace, $policy->version, $policy->digest)) {
+            || $this->consents->find($workspace, $policy->version)?->policy_document_hash !== $policy->digest) {
             throw new DomainException('POLICY_CONSENT_REQUIRED');
         }
     }

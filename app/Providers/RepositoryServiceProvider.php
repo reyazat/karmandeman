@@ -16,6 +16,7 @@ use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Repositories\Eloquents\AccountDeletion\EloquentAccountDeletionRepository;
 use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
@@ -24,15 +25,16 @@ use App\Repositories\Eloquents\ConversationEvent\EloquentConversationEventReposi
 use App\Repositories\Eloquents\Employee\EloquentEmployeeRepository;
 use App\Repositories\Eloquents\MemoryItem\EloquentMemoryItemRepository;
 use App\Repositories\Eloquents\Project\EloquentProjectRepository;
-use App\Repositories\Eloquents\User\EloquentTelegramAuthRequestRepository;
+use App\Repositories\Eloquents\ServiceRequest\EloquentServiceRequestRepository;
+use App\Repositories\Eloquents\TelegramAuthRequest\EloquentTelegramAuthRequestRepository;
+use App\Repositories\Eloquents\TelegramOnboarding\EloquentTelegramOnboardingRepository;
 use App\Repositories\Eloquents\User\EloquentUserRepository;
 use App\Repositories\Eloquents\WalletLedger\EloquentWalletRepository;
-use App\Repositories\Eloquents\Workspace\EloquentServiceRequestRepository;
-use App\Repositories\Eloquents\Workspace\EloquentTelegramOnboardingRepository;
 use App\Repositories\Eloquents\Workspace\EloquentWorkspaceRepository;
+use App\Repositories\Eloquents\WorkspaceConsent\EloquentWorkspaceConsentRepository;
 use Illuminate\Support\ServiceProvider;
 
-class RepositoryServiceProvider extends ServiceProvider
+final class RepositoryServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
@@ -42,6 +44,7 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(TelegramOnboardingRepositoryInterface::class, EloquentTelegramOnboardingRepository::class);
         $this->app->bind(ServiceRequestRepositoryInterface::class, EloquentServiceRequestRepository::class);
         $this->app->bind(UserRepositoryInterface::class, EloquentUserRepository::class);
+        $this->app->bind(WorkspaceConsentRepositoryInterface::class, EloquentWorkspaceConsentRepository::class);
         $this->app->bind(WorkspaceRepositoryInterface::class, EloquentWorkspaceRepository::class);
         $this->app->bind(EmployeeRepositoryInterface::class, EloquentEmployeeRepository::class);
         $this->app->bind(ProjectRepositoryInterface::class, EloquentProjectRepository::class);

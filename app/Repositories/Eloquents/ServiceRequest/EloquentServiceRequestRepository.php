@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Repositories\Eloquents\Workspace;
+namespace App\Repositories\Eloquents\ServiceRequest;
 
 use App\Models\ServiceRequest;
 use App\Models\User;

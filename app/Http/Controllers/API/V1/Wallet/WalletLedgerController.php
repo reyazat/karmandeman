@@ -12,7 +12,7 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class WalletLedgerController extends Controller
+final class WalletLedgerController extends Controller
 {
     public function __invoke(
         Request $request,

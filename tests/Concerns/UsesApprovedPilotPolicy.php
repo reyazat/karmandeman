@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Concerns;
 
 use App\Models\User;
-use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use Illuminate\Filesystem\Filesystem;
@@ -43,7 +43,7 @@ trait UsesApprovedPilotPolicy
     private function grantPilotConsent(User $user): void
     {
         $policy = app(PilotPolicyService::class)->current();
-        app(TelegramOnboardingRepositoryInterface::class)->accept(
+        app(WorkspaceConsentRepositoryInterface::class)->record(
             app(WorkspaceRepositoryInterface::class)->currentFor($user), $user, $policy->version, $policy->digest,
         );
     }

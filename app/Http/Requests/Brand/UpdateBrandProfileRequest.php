@@ -6,7 +6,7 @@ namespace App\Http\Requests\Brand;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class UpdateBrandProfileRequest extends FormRequest
+final class UpdateBrandProfileRequest extends FormRequest
 {
     public function authorize(): bool
     {
