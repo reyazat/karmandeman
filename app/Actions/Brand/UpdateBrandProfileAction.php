@@ -35,6 +35,16 @@ final readonly class UpdateBrandProfileAction
             $brand = $this->brands->updateProfile($brand, $attributes);
 
             foreach ($attributes as $key => $value) {
+                if ($value === null) {
+                    $item = $this->memory->activeFor($workspace, 'workspace_profile')
+                        ->firstWhere('key', "brand.{$key}");
+                    if ($item !== null) {
+                        $this->memory->deprecate($item, $confirmedBy);
+                    }
+
+                    continue;
+                }
+
                 $this->memory->put(
                     workspace: $workspace,
                     scope: 'workspace_profile',

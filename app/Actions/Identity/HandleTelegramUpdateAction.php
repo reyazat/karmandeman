@@ -18,9 +18,14 @@ final readonly class HandleTelegramUpdateAction
     public function execute(array $update): string
     {
         return DB::transaction(function () use ($update): string {
+            $message = $update['message'] ?? null;
+            $messageKey = is_array($message) && isset($message['message_id'], $message['chat']['id'])
+                ? hash('sha256', $message['chat']['id'].':'.$message['message_id'])
+                : null;
             $event = $this->events->recordOnce([
                 'channel' => 'telegram',
                 'external_update_id' => (string) $update['update_id'],
+                'message_key' => $messageKey,
                 'redacted_body' => [
                     'update_id' => $update['update_id'],
                     'has_message' => isset($update['message']),

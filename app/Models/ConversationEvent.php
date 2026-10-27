@@ -15,6 +15,7 @@ class ConversationEvent extends Model
         'project_id',
         'channel',
         'external_update_id',
+        'message_key',
         'intent',
         'redacted_body',
         'created_at',

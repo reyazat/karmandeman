@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Mockery;
 use RuntimeException;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
 final class TelegramBoundaryTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
     private bool $transportFails = false;
 
     private const TOKEN = '123:only-a-test-token';
@@ -28,6 +33,7 @@ final class TelegramBoundaryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->useApprovedPilotPolicy();
         config(['services.telegram.bot_token' => self::TOKEN, 'services.telegram.webhook_secret' => 'test-secret']);
         Http::fake(['api.telegram.org/*' => fn () => Http::response(['ok' => ! $this->transportFails], $this->transportFails ? 500 : 200)]);
     }
@@ -48,6 +54,19 @@ final class TelegramBoundaryTest extends TestCase
             'text' => $command, 'from' => ['id' => 777, 'first_name' => 'Test'],
             'chat' => ['id' => 777, 'type' => 'private'],
         ]];
+    }
+
+    private function readyForProject(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(777));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $onboarding = app(AdvanceTelegramOnboardingAction::class);
+        $onboarding->execute($workspace, $user, 'accept', $this->policyConsentToken());
+        $onboarding->execute($workspace, $user, 'input', 'Brand');
+        $onboarding->execute($workspace, $user, 'unit', 'toman');
+        $onboarding->execute($workspace, $user, 'skip');
+        $onboarding->execute($workspace, $user, 'skip');
+        $onboarding->execute($workspace, $user, 'confirm');
     }
 
     public function test_expired_future_duplicate_and_array_init_data_are_rejected(): void
@@ -131,6 +150,7 @@ final class TelegramBoundaryTest extends TestCase
 
     public function test_failure_rolls_back_dedupe_and_domain_then_retry_can_succeed(): void
     {
+        $this->readyForProject();
         $repository = app(ProjectRepositoryInterface::class);
         $mock = Mockery::mock(ProjectRepositoryInterface::class);
         $mock->shouldReceive('create')->once()->andThrow(new RuntimeException('simulated failure'));
@@ -138,7 +158,7 @@ final class TelegramBoundaryTest extends TestCase
         $this->postJson('/api/webhooks/telegram', $this->update(1, '/new'), self::HEADERS)
             ->assertStatus(503)->assertJsonPath('error.code', 'TELEGRAM_UPDATE_FAILED');
         $this->assertDatabaseCount('conversation_events', 0);
-        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('users', 1);
         $this->assertDatabaseCount('jobs', 0);
         $this->app->instance(ProjectRepositoryInterface::class, $repository);
         $this->postJson('/api/webhooks/telegram', $this->update(1, '/new'), self::HEADERS)->assertOk();
@@ -173,6 +193,7 @@ final class TelegramBoundaryTest extends TestCase
 
     public function test_failed_delivery_stays_queued_without_repeating_project_creation(): void
     {
+        $this->readyForProject();
         $this->transportFails = true;
         $this->postJson('/api/webhooks/telegram', $this->update(3, '/new'), self::HEADERS)->assertOk();
         Artisan::call('queue:work', ['connection' => 'telegram', '--queue' => 'telegram', '--once' => true]);

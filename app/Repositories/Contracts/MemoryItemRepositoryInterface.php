@@ -30,5 +30,5 @@ interface MemoryItemRepositoryInterface
      */
     public function activeFor(Workspace $workspace, ?string $scope = null): Collection;
 
-    public function deprecate(MemoryItem $item): MemoryItem;
+    public function deprecate(MemoryItem $item, ?int $actorId = null): MemoryItem;
 }

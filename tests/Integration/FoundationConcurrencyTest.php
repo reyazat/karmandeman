@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Brand\UpdateApiBrandAction;
 use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\HandleTelegramUpdateAction;
@@ -19,11 +20,20 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Telegram\TelegramReplyService;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 use Throwable;
 
 final class FoundationConcurrencyTest extends TestCase
 {
+    use UsesApprovedPilotPolicy;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useApprovedPilotPolicy();
+    }
+
     protected function connectionsToTransact(): array
     {
         // Children must see committed fixtures and real row locks.
@@ -105,6 +115,15 @@ final class FoundationConcurrencyTest extends TestCase
 
     public function test_parallel_duplicate_webhooks_commit_one_project_and_outbox_message(): void
     {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(789));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $onboarding = app(AdvanceTelegramOnboardingAction::class);
+        $onboarding->execute($workspace, $user, 'accept', $this->policyConsentToken());
+        $onboarding->execute($workspace, $user, 'input', 'Brand');
+        $onboarding->execute($workspace, $user, 'unit', 'toman');
+        $onboarding->execute($workspace, $user, 'skip');
+        $onboarding->execute($workspace, $user, 'skip');
+        $onboarding->execute($workspace, $user, 'confirm');
         $update = ['update_id' => 1, 'message' => [
             'text' => '/new concurrent', 'from' => ['id' => 789], 'chat' => ['id' => 789, 'type' => 'private'],
         ]];
@@ -163,6 +182,27 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertCount(1, array_unique($tokens));
         $this->assertDatabaseCount('personal_access_tokens', 1);
         $this->assertDatabaseCount('telegram_auth_requests', 1);
+    }
+
+    public function test_parallel_brand_confirmation_clicks_commit_one_revision(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92011));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $onboarding = app(AdvanceTelegramOnboardingAction::class);
+        $onboarding->execute($workspace, $user, 'accept', $this->policyConsentToken());
+        $onboarding->execute($workspace, $user, 'input', 'Confirmed Brand');
+        $onboarding->execute($workspace, $user, 'unit', 'toman');
+        $onboarding->execute($workspace, $user, 'skip');
+        $review = $onboarding->execute($workspace, $user, 'skip');
+        $token = substr($review->buttons[0][0]['callback_data'], strlen('onboard:confirm:'));
+
+        $results = $this->concurrently(fn () => app(AdvanceTelegramOnboardingAction::class)
+            ->execute($workspace, $user, 'confirm', $token)->text);
+        $this->assertCount(1, array_filter($results, fn ($text) => str_contains($text, 'شناخت اولیه رایگان است')));
+        $this->assertSame(2, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
+        $this->assertDatabaseCount('memory_items', 2);
+        $this->assertDatabaseCount('memory_item_revisions', 2);
+        $this->assertDatabaseCount('workspace_consents', 1);
     }
 
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void

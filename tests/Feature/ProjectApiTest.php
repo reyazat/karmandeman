@@ -69,7 +69,7 @@ class ProjectApiTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
-    public function test_new_command_creates_collecting_project(): void
+    public function test_new_command_before_consent_does_not_create_project(): void
     {
         $this->postJson('/api/webhooks/telegram', [
             'update_id' => 55,
@@ -80,10 +80,8 @@ class ProjectApiTest extends TestCase
             ],
         ], ['X-Telegram-Bot-Api-Secret-Token' => self::SECRET])->assertOk();
 
-        $this->assertDatabaseHas('projects', [
-            'name' => 'کیف جدید',
-            'state' => 'collecting_input',
-        ]);
+        $this->assertDatabaseCount('projects', 0);
+        $this->assertDatabaseCount('workspace_consents', 0);
     }
 
     public function test_project_retry_returns_same_snapshot_and_reused_key_with_other_input_conflicts(): void

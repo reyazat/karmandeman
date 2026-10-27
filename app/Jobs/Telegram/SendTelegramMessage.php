@@ -19,7 +19,11 @@ final class SendTelegramMessage implements ShouldBeEncrypted, ShouldQueue
 
     public int $timeout = 20;
 
-    public function __construct(public int|string $chatId, public string $text) {}
+    public function __construct(
+        public int|string $chatId,
+        public string $text,
+        public array $buttons = [],
+    ) {}
 
     public function backoff(): array
     {
@@ -28,7 +32,7 @@ final class SendTelegramMessage implements ShouldBeEncrypted, ShouldQueue
 
     public function handle(TelegramBotService $bot): void
     {
-        $bot->sendMessage($this->chatId, $this->text);
+        $bot->sendMessage($this->chatId, $this->text, $this->buttons);
     }
 
     public function failed(?Throwable $exception): void

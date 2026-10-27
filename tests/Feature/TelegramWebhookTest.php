@@ -34,7 +34,7 @@ class TelegramWebhookTest extends TestCase
         return [
             'update_id' => $updateId,
             'message' => [
-                'message_id' => 10,
+                'message_id' => 10 + $updateId,
                 'date' => time(),
                 'text' => '/start',
                 'from' => ['id' => $telegramUserId, 'first_name' => 'علی'],
