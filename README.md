@@ -50,10 +50,13 @@ Support receipts and account deletion remain available. `/delete_data` asks for
 a signed, ten-minute confirmation; confirming records one `account_deletions`
 row with T0 and a T0+168h deadline, marks the workspace `deletion_pending`,
 revokes API tokens and rejects every later mutation (FR-086). API brand and
-project mutations require consent to the exact approved policy. Purge of data,
-backups and keys (FR-087), the Mini App delete button (FR-085), the operator
-path and deadline monitoring are not implemented; they remain release
-requirements.
+project mutations require consent to the exact approved policy. The Mini App
+privacy page at `/app/privacy` (FR-085) re-authenticates with fresh signed
+initData and calls `POST /api/v1/account/deletion`, the same FR-086 flow.
+Purge of data, backups and keys (FR-087), private-data encryption (NFR-11),
+the operator path and deadline monitoring are not implemented; they remain
+release requirements. `deploy/Caddyfile` still sends `X-Frame-Options: DENY`,
+which blocks Telegram Web clients from framing the Mini App.
 
 The owner-directed requirements in
 [ADR-011](docs/adr/ADR-011-seven-day-complete-erasure.md) set a

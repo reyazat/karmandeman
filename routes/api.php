@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\V1\Brand\CurrentBrandController;
 use App\Http\Controllers\API\V1\Identity\MeController;
 use App\Http\Controllers\API\V1\Identity\TelegramAuthController;
+use App\Http\Controllers\API\V1\Privacy\AccountDeletionController;
 use App\Http\Controllers\API\V1\Project\ProjectController;
 use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
 use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
@@ -29,6 +30,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/projects/{project}', [ProjectController::class, 'show'])->whereUuid('project');
             Route::apiResource('/projects', ProjectController::class)->only(['index', 'store']);
             Route::get('/wallet/ledger', WalletLedgerController::class);
+            Route::post('/account/deletion', [AccountDeletionController::class, 'store'])->middleware('throttle:account-deletion');
         });
     });
 });

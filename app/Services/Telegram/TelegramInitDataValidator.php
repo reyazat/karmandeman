@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Telegram;
 
+use App\Data\Telegram\TelegramUserData;
+use InvalidArgumentException;
+
 /**
  * Validates Telegram Mini App initData per the official algorithm.
  * initDataUnsafe is never trusted; only the signed fields are read.
@@ -11,6 +14,19 @@ namespace App\Services\Telegram;
 final readonly class TelegramInitDataValidator
 {
     private const MAX_AUTH_AGE_SECONDS = 300;
+
+    /** Signed, fresh initData user, or null when the signature, age or user payload is invalid. */
+    public function verifiedUser(string $initData): ?TelegramUserData
+    {
+        $fields = $this->validate($initData);
+        $user = $fields !== null ? json_decode((string) ($fields['user'] ?? ''), true) : null;
+
+        try {
+            return is_array($user) ? TelegramUserData::fromArray($user) : null;
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+    }
 
     /**
      * @return array<string, string>|null parsed initData fields on success

@@ -146,6 +146,15 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - **باقی‌مانده:** مقادیر `memory_items`/`memory_item_revisions`/`brands` هنوز plaintext‌اند و به طرح کلید NFR-11 (ADR بعدی) وابسته‌اند؛ تراکنش و قاعده grant در `EloquentWalletRepository` با گام ۵ (Reserve/Capture) بازآرایی می‌شود؛ `EnsureBrandAction` در خواندن برند رکورد می‌سازد.
 - شواهد: PostgreSQL موقت **۹۵ تست / ۷۳۲ assertion**؛ SQLite **۸۵ پاس / ۶۳۸ assertion و ۱۰ skip**؛ Pint روی ۱۷۱ فایل و PHPStan سطح ۵ بدون خطا.
 
+### برش FR-085: صفحه حریم خصوصی Mini App و دکمه حذف (۲۷ اکتبر ۲۰۲۶)
+
+- `POST /api/v1/account/deletion` (Sanctum + workspace مجاز + throttle پنج در دقیقه) با `RequestAccountDeletionRequest` به `RequestReauthenticatedAccountDeletionAction` و همان `RequestAccountDeletionAction` مشترک FR-086 (کانال `mini_app`) می‌رسد. **احراز مجدد** = initData امضاشده و تازه (حداکثر ۵ دقیقه از باز شدن Mini App) که کاربر تلگرامش باید همان صاحب token باشد؛ **تأیید نهایی** = `confirm: true`. initData کهنه یا جعلی `401 REAUTHENTICATION_REQUIRED`، initData کاربر دیگر `403`، و نبود تأیید `422` می‌گیرد و هیچ حذفی ثبت نمی‌شود. پاسخ `AccountDeletionResource` (رسید، وضعیت، T0 و مهلت) با 201 یا 200 است.
+- ورود دوباره به Mini App برای حساب در حال حذف `409 ACCOUNT_DELETION_PENDING` همراه رسید برمی‌گرداند؛ token یا هدیه تازه ساخته نمی‌شود.
+- Vue: `/app/privacy` با `PrivacyPage` (RTL، وضعیت‌های loading/خارج از تلگرام/آماده/تأیید/ثبت/حذف‌شده/احراز مجدد/خطا، فوکوس روی عنوان تأیید، تیک برگشت‌ناپذیری اجباری، انصراف بی‌اثر)، `shared/api/client` و `shared/telegram/webApp` فقط initData امضاشده را می‌فرستند. token فقط در حافظه صفحه است. shell در `resources/views/miniapp.blade.php` با SDK رسمی تلگرام.
+- این تصمیم که «initData تازه ۵ دقیقه‌ای» احراز مجدد FR-085 است، تفسیر فنی است و تأیید Product/Security لازم دارد. باز کردن صفحه برای کاربر تلگرامِ ثبت‌نشده از مسیر فعلی `/auth/telegram/verify` حساب می‌سازد.
+- **gate استقرار:** `deploy/Caddyfile` هدر `X-Frame-Options: DENY` دارد؛ Telegram Web/Desktop، Mini App را در iframe باز می‌کند و این صفحه را مسدود می‌کند. پیش از انتشار، سیاست framing/CSP برای `/app` با `/deployment-readiness` بررسی شود. تنظیم BotFather و URL عمومی هم انجام نشده است.
+- شواهد: PostgreSQL موقت **۱۰۰ تست / ۷۶۴ assertion**؛ SQLite **۹۰ پاس / ۶۷۰ assertion و ۱۰ skip**؛ Pint روی ۱۷۷ فایل و PHPStan سطح ۵ بدون خطا. frontend در کانتینر ایزوله: `npm ci`، `npm audit` (صفر آسیب‌پذیری)، `vue-tsc`، ESLint با `--max-warnings=0`، **Vitest ۶ تست پاس** و `vite build` موفق. CI اکنون Vitest را اجرا می‌کند؛ E2E مرورگر/تلگرام واقعی و ربات زنده آزموده نشده‌اند. `@vue/test-utils` و `jsdom` به devDependencies افزوده شدند و `no-undef` برای فایل‌های TS/Vue خاموش شد چون vue-tsc همین را بررسی می‌کند.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |
@@ -159,7 +168,7 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 | TypeScript و ESLint | typecheck و lint با `--max-warnings=0` پاس |
 | npm audit | صفر آسیب‌پذیری گزارش‌شده پس از اصلاح dependency |
 | Vite build | موفق؛ هشدار اختیاری fontaine باقی است؛ UI کاربردی را اثبات نمی‌کند |
-| Vitest | **ناموفق: No test files found**؛ gap واقعی است و پنهان نشده |
+| Vitest | پس از FR-085: ۶ تست component برای `PrivacyPage` پاس و در CI اجرا می‌شود؛ E2E مرورگر/تلگرام هنوز وجود ندارد |
 | Compose config | production reference و dev override با `--quiet` معتبر؛ مقدار secrets نمایش داده نشد |
 | Gitleaks 8.24 | snapshot فایل‌های tracked و untracked مجاز اسکن شد؛ صفر leak گزارش‌شده؛ `.env` واقعی، cache و تاریخچه Git اسکن نشدند؛ تضمین عدم نشت در runtime نیست |
 | CI | `.github/workflows/foundation-checks.yml` برای PHP/PostgreSQL، frontend و build هر دو image؛ [run 40514840813](https://github.com/reyazat/karmandeman/actions/runs/40514840813) روی dd614e8: backend، frontend-foundation و images موفق، **۹۱ تست / ۷۰۸ assertion** روی PostgreSQL با ۱۰ integration. هشدارهای باقی: actionهای Node 20، نبود تست frontend، مهاجرت ubuntu-latest به Ubuntu 26. همه gateهای release را پوشش نمی‌دهد |

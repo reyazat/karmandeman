@@ -27,5 +27,6 @@ class AppServiceProvider extends ServiceProvider
         ini_set('zend.exception_ignore_args', '1');
         RateLimiter::for('telegram-auth', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('workspace-api', fn (Request $request) => Limit::perMinute(60)->by((string) $request->user()->id));
+        RateLimiter::for('account-deletion', fn (Request $request) => Limit::perMinute(5)->by((string) $request->user()->id));
     }
 }

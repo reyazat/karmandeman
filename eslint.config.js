@@ -13,5 +13,7 @@ export default ts.config(
             parserOptions: { parser: ts.parser },
             globals: { document: 'readonly' },
         },
+        // vue-tsc already rejects undefined identifiers; core no-undef does not know DOM/TS types.
+        rules: { 'no-undef': 'off' },
     },
 );
