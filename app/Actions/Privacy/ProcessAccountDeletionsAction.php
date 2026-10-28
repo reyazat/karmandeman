@@ -47,8 +47,13 @@ final readonly class ProcessAccountDeletionsAction
 
         $alertBefore = $now->addHours((int) config('karmandeman.erasure.alert_hours_before_deadline'));
         foreach ($this->deletions->unfinishedBefore($alertBefore) as $deletion) {
-            $summary['at_risk']++;
             $breached = $now->greaterThanOrEqualTo($deletion->deadline_at);
+            // A purged receipt whose evidenced backups expire before the deadline is on track.
+            $expected = $this->complete->expectedCompletion($deletion);
+            if (! $breached && $expected !== null && $expected->lessThanOrEqualTo($deletion->deadline_at)) {
+                continue;
+            }
+            $summary['at_risk']++;
             Log::critical($breached ? 'privacy.deletion_deadline_breached' : 'privacy.deletion_deadline_at_risk', [
                 'receipt' => $deletion->public_id,
                 'status' => $deletion->status->value,

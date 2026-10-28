@@ -383,6 +383,41 @@ final class AccountErasureTest extends TestCase
         Log::shouldHaveReceived('critical')->withArgs(fn (string $event, array $context) => $event === 'privacy.deletion_deadline_breached' && $context['status'] === 'awaiting_backup_expiry');
     }
 
+    public function test_purged_receipt_on_track_for_completion_raises_no_alert(): void
+    {
+        config(['karmandeman.erasure.backup_lifecycle_verified' => true]);
+        [$user, $workspace] = $this->seller(555);
+        $deletion = $this->requestDeletion($user, $workspace);
+        $this->travel(1)->minutes();
+        $this->process();
+        Log::spy();
+
+        $purged = $deletion->fresh();
+        $this->travelTo($purged->live_purged_at->toImmutable()->addHours(144)->subSecond());
+        $this->assertSame(['purged' => 0, 'failed' => 0, 'completed' => 0, 'at_risk' => 0], $this->process());
+        Log::shouldNotHaveReceived('critical');
+        $this->travel(1)->seconds();
+        $this->assertSame(1, $this->process()['completed']);
+    }
+
+    public function test_failing_receipts_do_not_starve_newer_requests(): void
+    {
+        config(['karmandeman.erasure.batch_size' => 1]);
+        [$failing, $failingWorkspace] = $this->seller(555);
+        [$healthy, $healthyWorkspace] = $this->seller(777);
+        $stuck = $this->requestDeletion($failing, $failingWorkspace);
+        DB::table('workspace_data_keys')->where('workspace_id', $failingWorkspace->id)->update(['transit_key' => 'ws-renamed-elsewhere']);
+        $this->travel(1)->minutes();
+        $fresh = $this->requestDeletion($healthy, $healthyWorkspace);
+
+        $this->assertSame(1, $this->process()['failed']);
+        $this->assertSame(1, $this->process()['purged']);
+        $this->assertSame(AccountDeletionStatus::AwaitingBackupExpiry, $fresh->fresh()->status);
+        $this->assertSame(AccountDeletionStatus::Requested, $stuck->fresh()->status);
+        $this->assertSame(1, $this->process()['failed']);
+        $this->assertSame(2, $stuck->fresh()->attempts);
+    }
+
     public function test_backup_cap_that_outlives_the_deadline_is_flagged(): void
     {
         config(['karmandeman.erasure.database_backup_max_age_hours' => 168]);

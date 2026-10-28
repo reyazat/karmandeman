@@ -30,14 +30,28 @@ final readonly class CompleteAccountDeletionAction
             if ($locked->status !== AccountDeletionStatus::AwaitingBackupExpiry || $locked->live_purged_at === null || $locked->key_destroyed_at === null) {
                 return false;
             }
-            $databaseBackupsGone = $locked->live_purged_at->addHours((int) config('karmandeman.erasure.database_backup_max_age_hours'));
-            $keyBackupsGone = $locked->key_destroyed_at->addHours((int) config('karmandeman.erasure.key_backup_max_age_hours'));
-            if ($now->lessThan($databaseBackupsGone) || $now->lessThan($keyBackupsGone)) {
+            if ($now->lessThan($this->expectedCompletion($locked))) {
                 return false;
             }
             $this->deletions->markCompleted($locked, $now);
 
             return true;
         });
+    }
+
+    /**
+     * When the last backup that may hold the account expires, or null when
+     * completion cannot happen yet: unpurged, or backup caps not evidenced.
+     */
+    public function expectedCompletion(AccountDeletion $deletion): ?CarbonImmutable
+    {
+        if (! config('karmandeman.erasure.backup_lifecycle_verified')
+            || $deletion->live_purged_at === null || $deletion->key_destroyed_at === null) {
+            return null;
+        }
+        $databaseBackupsGone = $deletion->live_purged_at->toImmutable()->addHours((int) config('karmandeman.erasure.database_backup_max_age_hours'));
+        $keyBackupsGone = $deletion->key_destroyed_at->toImmutable()->addHours((int) config('karmandeman.erasure.key_backup_max_age_hours'));
+
+        return $databaseBackupsGone->max($keyBackupsGone);
     }
 }

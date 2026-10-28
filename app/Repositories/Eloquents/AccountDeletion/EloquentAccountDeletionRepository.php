@@ -38,7 +38,9 @@ final class EloquentAccountDeletionRepository implements AccountDeletionReposito
 
     public function withStatus(AccountDeletionStatus $status, int $limit): Collection
     {
-        return AccountDeletion::query()->where('status', $status)->orderBy('requested_at')->orderBy('id')->limit($limit)->get();
+        // Fewest failures first: receipts that keep failing must not starve new ones.
+        return AccountDeletion::query()->where('status', $status)
+            ->orderBy('attempts')->orderBy('requested_at')->orderBy('id')->limit($limit)->get();
     }
 
     public function unfinishedBefore(CarbonImmutable $deadline): Collection

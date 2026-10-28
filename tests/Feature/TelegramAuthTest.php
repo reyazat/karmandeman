@@ -72,6 +72,21 @@ class TelegramAuthTest extends TestCase
         $this->assertTrue(Str::isUuid($response->json('data.user.id')));
     }
 
+    public function test_sign_in_registration_fails_inside_its_transaction_for_a_purged_account(): void
+    {
+        // The existence check and the "no create" decision are one locked step,
+        // so a purge committing just before sign-in cannot yield a new account (ADR-012).
+        try {
+            app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(780), create: false);
+            $this->fail('Sign-in created an account.');
+        } catch (\DomainException $e) {
+            $this->assertSame('ACCOUNT_NOT_FOUND', $e->getMessage());
+        }
+        $this->assertDatabaseCount('users', 0);
+        $this->assertDatabaseCount('workspaces', 0);
+        $this->assertDatabaseCount('credit_ledger', 0);
+    }
+
     public function test_unknown_telegram_user_gets_no_account_from_mini_app(): void
     {
         $this->postJson('/api/v1/auth/telegram/verify', ['initData' => $this->buildInitData(['id' => 779])], self::HEADERS)

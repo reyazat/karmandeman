@@ -8,7 +8,6 @@ use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
-use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +16,6 @@ final readonly class IssueTelegramTokenAction
 {
     public function __construct(
         private RegisterTelegramUserAction $register,
-        private UserRepositoryInterface $users,
         private TelegramAuthRequestRepositoryInterface $requests,
         private WorkspaceRepositoryInterface $workspaces,
         private LockActiveWorkspaceAction $lockActive,
@@ -31,10 +29,7 @@ final readonly class IssueTelegramTokenAction
      */
     public function execute(TelegramUserData $telegramUser, string $initData, string $key): array
     {
-        if ($this->users->findByIdentity('telegram', (string) $telegramUser->id) === null) {
-            throw new DomainException('ACCOUNT_NOT_FOUND');
-        }
-        $account = $this->register->execute($telegramUser);
+        $account = $this->register->execute($telegramUser, create: false);
         $hash = hash('sha256', $initData);
 
         return DB::transaction(function () use ($account, $key, $hash): array {
