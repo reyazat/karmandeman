@@ -18,6 +18,7 @@ use App\Services\ProductIntake\ProductDraftNormalizer;
 use App\Services\ProductIntake\ProjectSnapshotSigner;
 use Carbon\CarbonImmutable;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Gate A (PRD E05): the user approves exactly the revision they reviewed.
@@ -46,6 +47,7 @@ final readonly class ApproveProductRevisionAction
                 $this->consent->execute($workspace);
                 $product = $this->products->findPublicForWorkspace($workspace, $productPublicId)
                     ?? throw new DomainException('PRODUCT_NOT_FOUND');
+                Gate::forUser($user)->authorize('update', $product);
                 if ($product->status === ProductStatus::Archived) {
                     throw new DomainException('PRODUCT_ARCHIVED');
                 }

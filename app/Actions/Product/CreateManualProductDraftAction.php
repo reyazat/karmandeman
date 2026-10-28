@@ -14,6 +14,7 @@ use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Seller types a product into an open batch (Step 3 slice, ADR-016). No AI,
@@ -46,6 +47,7 @@ final readonly class CreateManualProductDraftAction
                 $this->consent->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
+                Gate::forUser($user)->authorize('update', $project);
                 if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }

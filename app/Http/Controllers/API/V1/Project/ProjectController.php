@@ -14,6 +14,7 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 final class ProjectController extends Controller
 {
@@ -25,10 +26,12 @@ final class ProjectController extends Controller
     ): JsonResponse {
         $workspace = $workspaces->currentFor($request->user());
         $found = $workspace === null ? null : $projects->findPublicForWorkspace($workspace, $project);
+        if ($found === null) {
+            return ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404);
+        }
+        Gate::authorize('view', $found);
 
-        return $found === null
-            ? ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404)
-            : ApiResponse::success(new ProjectResource($found));
+        return ApiResponse::success(new ProjectResource($found));
     }
 
     public function index(

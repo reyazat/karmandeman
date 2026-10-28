@@ -6,10 +6,12 @@ namespace App\Actions\Product;
 
 use App\Exceptions\ProductIntegrityFailed;
 use App\Models\ProductRevision;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Services\ProductIntake\ApprovedRevisionVerifier;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 /** The approved record of one product, verified before it is returned (ADR-019). */
@@ -20,10 +22,11 @@ final readonly class ReadApprovedProductAction
         private ApprovedRevisionVerifier $verifier,
     ) {}
 
-    public function execute(Workspace $workspace, string $productPublicId): ProductRevision
+    public function execute(Workspace $workspace, User $user, string $productPublicId): ProductRevision
     {
         $product = $this->products->findPublicForWorkspace($workspace, $productPublicId)
             ?? throw new DomainException('PRODUCT_NOT_FOUND');
+        Gate::forUser($user)->authorize('view', $product);
         $revision = ($product->approved_revision === null ? null : $this->products->revision($product, $product->approved_revision))
             ?? throw new DomainException('PRODUCT_NOT_APPROVED');
 

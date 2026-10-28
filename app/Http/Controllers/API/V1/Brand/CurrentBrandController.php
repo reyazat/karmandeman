@@ -28,7 +28,12 @@ final class CurrentBrandController extends Controller
             return ApiResponse::error('WORKSPACE_NOT_FOUND', 'فضای کاری یافت نشد.', 404);
         }
 
-        return ApiResponse::success(new BrandResource($ensureBrand->execute($workspace)));
+        try {
+            return ApiResponse::success(new BrandResource($ensureBrand->execute($workspace)));
+        } catch (DomainException $e) {
+            // Erasure started after the request was authorized (FR-086).
+            return ApiResponse::fromPrivacyGate($e) ?? throw $e;
+        }
     }
 
     public function update(

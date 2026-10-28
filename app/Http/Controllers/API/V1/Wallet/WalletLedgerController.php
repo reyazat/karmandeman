@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\API\V1\Wallet;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\Wallet\WalletLedgerEntryResource;
+use App\Http\Resources\Wallet\WalletLedgerResource;
 use App\Http\Responses\ApiResponse;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 final class WalletLedgerController extends Controller
 {
@@ -26,9 +27,8 @@ final class WalletLedgerController extends Controller
             return ApiResponse::error('WALLET_NOT_FOUND', 'کیف پول یافت نشد.', 404);
         }
 
-        return ApiResponse::success([
-            'balance' => $wallet->balance_cached,
-            'entries' => WalletLedgerEntryResource::collection($wallets->entries($wallet)),
-        ]);
+        Gate::authorize('view', $wallet);
+
+        return ApiResponse::success((new WalletLedgerResource($wallet))->withEntries($wallets->entries($wallet)));
     }
 }

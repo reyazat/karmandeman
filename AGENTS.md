@@ -4,8 +4,9 @@ This repository contains a Laravel 13 application with initial Telegram
 identity, workspace/employee provisioning, brand/profile memory, project
 creation, gift-credit ledger and a manual product draft/revision/approval
 slice with text normalization, SKU uniqueness, a review queue and an approved
-batch snapshot, project reopen/cancel, signed Gate A approvals and a
-near-duplicate warning (ADR-016 to ADR-020) with code and tests. These are partial foundations, not a
+batch snapshot, project reopen/cancel, signed Gate A approvals, a
+near-duplicate warning and record Policies for project/product/wallet
+(ADR-016 to ADR-021) with code and tests. These are partial foundations, not a
 completed MVP. Asset intake, AI product extraction, file exports, full wallet
 lifecycle and n8n workflows are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

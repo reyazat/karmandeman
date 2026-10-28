@@ -34,7 +34,7 @@ final class ProjectWorkflowController extends Controller
     {
         return $this->respond($request, function (Workspace $workspace) use ($project, $request, $finish): array {
             [$found] = $finish->execute(
-                $workspace, $request->user()->id, $request->validated('idempotency_key'), $project, $request->integer('version'),
+                $workspace, $request->user(), $request->validated('idempotency_key'), $project, $request->integer('version'),
             );
 
             return [new ProjectResource($found), 200];
@@ -56,7 +56,7 @@ final class ProjectWorkflowController extends Controller
     {
         return $this->respond($request, function (Workspace $workspace) use ($project, $request, $reopen): array {
             [$found] = $reopen->execute(
-                $workspace, $request->user()->id, $request->validated('idempotency_key'), $project, $request->integer('version'),
+                $workspace, $request->user(), $request->validated('idempotency_key'), $project, $request->integer('version'),
             );
 
             return [new ProjectResource($found), 200];
@@ -67,7 +67,7 @@ final class ProjectWorkflowController extends Controller
     {
         return $this->respond($request, function (Workspace $workspace) use ($project, $request, $cancel): array {
             [$found] = $cancel->execute(
-                $workspace, $request->user()->id, $request->validated('idempotency_key'), $project, $request->integer('version'),
+                $workspace, $request->user(), $request->validated('idempotency_key'), $project, $request->integer('version'),
             );
 
             return [new ProjectResource($found), 200];
@@ -77,8 +77,8 @@ final class ProjectWorkflowController extends Controller
     /** The approved batch as JSON records: the Step 3 batch export. */
     public function snapshot(string $project, Request $request, ReadProjectSnapshotAction $read): JsonResponse
     {
-        return $this->respond($request, function (Workspace $workspace) use ($project, $read): array {
-            [$snapshot, $revisions] = $read->execute($workspace, $project);
+        return $this->respond($request, function (Workspace $workspace) use ($project, $request, $read): array {
+            [$snapshot, $revisions] = $read->execute($workspace, $request->user(), $project);
 
             return [new ProjectSnapshotResource($snapshot, $revisions), 200];
         });

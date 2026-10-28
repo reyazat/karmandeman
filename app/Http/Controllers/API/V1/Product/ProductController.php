@@ -30,6 +30,7 @@ use DomainException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Gate;
 
 final class ProductController extends Controller
 {
@@ -39,10 +40,12 @@ final class ProductController extends Controller
     {
         $workspace = $this->workspace($request);
         $found = $workspace === null ? null : $projects->findPublicForWorkspace($workspace, $project);
+        if ($found === null) {
+            return ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404);
+        }
+        Gate::authorize('view', $found);
 
-        return $found === null
-            ? ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404)
-            : ApiResponse::success(ProductResource::collection($products->paginateForProject($workspace, $found, $request->filter())));
+        return ApiResponse::success(ProductResource::collection($products->paginateForProject($workspace, $found, $request->filter())));
     }
 
     /** Batch counts computed by the server (FR-040). */
@@ -50,10 +53,12 @@ final class ProductController extends Controller
     {
         $workspace = $this->workspace($request);
         $found = $workspace === null ? null : $projects->findPublicForWorkspace($workspace, $project);
+        if ($found === null) {
+            return ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404);
+        }
+        Gate::authorize('view', $found);
 
-        return $found === null
-            ? ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404)
-            : ApiResponse::success(new ProductSummaryResource($products->summaryForProject($workspace, $found)));
+        return ApiResponse::success(new ProductSummaryResource($products->summaryForProject($workspace, $found)));
     }
 
     public function store(string $project, StoreProductDraftRequest $request, CreateManualProductDraftAction $create): JsonResponse
@@ -67,10 +72,12 @@ final class ProductController extends Controller
     {
         $workspace = $this->workspace($request);
         $found = $workspace === null ? null : $products->findPublicForWorkspace($workspace, $product);
+        if ($found === null) {
+            return ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404);
+        }
+        Gate::authorize('view', $found);
 
-        return $found === null
-            ? ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404)
-            : ApiResponse::success((new ProductResource($found))->withDuplicates($products->suspectedDuplicatesOf($workspace, $found)));
+        return ApiResponse::success((new ProductResource($found))->withDuplicates($products->suspectedDuplicatesOf($workspace, $found)));
     }
 
     public function revise(string $product, StoreProductDraftRequest $request, ReviseProductDraftAction $revise): JsonResponse
@@ -105,7 +112,7 @@ final class ProductController extends Controller
         }
 
         try {
-            return ApiResponse::success(new ProductRecordResource($read->execute($workspace, $product)));
+            return ApiResponse::success(new ProductRecordResource($read->execute($workspace, $request->user(), $product)));
         } catch (ProductIntegrityFailed) {
             return ApiResponse::error('PRODUCT_INTEGRITY_FAILED', 'نسخه تأییدشده این محصول قابل اعتماد نیست و خروجی ساخته نمی‌شود.', 500);
         } catch (DomainException $e) {

@@ -266,7 +266,7 @@ final class FoundationConcurrencyTest extends TestCase
             'name' => ['value' => 'Bag', 'status' => 'confirmed'],
         ])[0]->product->public_id;
         app(ApproveProductRevisionAction::class)->execute($workspace, $user, 'snapshot-approve-key', $product, 1);
-        app(FinishProjectInputAction::class)->execute($workspace, $user->id, 'snapshot-finish-key', $project->public_id, 3);
+        app(FinishProjectInputAction::class)->execute($workspace, $user, 'snapshot-finish-key', $project->public_id, 3);
 
         // Six clicks with distinct keys: one snapshot, the rest see the batch already approved (ADR-018).
         $results = $this->concurrently(function (int $i) use ($workspace, $user, $project): string {
@@ -294,13 +294,13 @@ final class FoundationConcurrencyTest extends TestCase
             'name' => ['value' => 'Bag', 'status' => 'confirmed'],
         ])[0]->product->public_id;
         app(ApproveProductRevisionAction::class)->execute($workspace, $user, 'cancel-approve-key', $product, 1);
-        app(FinishProjectInputAction::class)->execute($workspace, $user->id, 'cancel-finish-key', $project->public_id, 3);
+        app(FinishProjectInputAction::class)->execute($workspace, $user, 'cancel-finish-key', $project->public_id, 3);
 
         // Cancel and approve race on the same view: exactly one transition wins (ADR-019).
         $results = $this->concurrently(function (int $i) use ($workspace, $user, $project): string {
             try {
                 if ($i % 2 === 0) {
-                    app(CancelProjectAction::class)->execute($workspace, $user->id, "cancel-race-{$i}", $project->public_id, 4);
+                    app(CancelProjectAction::class)->execute($workspace, $user, "cancel-race-{$i}", $project->public_id, 4);
 
                     return 'cancelled';
                 }

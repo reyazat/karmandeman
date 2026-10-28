@@ -252,7 +252,7 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - **(P3) هشدار critical برای هر حذف سالم:** با پیش‌فرض‌ها (مهلت ۱۶۸، بکاپ DB ۱۴۴، هشدار ۲۴ ساعت)، هر رسید purgeشده بین T0+۱۴۴ و تکمیل `deadline_at_risk` می‌گرفت. اکنون رسیدی که بکاپ‌های مستندشده‌اش پیش از مهلت منقضی می‌شوند هشدار نمی‌گیرد. بدون شاهد lifecycle بکاپ، تکمیل ممکن نیست و هشدار باقی است. محاسبه زمان تکمیل دیگر Carbon مدل را mutate نمی‌کند.
 - **(P3) رسیدهای همیشه‌ناموفق صف را مسدود می‌کردند:** ترتیب فقط `requested_at` بود. با ۲۰ رسید ناموفق، درخواست تازه هرگز purge نمی‌شد. اکنون ترتیب ابتدا `attempts` است.
 
-یافته‌های ساختاری باز (P3، اصلاح نشده):
+یافته‌های ساختاری (P3). هر سه در برش ششم گام ۳ با [ADR-021](adr/ADR-021-record-policies-and-structural-fixes.md) بسته شدند:
 - `GET /api/v1/brands/current` با `firstOrCreate` بدون قفل Workspace می‌نویسد. درخواستی که پیش از T0 مجوز گرفته، ممکن است پس از T0 برند خالی بسازد. purge آن را حذف می‌کند.
 - فقط `WorkspacePolicy` وجود دارد. پروژه، محصول، تیکت و کیف پول فقط به فیلتر repository متکی‌اند.
 - `WalletLedgerController` آرایه خام برمی‌گرداند، نه Resource.
@@ -337,6 +337,27 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - Pint روی ۲۵۹ فایل و PHPStan بدون خطا. rollback و اجرای دوباره migration `2026_10_28_100005` روی PostgreSQL موقت موفق.
 
 باز: شباهت تقریبی (گام ۴)، دکمه «تکراری نیست»، backfill برای داده پیش از migration.
+
+### برش ششم گام ۳ (۲۸ اکتبر ۲۰۲۶)
+
+[ADR-021](adr/ADR-021-record-policies-and-structural-fixes.md) سه یافته ساختاری باز را بست:
+- **Policy رکورد:** `ProjectPolicy`، `ProductPolicy` و `WalletPolicy` مجوز را از `workspace_id` خود رکورد می‌گیرند و Workspace را با همان کلید دوباره می‌خوانند. relation گذاشته‌شده توسط caller معتبر نیست.
+  - mutationها و خواندن‌های دارای Action، Policy را داخل Action پس از یافتن رکورد و پیش از هر بررسی وضعیت، خواندن محتوا یا نوشتن اجرا می‌کنند. خواندن‌های ساده در Controller بررسی می‌شوند.
+  - رکورد Workspace دیگر همچنان `404` می‌گیرد. `403 FORBIDDEN` فقط وقتی دیده می‌شود که فیلتر repository شکسته باشد.
+- **خواندن برند:** `GET /brands/current` برند موجود را بدون نوشتن می‌خواند. برند نبود فقط زیر قفل Workspace فعال ساخته می‌شود. پس از T0 پاسخ `409 ACCOUNT_DELETION_PENDING` است و ردیفی ساخته نمی‌شود.
+- **کیف پول:** `WalletLedgerResource` با همان شکل `data.balance` و `data.entries`.
+
+بازبین مستقل پیش از commit P1 یا P2 نیافت. چهار P3 گزارش داد:
+- **اصلاح‌شده با آزمون:** آزمون رد Policy ترتیب را نمی‌دید، چون rollback تراکنش بررسی دیرهنگام را پنهان می‌کرد. بازبین این را بازتولید کرد. حالا آزمون همه SQLهای پیش از پاسخ Policy را ثبت می‌کند و نوشتن یا خواندن `product_revisions`، `project_snapshots` و `credit_ledger` را رد می‌کند. انتقال بررسی به پس از `archive()` اکنون آزمون را می‌شکند. آزمون wiring حالا رکورد دقیق مسیر را بررسی می‌کند، نه فقط کلاس آن.
+- **ثبت‌شده در ADR:** replay idempotency به Policy رکورد نمی‌رسد، `/mybrand` تلگرام در لحظه شروع حذف ممکن است بی‌پاسخ بماند، و Policyها Workspace را مستقیم با Eloquent می‌خوانند.
+
+شواهد:
+- چهار آزمون تازه روی کد قبلی شکست می‌خورند.
+- PostgreSQL موقت با OpenBao 2.4.1: **۱۸۸ تست / ۲۳۴۹ assertion** در دو اجرای پیاپی.
+- SQLite: **۱۷۱ پاس / ۱۷ skip**.
+- Pint روی ۲۶۵ فایل و PHPStan بدون خطا. migration تازه‌ای ندارد.
+
+باز: Policy تیکت (مدل یا endpoint ندارد)، تفکیک `view` و `update` با تعریف نقش‌ها.
 
 ## شواهد آزمون و محدودیت
 

@@ -8,12 +8,14 @@ use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\SnapshotIntegrityFailed;
 use App\Models\ProductRevision;
 use App\Models\ProjectSnapshot;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\ProjectSnapshotRepositoryInterface;
 use App\Services\ProductIntake\ApprovedRevisionVerifier;
 use App\Services\ProductIntake\ProjectSnapshotSigner;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -33,10 +35,11 @@ final readonly class ReadProjectSnapshotAction
     /**
      * @return array{ProjectSnapshot, list<ProductRevision>}
      */
-    public function execute(Workspace $workspace, string $projectPublicId): array
+    public function execute(Workspace $workspace, User $user, string $projectPublicId): array
     {
         $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
             ?? throw new DomainException('PROJECT_NOT_FOUND');
+        Gate::forUser($user)->authorize('view', $project);
         // A reopened or cancelled batch has no current approval (ADR-019).
         if (! $project->state->hasApprovedSnapshot()) {
             throw new DomainException('PROJECT_NOT_APPROVED');

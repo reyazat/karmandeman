@@ -15,6 +15,7 @@ use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Manual correction (FR-033) as a new immutable revision. Earlier revisions,
@@ -45,6 +46,7 @@ final readonly class ReviseProductDraftAction
                 // The workspace row lock taken by the idempotency wrapper serializes this read.
                 $product = $this->products->findPublicForWorkspace($workspace, $productPublicId)
                     ?? throw new DomainException('PRODUCT_NOT_FOUND');
+                Gate::forUser($user)->authorize('update', $product);
                 if ($product->status === ProductStatus::Archived) {
                     throw new DomainException('PRODUCT_ARCHIVED');
                 }

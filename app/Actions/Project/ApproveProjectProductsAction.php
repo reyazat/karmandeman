@@ -20,6 +20,7 @@ use App\Repositories\Contracts\ProjectSnapshotRepositoryInterface;
 use App\Services\ProductIntake\ApprovedRevisionVerifier;
 use App\Services\ProductIntake\ProjectSnapshotSigner;
 use DomainException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -51,6 +52,7 @@ final readonly class ApproveProjectProductsAction
                 $this->consent->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
+                Gate::forUser($user)->authorize('update', $project);
                 if ($project->state !== ProjectState::ReviewRequired) {
                     throw new DomainException('PROJECT_STATE_CONFLICT');
                 }
