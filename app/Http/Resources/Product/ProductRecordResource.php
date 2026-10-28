@@ -35,6 +35,8 @@ final class ProductRecordResource extends JsonResource
             'image_asset_ids' => $payload['image_asset_ids'],
             'category_path' => $payload['category_path'],
             'evidence' => $payload['evidence'],
+            // Raw input of normalized text, keyed by field path (PRD E04, ADR-017).
+            'originals' => (object) ($payload['originals'] ?? []),
             'approved_at' => $this->approved_at?->toIso8601String(),
         ];
     }

@@ -217,8 +217,11 @@ class ProductApiTest extends TestCase
         $this->approve($product, 1)->assertNotFound();
         $this->patchJson("/api/v1/products/{$product}/draft", $this->draft() + ['expected_revision' => 1], ['Idempotency-Key' => 'cross-tenant-1'])
             ->assertNotFound();
+        $this->getJson("/api/v1/projects/{$project}/products/summary")->assertNotFound()->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
+        $this->postJson("/api/v1/products/{$product}/archive", [], ['Idempotency-Key' => 'cross-tenant-2'])->assertNotFound();
         $this->getJson('/api/v1/products/1')->assertNotFound();
         $this->assertDatabaseCount('product_revisions', 1);
+        $this->assertSame('approved', DB::table('products')->value('status'));
 
         Sanctum::actingAs($owner);
         $this->getJson("/api/v1/projects/{$project}/products")->assertOk()
@@ -241,6 +244,7 @@ class ProductApiTest extends TestCase
         DB::table('workspace_consents')->where('workspace_id', $workspace->id)->delete();
         $this->create($project, $this->draft())->assertForbidden()->assertJsonPath('error.code', 'POLICY_CONSENT_REQUIRED');
         $this->approve($product, 1)->assertForbidden();
+        $this->postJson("/api/v1/products/{$product}/archive", [], ['Idempotency-Key' => 'archive-no-consent'])->assertForbidden();
 
         $this->grantPilotConsent($user);
         app(RequestAccountDeletionAction::class)->execute($workspace, $user, 'telegram');
@@ -267,5 +271,170 @@ class ProductApiTest extends TestCase
         $this->assertSame(64, strlen($row->payload_mac));
         $this->assertStringNotContainsString($row->payload_mac, $response->getContent());
         $this->assertArrayNotHasKey('workspace_id', $response->json('data'));
+    }
+
+    private function archive(string $product, ?string $key = null): TestResponse
+    {
+        return $this->postJson("/api/v1/products/{$product}/archive", [], ['Idempotency-Key' => $key ?? 'archive-'.++$this->keys]);
+    }
+
+    private function revise(string $product, int $expected, array $draft): TestResponse
+    {
+        return $this->patchJson("/api/v1/products/{$product}/draft", $draft + ['expected_revision' => $expected], ['Idempotency-Key' => 'revise-'.++$this->keys]);
+    }
+
+    public function test_text_is_normalized_and_the_raw_input_is_kept(): void
+    {
+        Sanctum::actingAs($this->seller(709));
+        $project = $this->project();
+        $draft = [
+            'name' => ['value' => "كيف   مدل\u{200C}\u{200C}آوا \u{200C} ٢", 'status' => 'confirmed'],
+            'sku' => ['value' => 'ary-۱۰۰۷', 'status' => 'confirmed'],
+            'description_fa' => ['value' => "خط اول\r\n\r\n\r\nخط دوم", 'status' => 'confirmed'],
+            'attributes' => [['name' => 'رنگ', 'values' => ['كرم', 'مشکی'], 'status' => 'confirmed']],
+            'category_path' => ['value' => ['کیف زنانه'], 'status' => 'confirmed'],
+        ];
+        $response = $this->create($project, $draft)->assertCreated()
+            ->assertJsonPath('data.name.value', "کیف مدل\u{200C}آوا ۲")
+            ->assertJsonPath('data.sku.value', 'ary-1007')
+            ->assertJsonPath('data.description_fa.value', "خط اول\n\nخط دوم")
+            ->assertJsonPath('data.attributes.0.values', ['کرم', 'مشکی'])
+            ->assertJsonPath('data.category_path.value', ['کیف زنانه']);
+        $this->assertSame([
+            'name.value' => $draft['name']['value'],
+            'sku.value' => 'ary-۱۰۰۷',
+            'description_fa.value' => $draft['description_fa']['value'],
+            'attributes.0.values.0' => 'كرم',
+        ], $response->json('data.originals'));
+        $plain = $this->create($project, ['name' => ['value' => 'ساده', 'status' => 'confirmed']])->assertCreated();
+        $this->assertStringContainsString('"originals":{}', $plain->getContent());
+
+        $this->create($project, ['name' => ['value' => "کیف\u{2028}چرم\u{0085}مشکی", 'status' => 'confirmed']])
+            ->assertCreated()->assertJsonPath('data.name.value', 'کیف چرم مشکی');
+        $this->create($project, ['category_path' => ['value' => ['كيف'], 'status' => 'confirmed']])
+            ->assertCreated()->assertJsonPath('data.originals', ['category_path.value.0' => 'كيف']);
+
+        // Text that is only ZWNJ or tatweel is no value at all.
+        foreach (['name' => ['value' => "\u{200C}\u{0640}", 'status' => 'confirmed'], 'attributes' => [['name' => "\u{200C}", 'values' => null]]] as $field => $value) {
+            $this->create($project, [$field => $value])->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
+        // Invalid UTF-8 is a validation error, not a server error.
+        $this->post("/api/v1/projects/{$project}/products", ['name' => ['value' => "ab\xFF", 'status' => 'confirmed']],
+            ['Idempotency-Key' => 'product-bad-utf8', 'Accept' => 'application/json'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertDatabaseCount('products', 4);
+    }
+
+    public function test_sku_is_unique_per_workspace_and_the_approved_sku_stays_held(): void
+    {
+        $owner = $this->seller(710);
+        $other = $this->seller(711);
+        Sanctum::actingAs($owner);
+        $project = $this->project();
+        $first = $this->create($project, $this->draft())->assertCreated()->json('data.product_id');
+
+        $this->create($project, ['sku' => ['value' => 'ary-۱۰۰۷', 'status' => 'confirmed']])->assertStatus(409)
+            ->assertJsonPath('error.code', 'PRODUCT_SKU_TAKEN');
+        $this->create($this->project(), ['sku' => ['value' => 'ARY-1007', 'status' => 'suggested']])->assertStatus(409);
+        // Arabic yeh, its presentation form and Persian yeh are one SKU.
+        $this->create($project, ['sku' => ['value' => "\u{064A}1", 'status' => 'confirmed']])->assertCreated();
+        $this->create($project, ['sku' => ['value' => "\u{FEF1}1", 'status' => 'confirmed']])->assertStatus(409);
+        $this->create($project, ['sku' => ['value' => "\u{06CC}1", 'status' => 'confirmed']])->assertStatus(409);
+        $this->assertDatabaseCount('products', 2);
+        // A revision keeping its own SKU is no conflict.
+        $this->revise($first, 1, $this->draft())->assertOk();
+
+        Sanctum::actingAs($other);
+        $this->create($this->project(), $this->draft())->assertCreated();
+
+        Sanctum::actingAs($owner);
+        $this->approve($first, 2)->assertOk();
+        $moved = $this->draft();
+        $moved['sku']['value'] = 'ARY-2000';
+        $this->revise($first, 2, $moved)->assertOk();
+        // The approved revision 2 still holds ARY-1007 until revision 3 is approved.
+        $this->create($project, $this->draft())->assertStatus(409)->assertJsonPath('error.code', 'PRODUCT_SKU_TAKEN');
+        $this->create($project, $moved)->assertStatus(409);
+        $this->approve($first, 3)->assertOk();
+        $second = $this->create($project, $this->draft())->assertCreated()->json('data.product_id');
+        $this->revise($second, 1, $moved)->assertStatus(409)->assertJsonPath('error.code', 'PRODUCT_SKU_TAKEN');
+
+        // Rejecting a product releases its SKU.
+        $this->archive($first)->assertOk();
+        $this->revise($second, 1, $moved)->assertOk();
+
+        // Second product holds ARY-2000, the yeh product its SKU, the other workspace its own ARY-1007.
+        $this->assertSame(3, DB::table('product_skus')->count());
+        foreach (DB::table('product_skus')->pluck('sku_mac') as $mac) {
+            $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $mac);
+        }
+        $this->assertStringNotContainsString('ARY', (string) DB::table('product_revisions')->pluck('sku_mac')->implode(','));
+    }
+
+    public function test_reject_archives_the_product_but_keeps_its_revisions(): void
+    {
+        Sanctum::actingAs($this->seller(712));
+        $product = $this->create($this->project(), $this->draft())->json('data.product_id');
+        $approved = $this->approve($product, 1)->assertOk()->json('data');
+
+        $this->archive($product, 'archive-key-1')->assertOk()
+            ->assertJsonPath('data.id', $product)
+            ->assertJsonPath('data.status', 'archived')
+            ->assertJsonPath('data.approved_revision', 1)
+            ->assertJsonPath('data.current.revision', 1);
+        $this->archive($product, 'archive-key-1')->assertOk()->assertJsonPath('data.status', 'archived');
+        $this->archive($product)->assertOk()->assertJsonPath('data.status', 'archived');
+
+        $this->revise($product, 1, $this->draft())->assertStatus(409)->assertJsonPath('error.code', 'PRODUCT_ARCHIVED');
+        $this->approve($product, 1)->assertStatus(409)->assertJsonPath('error.code', 'PRODUCT_ARCHIVED');
+        $this->getJson("/api/v1/products/{$product}/approved")->assertOk()
+            ->assertJsonPath('data.approved_at', $approved['approved_at']);
+        $this->assertDatabaseCount('product_revisions', 1);
+        $this->assertDatabaseCount('product_skus', 0);
+        $this->postJson("/api/v1/products/{$product}/archive")->assertUnprocessable();
+    }
+
+    public function test_review_queue_and_batch_summary_are_counted_by_the_server(): void
+    {
+        Sanctum::actingAs($this->seller(713));
+        $project = $this->project();
+        $named = fn (string $name, string $status = 'confirmed') => ['name' => ['value' => $name, 'status' => $status]];
+        $priced = fn (string $name, string $status = 'confirmed') => $named($name, $status)
+            + ['pricing' => ['regular_price' => 1000, 'input_unit' => 'IRT', 'status' => 'confirmed']];
+
+        $ready = $this->create($project, $priced('آماده'))->json('data.product_id');
+        $unsure = $this->create($project, $priced('نامطمئن', 'suggested'))->json('data.product_id');
+        $noPrice = $this->create($project, $named('بدون قیمت'))->json('data.product_id');
+        $done = $this->create($project, $priced('تأییدشده'))->json('data.product_id');
+        $this->approve($done, 1)->assertOk();
+        $rejected = $this->create($project, $named('ردشده', 'suggested'))->json('data.product_id');
+        $this->archive($rejected)->assertOk();
+        $this->create($this->project(), $named('پروژه دیگر', 'suggested'))->assertCreated();
+
+        $summary = "/api/v1/projects/{$project}/products/summary";
+        $this->getJson($summary)->assertOk()->assertJsonPath('data', [
+            'total' => 5, 'needs_review' => 3, 'approved' => 1, 'archived' => 1,
+            'ready_for_approval' => 2, 'needs_confirmation' => 1, 'price_missing' => 1, 'image_missing' => 4,
+        ]);
+
+        $ids = fn (string $query) => array_column($this->getJson("/api/v1/projects/{$project}/products{$query}")->assertOk()->json('data'), 'id');
+        $this->assertSame([$ready, $unsure, $noPrice], $ids('?filter=needs_review'));
+        $this->assertSame([$ready, $unsure, $noPrice, $done], $ids('?filter=incomplete'));
+        $this->assertCount(5, $ids(''));
+        $this->getJson("/api/v1/projects/{$project}/products?filter=deleted")->assertUnprocessable();
+        for ($i = 0; $i < 20; $i++) {
+            $this->create($project, $named("صف {$i}"))->assertCreated();
+        }
+        $this->assertStringContainsString('filter=incomplete', (string) $this->getJson("/api/v1/projects/{$project}/products?filter=incomplete")->json('links.next'));
+        $this->getJson("/api/v1/products/{$unsure}")->assertJsonPath('data.review', [
+            'needs_confirmation' => true, 'price_missing' => false, 'image_missing' => true,
+        ]);
+
+        // Flags follow the current revision.
+        $this->revise($unsure, 1, $priced('نامطمئن'))->assertOk();
+        $this->revise($noPrice, 1, $priced('بدون قیمت'))->assertOk();
+        $this->getJson($summary)->assertJsonPath('data.needs_confirmation', 0)
+            ->assertJsonPath('data.price_missing', 20)
+            ->assertJsonPath('data.ready_for_approval', 23);
     }
 }

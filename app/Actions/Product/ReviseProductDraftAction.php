@@ -11,8 +11,7 @@ use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
-use App\Services\Crypto\WorkspaceFieldCipher;
-use App\Services\ProductIntake\ProductDraftNormalizer;
+use App\Services\ProductIntake\ProductRevisionBuilder;
 use DomainException;
 
 /**
@@ -25,8 +24,7 @@ final readonly class ReviseProductDraftAction
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
         private ProductRepositoryInterface $products,
-        private ProductDraftNormalizer $normalizer,
-        private WorkspaceFieldCipher $cipher,
+        private ProductRevisionBuilder $builder,
     ) {}
 
     /**
@@ -50,10 +48,8 @@ final readonly class ReviseProductDraftAction
                 if ($product->current_revision !== $expectedRevision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
                 }
-                $payload = $this->normalizer->normalize($draft);
-                $mac = $this->cipher->mac($workspace, 'product_revisions.payload', json_encode($payload, JSON_THROW_ON_ERROR));
 
-                return $this->products->addRevision($product, $user, $payload, $mac);
+                return $this->products->addRevision($product, $user, $this->builder->build($workspace, $draft));
             },
         );
 

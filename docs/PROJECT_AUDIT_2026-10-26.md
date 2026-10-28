@@ -266,6 +266,26 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 آزمون‌نشده: CI میزبانی‌شده، ربات زنده، scheduler واقعی، staging و QA-19…21.
 
+### برش دوم گام ۳ (۲۸ اکتبر ۲۰۲۶)
+
+[ADR-017](adr/ADR-017-product-normalisation-sku-and-review-queue.md): نرمال‌سازی فارسی/عربی با نگه‌داشتن متن خام در `originals`، یکتایی SKU در Workspace با HMAC کلید Workspace (SKU نسخه جاری و تأییدشده رزرو می‌شود)، پرچم‌های صف بررسی و خلاصه سروری `GET /projects/{project}/products/summary` (FR-031/040) و «رد» با `POST /products/{product}/archive` (FR-041). این برش هم intake واقعی ندارد.
+
+شواهد:
+بازبین مستقل پیش از commit یک P2 و چند P3 یافت و بازتولید کرد. همه با آزمون دائمی اصلاح شدند:
+- **(P2)** لینک صفحه بعد صف بررسی `filter` را نداشت. پس صفحه ۲ کل Batch را نشان می‌داد. اکنون `withQueryString`.
+- **(P3)** شکل نمایشی `ﻱ` (U+FEF1) از یکتایی SKU عبور می‌کرد. اکنون NFKC پیش از نقشه حروف اجرا می‌شود.
+- **(P3)** U+2028، VT، FF و NEL در فیلد تک‌خطی می‌ماندند. اکنون همه شکست‌های عمودی نرمال می‌شوند.
+- **(P3)** UTF-8 نامعتبر 500 می‌داد. اکنون 422.
+- **(P3)** مسیر `originals` با مسیر رکورد یکی نبود (`category_path.0`). اکنون `category_path.value.0` و `name.value`.
+- نبود backfill برای محصولات پیش از migration و فراخوانی مستقیم Repository در `summary` در ADR-017 ثبت شد.
+
+شواهد:
+- PostgreSQL موقت با OpenBao 2.4.1: **۱۶۷ تست / ۱۵۶۲ assertion**، شامل ایجاد هم‌زمان شش محصول با یک SKU (یکی موفق، پنج `PRODUCT_SKU_TAKEN`).
+- SQLite: **۱۴۸ پاس / ۱۹ skip**.
+- Pint روی ۲۳۷ فایل و PHPStan بدون خطا. rollback و اجرای دوباره migration `2026_10_28_100002` روی PostgreSQL موقت موفق.
+
+باز: شمارش «متناقض» FR-040، شبه‌تکراری FR-034، intake تلگرام، storage خصوصی و `finish-input`.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

@@ -54,7 +54,7 @@ final readonly class RunIdempotentMutationAction
                 $class = match ($operation) {
                     'project.create' => Project::class,
                     'brand.update' => Brand::class,
-                    'product.create', 'product.revise', 'product.approve' => ProductRevision::class,
+                    'product.create', 'product.revise', 'product.approve', 'product.archive' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),
                 };
 

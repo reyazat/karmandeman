@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $revision
  * @property array<string, mixed> $payload
+ * @property string|null $sku_mac
  * @property Carbon|null $approved_at
  */
 class ProductRevision extends Model
@@ -21,11 +22,11 @@ class ProductRevision extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'workspace_id', 'product_id', 'revision', 'payload', 'payload_mac',
+        'workspace_id', 'product_id', 'revision', 'payload', 'payload_mac', 'sku_mac',
         'created_by', 'approved_at', 'approved_by', 'created_at',
     ];
 
-    protected $hidden = ['payload_mac'];
+    protected $hidden = ['payload_mac', 'sku_mac'];
 
     /**
      * @return BelongsTo<Product, $this>

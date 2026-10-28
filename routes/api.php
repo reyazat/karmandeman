@@ -32,9 +32,11 @@ Route::prefix('v1')->group(function (): void {
             Route::apiResource('/projects', ProjectController::class)->only(['index', 'store']);
             Route::get('/projects/{project}/products', [ProductController::class, 'index'])->whereUuid('project');
             Route::post('/projects/{project}/products', [ProductController::class, 'store'])->whereUuid('project');
+            Route::get('/projects/{project}/products/summary', [ProductController::class, 'summary'])->whereUuid('project');
             Route::get('/products/{product}', [ProductController::class, 'show'])->whereUuid('product');
             Route::patch('/products/{product}/draft', [ProductController::class, 'revise'])->whereUuid('product');
             Route::post('/products/{product}/approve', [ProductController::class, 'approve'])->whereUuid('product');
+            Route::post('/products/{product}/archive', [ProductController::class, 'archive'])->whereUuid('product');
             Route::get('/products/{product}/approved', [ProductController::class, 'approved'])->whereUuid('product');
             Route::get('/wallet/ledger', WalletLedgerController::class);
             Route::post('/account/deletion', [AccountDeletionController::class, 'store'])->middleware('throttle:account-deletion');

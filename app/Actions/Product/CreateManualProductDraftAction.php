@@ -12,8 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
-use App\Services\Crypto\WorkspaceFieldCipher;
-use App\Services\ProductIntake\ProductDraftNormalizer;
+use App\Services\ProductIntake\ProductRevisionBuilder;
 use DomainException;
 
 /**
@@ -31,8 +30,7 @@ final readonly class CreateManualProductDraftAction
         private EnsurePolicyConsentAction $consent,
         private ProjectRepositoryInterface $projects,
         private ProductRepositoryInterface $products,
-        private ProductDraftNormalizer $normalizer,
-        private WorkspaceFieldCipher $cipher,
+        private ProductRevisionBuilder $builder,
     ) {}
 
     /**
@@ -51,11 +49,8 @@ final readonly class CreateManualProductDraftAction
                 if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }
-                $payload = $this->normalizer->normalize($draft);
 
-                $mac = $this->cipher->mac($workspace, 'product_revisions.payload', json_encode($payload, JSON_THROW_ON_ERROR));
-
-                return $this->products->createWithRevision($workspace, $project, $user, $payload, $mac);
+                return $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $draft));
             },
         );
 

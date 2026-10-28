@@ -22,6 +22,12 @@ final class ProductResource extends JsonResource
             'status' => $this->status->value,
             'current_revision' => $this->current_revision,
             'approved_revision' => $this->approved_revision,
+            // Review queue flags of the current revision (FR-031, ADR-017).
+            'review' => [
+                'needs_confirmation' => $this->needs_confirmation,
+                'price_missing' => $this->price_missing,
+                'image_missing' => $this->image_missing,
+            ],
             'current' => new ProductRecordResource($this->latestRevision),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

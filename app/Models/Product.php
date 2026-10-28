@@ -15,6 +15,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $public_id
  * @property int $current_revision
  * @property int|null $approved_revision
+ * @property bool $needs_confirmation
+ * @property bool $price_missing
+ * @property bool $image_missing
  */
 class Product extends Model
 {
@@ -26,6 +29,9 @@ class Product extends Model
         'status',
         'current_revision',
         'approved_revision',
+        'needs_confirmation',
+        'price_missing',
+        'image_missing',
     ];
 
     /**
@@ -60,6 +66,9 @@ class Product extends Model
             'status' => ProductStatus::class,
             'current_revision' => 'integer',
             'approved_revision' => 'integer',
+            'needs_confirmation' => 'boolean',
+            'price_missing' => 'boolean',
+            'image_missing' => 'boolean',
         ];
     }
 }

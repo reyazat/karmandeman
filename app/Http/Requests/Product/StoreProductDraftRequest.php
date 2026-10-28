@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Product;
 
+use App\Services\ProductIntake\PersianTextNormalizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -57,13 +58,26 @@ final class StoreProductDraftRequest extends FormRequest
 
     /**
      * A value and its status must agree: "unknown" carries no value, and a
-     * known value cannot be marked unknown.
+     * known value cannot be marked unknown. Text that normalizes to nothing
+     * (only ZWNJ or tatweel, for example) is refused (ADR-017).
      *
      * @return array<int, \Closure(Validator): void>
      */
     public function after(): array
     {
         return [function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+            $text = app(PersianTextNormalizer::class);
+            foreach ($this->textInputs() as $path => $value) {
+                if (! mb_check_encoding($value, 'UTF-8')) {
+                    $validator->errors()->add($path, "The {$path} is not valid UTF-8.");
+                } elseif ($text->line($value) === '') {
+                    $validator->errors()->add($path, "The {$path} is empty after normalization.");
+                }
+            }
+        }, function (Validator $validator): void {
             $pairs = [
                 'name' => ['name.value', 'name.status'],
                 'sku' => ['sku.value', 'sku.status'],
@@ -83,6 +97,30 @@ final class StoreProductDraftRequest extends FormRequest
                 }
             }
         }];
+    }
+
+    /**
+     * Every free-text value of the draft, keyed by its input path.
+     *
+     * @return array<string, string>
+     */
+    private function textInputs(): array
+    {
+        $texts = [];
+        foreach (['name', 'sku', 'description_fa'] as $field) {
+            $texts["{$field}.value"] = $this->input("{$field}.value");
+        }
+        foreach ((array) $this->input('attributes', []) as $index => $attribute) {
+            $texts["attributes.{$index}.name"] = $attribute['name'] ?? null;
+            foreach ((array) ($attribute['values'] ?? []) as $position => $value) {
+                $texts["attributes.{$index}.values.{$position}"] = $value;
+            }
+        }
+        foreach ((array) $this->input('category_path.value', []) as $position => $value) {
+            $texts["category_path.value.{$position}"] = $value;
+        }
+
+        return array_filter($texts, 'is_string');
     }
 
     /**

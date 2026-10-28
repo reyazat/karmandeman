@@ -213,6 +213,31 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(2, (int) DB::table('products')->value('current_revision'));
     }
 
+    public function test_parallel_products_with_one_sku_create_once(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91250));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, 'sku-batch-key', 'Batch')[0];
+
+        // Same SKU in Latin and Persian digits, distinct keys: one product holds it (ADR-017).
+        $results = $this->concurrently(function (int $i) use ($workspace, $user, $project): string {
+            try {
+                app(CreateManualProductDraftAction::class)->execute($workspace, $user, "sku-race-{$i}", $project->public_id, [
+                    'sku' => ['value' => $i % 2 === 0 ? 'ary-1007' : 'ARY-۱۰۰۷', 'status' => 'confirmed'],
+                ]);
+
+                return 'created';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+        $this->assertSame(1, count(array_filter($results, fn ($result) => $result === 'created')));
+        $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'PRODUCT_SKU_TAKEN')));
+        $this->assertDatabaseCount('products', 1);
+        $this->assertDatabaseCount('product_skus', 1);
+    }
+
     public function test_parallel_token_retries_issue_one_token(): void
     {
         app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92010));
