@@ -50,12 +50,12 @@ return new class extends Migration
         }
 
         foreach (self::COLUMNS as $table => $columns) {
-            Schema::table($table, function (Blueprint $blueprint) use ($columns): void {
+            Schema::table($table, function (Blueprint $blueprint) use ($table, $columns): void {
                 foreach ($columns as $column => $type) {
                     if ($type !== 'text') {
                         $definition = $blueprint->text($column);
-                        // memory value_json stays NOT NULL; every other column was nullable.
-                        if ($column !== 'value_json') {
+                        // Only memory_items.value_json was NOT NULL; revisions and every other column were nullable.
+                        if (! self::required($table, $column)) {
                             $definition->nullable();
                         }
                         $definition->change();
@@ -77,12 +77,12 @@ return new class extends Migration
         foreach (self::COLUMNS as $table => $columns) {
             foreach ($columns as $column => $type) {
                 if ($type === 'json' && DB::getDriverName() === 'pgsql') {
-                    $null = $column === 'value_json' ? 'SET NOT NULL' : 'DROP NOT NULL';
+                    $null = self::required($table, $column) ? 'SET NOT NULL' : 'DROP NOT NULL';
                     DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} TYPE json USING {$column}::json, ALTER COLUMN {$column} {$null}");
                 } elseif ($type !== 'text') {
-                    Schema::table($table, function (Blueprint $blueprint) use ($column, $type): void {
+                    Schema::table($table, function (Blueprint $blueprint) use ($table, $column, $type): void {
                         $definition = $type === 'json' ? $blueprint->json($column) : $blueprint->string($column);
-                        if ($column !== 'value_json') {
+                        if (! self::required($table, $column)) {
                             $definition->nullable();
                         }
                         $definition->change();
@@ -90,5 +90,10 @@ return new class extends Migration
                 }
             }
         }
+    }
+
+    private static function required(string $table, string $column): bool
+    {
+        return $table === 'memory_items' && $column === 'value_json';
     }
 };

@@ -79,6 +79,10 @@ final class WorkspacePrivateFieldEncryptionTest extends TestCase
             $this->assertStringStartsWith('kmv1:', $value);
         }
         $snapshot = DB::table('api_idempotency_records')->where('operation', 'brand.update')->value('result_attributes');
+        // The request fingerprint is keyed: a bare hash of low-entropy input survives key destruction.
+        $fingerprint = DB::table('api_idempotency_records')->where('operation', 'brand.update')->value('request_hash');
+        $this->assertSame(64, strlen($fingerprint));
+        $this->assertNotSame(hash('sha256', json_encode(['attributes' => self::sortedProfile(), 'expected_version' => 1], JSON_THROW_ON_ERROR)), $fingerprint);
         foreach (['کیف آوا', 'صمیمی', 'دانشجویان', '#112233', 'ava_bags'] as $plaintext) {
             $this->assertStringNotContainsString($plaintext, implode('|', $stored).$snapshot);
         }
@@ -149,5 +153,14 @@ final class WorkspacePrivateFieldEncryptionTest extends TestCase
         $this->assertStringStartsWith('kmv1:', (string) DB::table('service_requests')->where('id', $a->id)->value('details'));
         $this->app->forgetScopedInstances();
         $this->assertSame('مشکل در حساب', ServiceRequest::query()->findOrFail($b->id)->details);
+    }
+
+    /** @return array<string, mixed> */
+    private static function sortedProfile(): array
+    {
+        $profile = self::PROFILE;
+        ksort($profile);
+
+        return $profile;
     }
 }

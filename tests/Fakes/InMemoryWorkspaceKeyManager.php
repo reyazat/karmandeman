@@ -16,6 +16,9 @@ final class InMemoryWorkspaceKeyManager implements WorkspaceKeyManager
 
     public int $unwrapCalls = 0;
 
+    /** Simulates an unreachable key service during purge. */
+    public bool $failDestroy = false;
+
     /** @var array<string, true> */
     private array $destroyed = [];
 
@@ -52,10 +55,16 @@ final class InMemoryWorkspaceKeyManager implements WorkspaceKeyManager
         $this->keys[$keyName]['soft_deleted'] = true;
     }
 
-    public function destroy(string $keyName): void
+    public function destroy(string $keyName): bool
     {
+        if ($this->failDestroy) {
+            throw new RuntimeException('OpenBao request failed.');
+        }
+        $existed = isset($this->keys[$keyName]);
         unset($this->keys[$keyName]);
         $this->destroyed[$keyName] = true;
+
+        return $existed;
     }
 
     private function usable(string $keyName): string

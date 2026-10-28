@@ -20,6 +20,9 @@ interface WorkspaceKeyManager
     /** Reversible containment: every use of the key fails until restored. */
     public function softDelete(string $keyName): void;
 
-    /** Irreversible in the live cluster; snapshots taken before still hold the key. */
-    public function destroy(string $keyName): void;
+    /**
+     * Irreversible in the live cluster; snapshots taken before still hold the key.
+     * Returns false when no such key exists, so a caller can tell a retry from a wrong name.
+     */
+    public function destroy(string $keyName): bool;
 }

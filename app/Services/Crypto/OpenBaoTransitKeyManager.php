@@ -48,18 +48,29 @@ final readonly class OpenBaoTransitKeyManager implements WorkspaceKeyManager
         $this->send('delete', "keys/{$keyName}/soft-delete");
     }
 
-    public function destroy(string $keyName): void
+    public function destroy(string $keyName): bool
     {
+        // OpenBao 2.4.1 answers 400 to config/delete of a missing key, so a
+        // retried purge whose first destroy succeeded must see 404 and stop.
+        if ($this->send('get', "keys/{$keyName}", allowNotFound: true)->notFound()) {
+            return false;
+        }
         $this->send('post', "keys/{$keyName}/config", ['deletion_allowed' => true]);
         $this->send('delete', "keys/{$keyName}");
+
+        return true;
     }
 
     /** @param array<string, mixed> $payload */
-    private function send(string $method, string $path, array $payload = []): Response
+    private function send(string $method, string $path, array $payload = [], bool $allowNotFound = false): Response
     {
         $config = config('services.openbao');
         if (empty($config['addr']) || empty($config['token'])) {
             throw new RuntimeException('OpenBao is not configured.');
+        }
+        // Data keys and the token travel in this channel; plain HTTP only for local test containers.
+        if (! str_starts_with((string) $config['addr'], 'https://') && ! app()->environment('local', 'testing')) {
+            throw new RuntimeException('OpenBao address must use HTTPS.');
         }
         try {
             $response = $this->client($config)->{$method}("{$config['transit_mount']}/{$path}", $payload);
@@ -67,7 +78,7 @@ final readonly class OpenBaoTransitKeyManager implements WorkspaceKeyManager
             // Never surface the token or payload (which may hold key material).
             throw new RuntimeException('OpenBao request failed.');
         }
-        if (! $response->successful()) {
+        if (! $response->successful() && ! ($allowNotFound && $response->notFound())) {
             throw new RuntimeException("OpenBao rejected the request ({$response->status()}).");
         }
 

@@ -12,8 +12,10 @@ use RuntimeException;
 
 /**
  * Envelope encryption of private fields with the workspace's own data key
- * (AES-256-GCM, ADR-013). The AAD binds each value to its workspace and field,
- * so ciphertext moved to another row, column or tenant fails to decrypt.
+ * (AES-256-GCM, ADR-013). The AAD binds each value to its workspace and
+ * table.column, so ciphertext moved to another column or tenant fails to
+ * decrypt. It does not bind the row: a swap between two rows of the same
+ * workspace and column still decrypts (recorded limitation, ADR-014).
  * Unwrapped keys are held in memory for one request or job only.
  */
 final class WorkspaceFieldCipher

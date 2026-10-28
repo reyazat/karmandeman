@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -43,5 +44,23 @@ final class EncryptPrivateFieldsMigrationTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('brands.name holds workspace ciphertext');
         $this->migration()->down();
+    }
+
+    public function test_round_trip_keeps_original_nullability(): void
+    {
+        // Revoked revisions may hold NULL; only memory_items.value_json was NOT NULL.
+        $this->assertNullability();
+        $migration = $this->migration();
+        $migration->down();
+        $this->assertNullability();
+        $migration->up();
+        $this->assertNullability();
+    }
+
+    private function assertNullability(): void
+    {
+        $nullable = fn (string $table): bool => collect(Schema::getColumns($table))->firstWhere('name', 'value_json')['nullable'];
+        $this->assertFalse($nullable('memory_items'));
+        $this->assertTrue($nullable('memory_item_revisions'));
     }
 }

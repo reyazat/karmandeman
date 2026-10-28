@@ -9,6 +9,7 @@ use App\Models\Brand;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
+use App\Services\Crypto\WorkspaceFieldCipher;
 use Closure;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -19,11 +20,14 @@ final readonly class RunIdempotentMutationAction
     public function __construct(
         private ApiIdempotencyRepositoryInterface $records,
         private LockActiveWorkspaceAction $lockActive,
+        private WorkspaceFieldCipher $cipher,
     ) {}
 
     /**
      * The workspace row serializes concurrent retries; the unique index is a second guard.
      * The raw model snapshot preserves the original response even after later edits.
+     * The request fingerprint is an HMAC under the workspace key: a plain hash of
+     * low-entropy input (project or brand names) would outlive key destruction.
      *
      * @param  array<string, mixed>  $input
      * @param  Closure(): Model  $mutation
@@ -31,10 +35,11 @@ final readonly class RunIdempotentMutationAction
      */
     public function execute(Workspace $workspace, int $userId, string $operation, string $key, array $input, Closure $mutation): array
     {
-        $hash = hash('sha256', json_encode($this->canonicalize($input), JSON_THROW_ON_ERROR));
+        $canonical = json_encode($this->canonicalize($input), JSON_THROW_ON_ERROR);
 
-        return DB::transaction(function () use ($workspace, $userId, $operation, $key, $hash, $mutation): array {
+        return DB::transaction(function () use ($workspace, $userId, $operation, $key, $canonical, $mutation): array {
             $this->lockActive->execute($workspace);
+            $hash = $this->cipher->mac($workspace, "api_idempotency_records.request_hash:{$operation}", $canonical);
             $record = $this->records->find($workspace, $userId, $operation, $key);
             if ($record !== null) {
                 if (! hash_equals($record->request_hash, $hash)) {

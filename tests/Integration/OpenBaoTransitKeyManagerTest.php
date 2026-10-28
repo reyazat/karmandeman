@@ -64,6 +64,31 @@ final class OpenBaoTransitKeyManagerTest extends TestCase
         $this->assertSame($kept->plaintext, $this->manager->unwrapDataKey($other, $kept->wrapped));
     }
 
+    public function test_destroy_is_idempotent_for_purge_retries(): void
+    {
+        $name = $this->keyName();
+        $this->manager->ensureKey($name);
+        $this->assertTrue($this->manager->destroy($name));
+        // A purge retried after a crash must not fail on the already destroyed key,
+        // and must be able to tell that nothing existed under the name.
+        $this->assertFalse($this->manager->destroy($name));
+        $this->assertFalse($this->manager->destroy($this->keyName()));
+    }
+
+    public function test_plain_http_address_is_refused_outside_local_and_testing(): void
+    {
+        $this->app['env'] = 'production';
+        config(['services.openbao.addr' => 'http://openbao.internal:8200']);
+        try {
+            $this->manager->ensureKey($this->keyName());
+            $this->fail('Plain HTTP OpenBao address was accepted.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('OpenBao address must use HTTPS.', $exception->getMessage());
+        } finally {
+            $this->app['env'] = 'testing';
+        }
+    }
+
     public function test_failures_do_not_leak_the_token(): void
     {
         config(['services.openbao.token' => 'not-a-valid-token']);

@@ -323,7 +323,8 @@ final readonly class TelegramConversationService
         }
         $user = $this->resolveUser($message);
         // message_id never repeats within a chat, unlike update_id after a week of inactivity.
-        $source = isset($message['message_id']) ? 'message:'.$message['message_id'] : 'text:'.$details;
+        // Without message_id the open-ticket check still dedupes; never hash the private text itself.
+        $source = 'message:'.($message['message_id'] ?? Str::uuid()->toString());
         $key = 'telegram:'.substr(hash('sha256', $chatId.':'.$source), 0, 48);
         $ticket = $this->serviceRequests->execute($this->workspaceFor($user), $user, 'support', $key, $details);
         $this->bot->sendMessage($chatId, "درخواست پشتیبانی ثبت شد؛ رسید: {$ticket->public_id}\nبرای وضعیت /ticket {$ticket->public_id} را بفرستید.");
