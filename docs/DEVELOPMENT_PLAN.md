@@ -46,7 +46,8 @@ FR-087 مرحله اول در ۲۸ اکتبر ۲۰۲۶: مالک برای تصم
 - شواهد: PostgreSQL موقت **۱۵۴ تست / ۱۳۷۹ assertion**، شامل هم‌زمانی تأیید/اصلاح، tenant isolation و purge محصول. SQLite **۱۴۱ پاس / ۱۳ skip**. Pint و PHPStan بدون خطا. rollback و اجرای دوباره migration روی PostgreSQL موقت موفق.
 - برش دوم ([ADR-017](adr/ADR-017-product-normalisation-sku-and-review-queue.md)): نرمال‌سازی فارسی/عربی با نگه‌داشتن متن خام، یکتایی SKU در Workspace با HMAC، پرچم‌های صف بررسی و خلاصه سروری (FR-031/040) و «رد» محصول (FR-041).
 - برش سوم ([ADR-018](adr/ADR-018-batch-finish-input-and-approved-snapshot.md)): `finish-input`، تأیید پروژه پس از Gate A همه محصولات با snapshot تغییرناپذیر (FR-043) و خروجی JSON سطح Batch با بررسی MAC هنگام خواندن.
-- باز در گام ۳: intake متن/عکس تلگرام و storage خصوصی، بازگشت از `product_approved` و لغو پروژه، شمارش «متناقض» FR-040، هشدار شبه‌تکراری FR-034، دسته نگهداری محصول در بسته سیاست، UI بررسی.
+- برش چهارم ([ADR-019](adr/ADR-019-reopen-cancel-and-approval-integrity.md)): `reopen` از `product_approved` به بررسی، `cancel` از وضعیت‌های بدون رزرو یا job، و `approval_mac` برای Gate A که در `/approved`، پیش از ساخت snapshot و هنگام خواندن snapshot بررسی می‌شود.
+- باز در گام ۳: intake متن/عکس تلگرام و storage خصوصی، شمارش «متناقض» FR-040، هشدار شبه‌تکراری FR-034، دسته نگهداری محصول در بسته سیاست، UI بررسی، تصمیم مالک درباره اصلاح محصول در پروژه تأییدشده (ADR-019).
 
 | گام | کار مشخص | شرط شروع / وابستگی | شاهد لازم برای پایان | مسئول پیشنهادی |
 |---|---|---|---|---|

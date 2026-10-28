@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\API\V1\Project;
 
 use App\Actions\Project\ApproveProjectProductsAction;
+use App\Actions\Project\CancelProjectAction;
 use App\Actions\Project\FinishProjectInputAction;
 use App\Actions\Project\ReadProjectSnapshotAction;
+use App\Actions\Project\ReopenProjectAction;
+use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\ProjectProductsNotApproved;
 use App\Exceptions\SnapshotIntegrityFailed;
 use App\Http\Controllers\Controller;
@@ -22,7 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** Batch lifecycle after manual intake (PRD §6, ADR-018). */
+/** Batch lifecycle after manual intake (PRD §6, ADR-018, ADR-019). */
 final class ProjectWorkflowController extends Controller
 {
     public function __construct(private readonly WorkspaceRepositoryInterface $workspaces) {}
@@ -46,6 +49,28 @@ final class ProjectWorkflowController extends Controller
             );
 
             return [new ProjectSnapshotResource($snapshot), $replayed ? 200 : 201];
+        });
+    }
+
+    public function reopen(string $project, ProjectTransitionRequest $request, ReopenProjectAction $reopen): JsonResponse
+    {
+        return $this->respond($request, function (Workspace $workspace) use ($project, $request, $reopen): array {
+            [$found] = $reopen->execute(
+                $workspace, $request->user()->id, $request->validated('idempotency_key'), $project, $request->integer('version'),
+            );
+
+            return [new ProjectResource($found), 200];
+        });
+    }
+
+    public function cancel(string $project, ProjectTransitionRequest $request, CancelProjectAction $cancel): JsonResponse
+    {
+        return $this->respond($request, function (Workspace $workspace) use ($project, $request, $cancel): array {
+            [$found] = $cancel->execute(
+                $workspace, $request->user()->id, $request->validated('idempotency_key'), $project, $request->integer('version'),
+            );
+
+            return [new ProjectResource($found), 200];
         });
     }
 
@@ -73,6 +98,8 @@ final class ProjectWorkflowController extends Controller
             [$resource, $status] = $handler($workspace);
         } catch (ProjectProductsNotApproved $e) {
             return ApiResponse::error($e->getMessage(), 'همه محصولات این پروژه هنوز تأیید نشده‌اند.', 422, ['products' => $e->products]);
+        } catch (ProductIntegrityFailed) {
+            return ApiResponse::error('PRODUCT_INTEGRITY_FAILED', 'نسخه تأییدشده یکی از محصولات قابل اعتماد نیست و پروژه تأیید نشد.', 500);
         } catch (SnapshotIntegrityFailed) {
             return ApiResponse::error('SNAPSHOT_INTEGRITY_FAILED', 'نسخه تأییدشده این پروژه قابل اعتماد نیست و خروجی ساخته نمی‌شود.', 500);
         } catch (DomainException $e) {

@@ -10,11 +10,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Immutable once written; only the approval stamp is set later (ADR-016).
+ * Immutable once written; only the approval stamp and its MAC are set later
+ * (ADR-016, ADR-019).
  *
+ * @property int $product_id
  * @property int $revision
  * @property array<string, mixed> $payload
+ * @property string|null $payload_mac
  * @property string|null $sku_mac
+ * @property string|null $approval_mac
  * @property Carbon|null $approved_at
  */
 class ProductRevision extends Model
@@ -23,10 +27,10 @@ class ProductRevision extends Model
 
     protected $fillable = [
         'workspace_id', 'product_id', 'revision', 'payload', 'payload_mac', 'sku_mac',
-        'created_by', 'approved_at', 'approved_by', 'created_at',
+        'created_by', 'approved_at', 'approved_by', 'approval_mac', 'created_at',
     ];
 
-    protected $hidden = ['payload_mac', 'sku_mac'];
+    protected $hidden = ['payload_mac', 'sku_mac', 'approval_mac'];
 
     /**
      * @return BelongsTo<Product, $this>

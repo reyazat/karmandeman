@@ -7,6 +7,7 @@ namespace App\Actions\Product;
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Enums\ProductStatus;
+use App\Enums\ProjectState;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
@@ -46,6 +47,11 @@ final readonly class ReviseProductDraftAction
                     ?? throw new DomainException('PRODUCT_NOT_FOUND');
                 if ($product->status === ProductStatus::Archived) {
                     throw new DomainException('PRODUCT_ARCHIVED');
+                }
+                // A cancelled batch is closed; only "reject" stays open to free SKUs (ADR-019).
+                if ($product->project_id !== null
+                    && $this->projects->findForWorkspace($workspace, $product->project_id)?->state === ProjectState::Cancelled) {
+                    throw new DomainException('PROJECT_CANCELLED');
                 }
                 if ($product->current_revision !== $expectedRevision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');

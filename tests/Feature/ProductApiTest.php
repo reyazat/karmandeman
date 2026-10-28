@@ -11,6 +11,7 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\UsesApprovedPilotPolicy;
@@ -392,6 +393,58 @@ class ProductApiTest extends TestCase
         $this->assertDatabaseCount('product_revisions', 1);
         $this->assertDatabaseCount('product_skus', 0);
         $this->postJson("/api/v1/products/{$product}/archive")->assertUnprocessable();
+    }
+
+    public function test_approved_record_is_verified_before_it_is_returned(): void
+    {
+        Sanctum::actingAs($this->seller(730));
+        $project = $this->project();
+        $product = $this->create($project, $this->draft())->assertCreated()->json('data.product_id');
+        $other = $this->create($project, ['name' => ['value' => 'دیگر', 'status' => 'confirmed']])->assertCreated()->json('data.product_id');
+        $this->approve($product, 1)->assertOk();
+        $this->approve($other, 1)->assertOk();
+        $this->getJson("/api/v1/products/{$product}/approved")->assertOk()->assertJsonPath('data.name.value', 'کیف مدل آوا');
+        $productId = DB::table('products')->where('public_id', $product)->value('id');
+        $otherId = DB::table('products')->where('public_id', $other)->value('id');
+        $row = fn (int $id) => DB::table('product_revisions')->where('product_id', $id);
+        $original = (array) $row($productId)->first(['payload', 'payload_mac', 'approval_mac', 'approved_at']);
+        $foreign = (array) $row($otherId)->first(['payload', 'payload_mac', 'approval_mac']);
+        $this->assertSame(64, strlen($original['approval_mac']));
+        $this->assertStringNotContainsString($original['approval_mac'], $this->getJson("/api/v1/products/{$product}/approved")->getContent());
+        Log::spy();
+
+        // Content and content MAC moved together between two products of one workspace.
+        $row($productId)->update(['payload' => $foreign['payload'], 'payload_mac' => $foreign['payload_mac']]);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
+        // Even the whole approved row, approval MAC included, belongs to another product.
+        $row($productId)->update(['approval_mac' => $foreign['approval_mac']]);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500);
+        $row($productId)->update($original);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertOk();
+
+        // Swapped public ids would serve one product under the other's id.
+        DB::table('products')->where('id', $productId)->update(['public_id' => '00000000-0000-4000-8000-000000000001']);
+        DB::table('products')->where('id', $otherId)->update(['public_id' => $product]);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500);
+        DB::table('products')->where('id', $otherId)->update(['public_id' => $other]);
+        DB::table('products')->where('id', $productId)->update(['public_id' => $product]);
+
+        // A pre-ADR-019 row without a Gate A MAC, and an approval time moved in the database.
+        $row($productId)->update(['approval_mac' => null]);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500);
+        $row($productId)->update(['approval_mac' => $original['approval_mac'], 'approved_at' => '2020-01-01 00:00:00']);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500);
+        $row($productId)->update($original);
+
+        // An approval stamp set in the database, not by Gate A.
+        $revised = $this->patchJson("/api/v1/products/{$product}/draft", [...$this->draft(), 'expected_revision' => 1], ['Idempotency-Key' => 'revise-730'])
+            ->assertOk()->json('data.revision');
+        $row($productId)->where('revision', $revised)->update(['approved_at' => now()]);
+        DB::table('products')->where('id', $productId)->update(['approved_revision' => $revised]);
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
+
+        Log::shouldHaveReceived('critical')->withArgs(fn (string $message, array $context) => $message === 'product.integrity_failed'
+            && $context['product'] === $product && ! str_contains(json_encode($context), 'کیف'))->times(6);
     }
 
     public function test_review_queue_and_batch_summary_are_counted_by_the_server(): void

@@ -36,6 +36,8 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/projects/{project}/products/summary', [ProductController::class, 'summary'])->whereUuid('project');
             Route::post('/projects/{project}/finish-input', [ProjectWorkflowController::class, 'finishInput'])->whereUuid('project');
             Route::post('/projects/{project}/approve-products', [ProjectWorkflowController::class, 'approveProducts'])->whereUuid('project');
+            Route::post('/projects/{project}/reopen', [ProjectWorkflowController::class, 'reopen'])->whereUuid('project');
+            Route::post('/projects/{project}/cancel', [ProjectWorkflowController::class, 'cancel'])->whereUuid('project');
             Route::get('/projects/{project}/snapshot', [ProjectWorkflowController::class, 'snapshot'])->whereUuid('project');
             Route::get('/products/{product}', [ProductController::class, 'show'])->whereUuid('product');
             Route::patch('/products/{product}/draft', [ProductController::class, 'revise'])->whereUuid('product');

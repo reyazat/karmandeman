@@ -7,7 +7,9 @@ namespace App\Http\Controllers\API\V1\Product;
 use App\Actions\Product\ApproveProductRevisionAction;
 use App\Actions\Product\ArchiveProductAction;
 use App\Actions\Product\CreateManualProductDraftAction;
+use App\Actions\Product\ReadApprovedProductAction;
 use App\Actions\Product\ReviseProductDraftAction;
+use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\ProductRequiresConfirmation;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Product\ApproveProductRequest;
@@ -94,19 +96,25 @@ final class ProductController extends Controller
         ), fn (ProductRevision $revision) => new ProductResource($revision->product->load('latestRevision')));
     }
 
-    /** The approved, immutable record: the first export (Step 3 JSON). */
-    public function approved(string $product, Request $request, ProductRepositoryInterface $products): JsonResponse
+    /** The approved, immutable record: the first export (Step 3 JSON), verified first (ADR-019). */
+    public function approved(string $product, Request $request, ReadApprovedProductAction $read): JsonResponse
     {
         $workspace = $this->workspace($request);
-        $found = $workspace === null ? null : $products->findPublicForWorkspace($workspace, $product);
-        if ($found === null) {
+        if ($workspace === null) {
             return ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404);
         }
-        $revision = $found->approved_revision === null ? null : $products->revision($found, $found->approved_revision);
 
-        return $revision === null
-            ? ApiResponse::error('PRODUCT_NOT_APPROVED', 'این محصول هنوز تأیید نشده است.', 409)
-            : ApiResponse::success(new ProductRecordResource($revision));
+        try {
+            return ApiResponse::success(new ProductRecordResource($read->execute($workspace, $product)));
+        } catch (ProductIntegrityFailed) {
+            return ApiResponse::error('PRODUCT_INTEGRITY_FAILED', 'نسخه تأییدشده این محصول قابل اعتماد نیست و خروجی ساخته نمی‌شود.', 500);
+        } catch (DomainException $e) {
+            return match ($e->getMessage()) {
+                'PRODUCT_NOT_FOUND' => ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404),
+                'PRODUCT_NOT_APPROVED' => ApiResponse::error('PRODUCT_NOT_APPROVED', 'این محصول هنوز تأیید نشده است.', 409),
+                default => throw $e,
+            };
+        }
     }
 
     private function workspace(Request $request): ?Workspace
@@ -134,7 +142,7 @@ final class ProductController extends Controller
                 'PROJECT_NOT_FOUND' => ApiResponse::error('PROJECT_NOT_FOUND', 'پروژه یافت نشد.', 404),
                 'PRODUCT_NOT_FOUND' => ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404),
                 'IDEMPOTENCY_KEY_CONFLICT', 'IDEMPOTENCY_KEY_EXPIRED', 'PRODUCT_REVISION_CONFLICT',
-                'PRODUCT_ARCHIVED', 'PROJECT_NOT_ACCEPTING_PRODUCTS' => ApiResponse::error(
+                'PRODUCT_ARCHIVED', 'PROJECT_NOT_ACCEPTING_PRODUCTS', 'PROJECT_CANCELLED' => ApiResponse::error(
                     $e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409,
                 ),
                 'PRODUCT_SKU_TAKEN' => ApiResponse::error('PRODUCT_SKU_TAKEN', 'این SKU برای محصول دیگری در همین فضای کاری ثبت شده است.', 409),

@@ -8,6 +8,7 @@ use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Enums\ProductStatus;
 use App\Enums\ProjectState;
+use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\ProjectProductsNotApproved;
 use App\Models\Product;
 use App\Models\ProjectSnapshot;
@@ -16,8 +17,10 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\ProjectSnapshotRepositoryInterface;
+use App\Services\ProductIntake\ApprovedRevisionVerifier;
 use App\Services\ProductIntake\ProjectSnapshotSigner;
 use DomainException;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Freeze the approved batch (PRD §6, FR-043, ADR-018). Every product must
@@ -33,6 +36,7 @@ final readonly class ApproveProjectProductsAction
         private ProductRepositoryInterface $products,
         private ProjectSnapshotRepositoryInterface $snapshots,
         private ProjectSnapshotSigner $signer,
+        private ApprovedRevisionVerifier $verifier,
     ) {}
 
     /**
@@ -66,8 +70,16 @@ final readonly class ApproveProjectProductsAction
                 $items = [];
                 foreach ($products as $product) {
                     $revision = $product->approved_revision === null ? null : $this->products->revision($product, $product->approved_revision);
-                    if ($revision === null || $revision->approved_at === null || $revision->revision !== $product->current_revision) {
+                    if ($revision === null || $revision->revision !== $product->current_revision) {
                         throw new ProjectProductsNotApproved([$product->public_id]);
+                    }
+                    // A forged approval stamp must not be frozen into a signed snapshot (ADR-019).
+                    try {
+                        $this->verifier->verify($workspace, $product, $revision);
+                    } catch (ProductIntegrityFailed $e) {
+                        Log::critical('product.integrity_failed', ['product' => $e->productId, 'reason' => $e->getMessage()]);
+
+                        throw $e;
                     }
                     // The public id is signed too, so an export cannot be relabelled.
                     $items[] = [

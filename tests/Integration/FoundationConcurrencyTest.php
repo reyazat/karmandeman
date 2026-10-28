@@ -16,6 +16,7 @@ use App\Actions\Product\ApproveProductRevisionAction;
 use App\Actions\Product\CreateManualProductDraftAction;
 use App\Actions\Product\ReviseProductDraftAction;
 use App\Actions\Project\ApproveProjectProductsAction;
+use App\Actions\Project\CancelProjectAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Actions\Project\FinishProjectInputAction;
 use App\Data\Telegram\TelegramUserData;
@@ -266,6 +267,43 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'PROJECT_STATE_CONFLICT')));
         $this->assertDatabaseCount('project_snapshots', 1);
         $this->assertSame(5, (int) DB::table('projects')->value('version'));
+    }
+
+    public function test_parallel_cancel_and_batch_approval_commit_one_transition(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91261));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, 'cancel-batch-key', 'Batch')[0];
+        $product = app(CreateManualProductDraftAction::class)->execute($workspace, $user, 'cancel-product-key', $project->public_id, [
+            'name' => ['value' => 'Bag', 'status' => 'confirmed'],
+        ])[0]->product->public_id;
+        app(ApproveProductRevisionAction::class)->execute($workspace, $user, 'cancel-approve-key', $product, 1);
+        app(FinishProjectInputAction::class)->execute($workspace, $user->id, 'cancel-finish-key', $project->public_id, 3);
+
+        // Cancel and approve race on the same view: exactly one transition wins (ADR-019).
+        $results = $this->concurrently(function (int $i) use ($workspace, $user, $project): string {
+            try {
+                if ($i % 2 === 0) {
+                    app(CancelProjectAction::class)->execute($workspace, $user->id, "cancel-race-{$i}", $project->public_id, 4);
+
+                    return 'cancelled';
+                }
+                app(ApproveProjectProductsAction::class)->execute($workspace, $user, "cancel-race-{$i}", $project->public_id, 4);
+
+                return 'approved';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+        $winners = array_filter($results, fn ($result) => in_array($result, ['cancelled', 'approved'], true));
+        $this->assertCount(1, $winners);
+        // A late cancel after an approval sees a cancellable state but a stale version.
+        $this->assertSame(5, count(array_filter($results, fn ($result) => in_array($result, ['PROJECT_STATE_CONFLICT', 'PROJECT_VERSION_CONFLICT'], true))));
+        $this->assertSame(5, (int) DB::table('projects')->value('version'));
+        $state = DB::table('projects')->value('state');
+        $this->assertSame(reset($winners) === 'cancelled' ? 'cancelled' : 'product_approved', $state);
+        $this->assertDatabaseCount('project_snapshots', $state === 'cancelled' ? 0 : 1);
     }
 
     public function test_parallel_token_retries_issue_one_token(): void

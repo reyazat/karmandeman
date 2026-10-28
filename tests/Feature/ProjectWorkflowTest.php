@@ -14,7 +14,7 @@ use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
 
-/** Batch lifecycle: finish-input -> approve-products -> verified snapshot (ADR-018). */
+/** Batch lifecycle: finish-input -> approve-products -> verified snapshot, reopen and cancel (ADR-018, ADR-019). */
 class ProjectWorkflowTest extends TestCase
 {
     use UsesApprovedPilotPolicy;
@@ -82,6 +82,11 @@ class ProjectWorkflowTest extends TestCase
     private function approveAll(string $project, int $version, ?string $key = null): TestResponse
     {
         return $this->postJson("/api/v1/projects/{$project}/approve-products", ['version' => $version], ['Idempotency-Key' => $key ?? 'approve-all-'.++$this->keys]);
+    }
+
+    private function transition(string $project, string $action, int $version, ?string $key = null): TestResponse
+    {
+        return $this->postJson("/api/v1/projects/{$project}/{$action}", ['version' => $version], ['Idempotency-Key' => $key ?? $action.'-'.++$this->keys]);
     }
 
     public function test_finish_input_needs_a_product_the_current_version_and_runs_once(): void
@@ -201,12 +206,21 @@ class ProjectWorkflowTest extends TestCase
         $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(500)->assertJsonPath('error.code', 'SNAPSHOT_INTEGRITY_FAILED');
         DB::table('product_revisions')->where('id', $a)->update(['payload' => $payloads[$a]]);
 
+        // A Gate A MAC that is missing (a pre-ADR-019 row) or an approval time moved in the database.
+        $approval = (array) DB::table('product_revisions')->where('product_id', $firstId)->first(['approval_mac', 'approved_at']);
+        DB::table('product_revisions')->where('product_id', $firstId)->update(['approval_mac' => null]);
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(500)->assertJsonPath('error.code', 'SNAPSHOT_INTEGRITY_FAILED');
+        DB::table('product_revisions')->where('product_id', $firstId)->update(['approval_mac' => $approval['approval_mac'], 'approved_at' => '2020-01-01 00:00:00']);
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(500);
+        DB::table('product_revisions')->where('product_id', $firstId)->update($approval);
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertOk();
+
         // An approval stamp removed after the fact.
         DB::table('product_revisions')->where('product_id', $firstId)->update(['approved_at' => null]);
         $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(500);
 
         Log::shouldHaveReceived('critical')->withArgs(fn (string $message, array $context) => $message === 'product.snapshot_integrity_failed'
-            && ! str_contains(json_encode($context), 'کیف'))->times(5);
+            && ! str_contains(json_encode($context), 'کیف'))->times(7);
     }
 
     public function test_batch_lifecycle_is_tenant_isolated_and_needs_consent(): void
@@ -221,6 +235,8 @@ class ProjectWorkflowTest extends TestCase
         $this->finish($project, 3)->assertNotFound()->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
         $this->approveAll($project, 1)->assertNotFound();
         $this->getJson("/api/v1/projects/{$project}/snapshot")->assertNotFound();
+        $this->transition($project, 'reopen', 1)->assertNotFound()->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
+        $this->transition($project, 'cancel', 3)->assertNotFound();
 
         Sanctum::actingAs($owner);
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($owner);
@@ -230,7 +246,9 @@ class ProjectWorkflowTest extends TestCase
         $this->finish($project, 3)->assertOk();
         DB::table('workspace_consents')->where('workspace_id', $workspace->id)->delete();
         $this->approveAll($project, 4)->assertForbidden();
+        $this->transition($project, 'cancel', 4)->assertForbidden()->assertJsonPath('error.code', 'POLICY_CONSENT_REQUIRED');
         $this->assertDatabaseCount('project_snapshots', 0);
+        $this->getJson("/api/v1/projects/{$project}")->assertJsonPath('data.state', 'review_required');
     }
 
     public function test_a_product_change_after_the_user_looked_voids_the_batch_approval(): void
@@ -248,5 +266,144 @@ class ProjectWorkflowTest extends TestCase
         $this->assertDatabaseCount('project_snapshots', 0);
 
         $this->approveAll($project, $this->version($project))->assertCreated()->assertJsonPath('data.product_count', 1);
+    }
+
+    public function test_reopen_returns_the_batch_to_review_and_reapproval_freezes_a_new_snapshot(): void
+    {
+        Sanctum::actingAs($this->seller(806));
+        $project = $this->project();
+        $product = $this->product($project, 'کیف');
+        $this->transition($project, 'reopen', $this->version($project))->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+        $this->finish($project, $this->version($project))->assertOk();
+        $this->approveAll($project, $this->version($project))->assertCreated();
+        $first = $this->getJson("/api/v1/projects/{$project}/snapshot")->assertOk()->json('data.snapshot_id');
+
+        $version = $this->version($project);
+        $this->transition($project, 'reopen', $version - 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_VERSION_CONFLICT');
+        $this->transition($project, 'reopen', $version, 'reopen-once')->assertOk()
+            ->assertJsonPath('data.state', 'review_required')->assertJsonPath('data.version', $version + 1);
+        $this->transition($project, 'reopen', $version, 'reopen-once')->assertOk()->assertJsonPath('data.version', $version + 1);
+        $this->transition($project, 'reopen', $version + 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+        // The batch under correction is not exported; the earlier snapshot stays as history.
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_APPROVED');
+        $this->assertDatabaseCount('project_snapshots', 1);
+
+        $this->patchJson("/api/v1/products/{$product}/draft", [
+            'name' => ['value' => 'کیف تازه', 'status' => 'confirmed'], 'expected_revision' => 1,
+        ], ['Idempotency-Key' => 'revise-after-reopen'])->assertOk();
+        $added = $this->product($project, 'کفش');
+        $this->approveAll($project, $this->version($project))->assertUnprocessable()->assertJsonPath('error.details.products', [$product]);
+        $this->postJson("/api/v1/products/{$product}/approve", ['revision' => 2], ['Idempotency-Key' => 'approve-revised'])->assertOk();
+        $second = $this->approveAll($project, $this->version($project))->assertCreated()
+            ->assertJsonPath('data.number', 2)->assertJsonPath('data.product_count', 2)->json('data.snapshot_id');
+        $this->assertNotSame($first, $second);
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertOk()
+            ->assertJsonPath('data.snapshot_id', $second)
+            ->assertJsonPath('data.products.0.revision', 2)
+            ->assertJsonPath('data.products.0.name.value', 'کیف تازه')
+            ->assertJsonPath('data.products.1.product_id', $added);
+        $this->assertDatabaseCount('project_snapshots', 2);
+    }
+
+    public function test_cancel_closes_the_batch_but_keeps_approved_records(): void
+    {
+        Sanctum::actingAs($this->seller(807));
+        $project = $this->project();
+        $approved = $this->product($project, 'کیف');
+        $draft = $this->product($project, 'کفش', approve: false);
+        $this->finish($project, $this->version($project))->assertOk();
+        $this->postJson("/api/v1/products/{$draft}/approve", ['revision' => 1], ['Idempotency-Key' => 'approve-draft'])->assertOk();
+        $this->approveAll($project, $this->version($project))->assertCreated();
+
+        $version = $this->version($project);
+        $this->transition($project, 'cancel', $version - 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_VERSION_CONFLICT');
+        $this->transition($project, 'cancel', $version, 'cancel-once')->assertOk()
+            ->assertJsonPath('data.state', 'cancelled')->assertJsonPath('data.version', $version + 1);
+        $this->transition($project, 'cancel', $version, 'cancel-once')->assertOk()->assertJsonPath('data.state', 'cancelled');
+        $this->transition($project, 'cancel', $version + 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+        $this->transition($project, 'reopen', $version + 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+        $this->finish($project, $version + 1)->assertStatus(409);
+        $this->approveAll($project, $version + 1)->assertStatus(409);
+        $this->getJson("/api/v1/projects/{$project}/snapshot")->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_APPROVED');
+
+        // Approved records are independent of the batch (PRD E06-a); the batch itself is closed.
+        $this->getJson("/api/v1/products/{$approved}/approved")->assertOk()->assertJsonPath('data.name.value', 'کیف');
+        $this->postJson("/api/v1/projects/{$project}/products", ['name' => ['value' => 'دیر', 'status' => 'confirmed']], ['Idempotency-Key' => 'late-product-cancelled'])
+            ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_ACCEPTING_PRODUCTS');
+        $this->patchJson("/api/v1/products/{$approved}/draft", [
+            'name' => ['value' => 'کیف تازه', 'status' => 'confirmed'], 'expected_revision' => 1,
+        ], ['Idempotency-Key' => 'revise-cancelled'])->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_CANCELLED');
+        $this->postJson("/api/v1/products/{$approved}/approve", ['revision' => 1], ['Idempotency-Key' => 'approve-cancelled'])
+            ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_CANCELLED');
+        $this->assertSame(1, DB::table('product_revisions')->where('product_id', DB::table('products')->where('public_id', $approved)->value('id'))->count());
+        // Reject stays open so the seller can free the SKUs.
+        $this->postJson("/api/v1/products/{$draft}/archive", [], ['Idempotency-Key' => 'archive-cancelled'])->assertOk();
+        $this->getJson("/api/v1/products/{$draft}")->assertJsonPath('data.status', 'archived');
+    }
+
+    public function test_cancel_is_allowed_only_before_irreversible_work(): void
+    {
+        Sanctum::actingAs($this->seller(808));
+        foreach (['new', 'collecting_input', 'needs_clarification', 'review_required', 'product_approved'] as $state) {
+            $project = $this->project();
+            DB::table('projects')->where('public_id', $project)->update(['state' => $state]);
+            $this->transition($project, 'cancel', 1)->assertOk()->assertJsonPath('data.state', 'cancelled');
+        }
+
+        foreach (['extracting', 'quoted', 'expired', 'credit_reserved', 'generating', 'retryable_failure',
+            'output_review_required', 'completed', 'failed', 'cancelled'] as $state) {
+            $project = $this->project();
+            DB::table('projects')->where('public_id', $project)->update(['state' => $state]);
+            $this->transition($project, 'cancel', 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+            $this->transition($project, 'reopen', 1)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_STATE_CONFLICT');
+            $this->getJson("/api/v1/projects/{$project}")->assertJsonPath('data.state', $state);
+        }
+    }
+
+    public function test_a_forged_approval_stamp_is_never_frozen_into_a_snapshot(): void
+    {
+        Sanctum::actingAs($this->seller(809));
+        $project = $this->project();
+        $this->product($project, 'کیف');
+        $forged = $this->product($project, 'کفش', approve: false);
+        $this->finish($project, $this->version($project))->assertOk();
+        $forgedId = DB::table('products')->where('public_id', $forged)->value('id');
+        DB::table('product_revisions')->where('product_id', $forgedId)->update(['approved_at' => now()]);
+        DB::table('products')->where('id', $forgedId)->update(['status' => 'approved', 'approved_revision' => 1]);
+        Log::spy();
+
+        $this->approveAll($project, $this->version($project))->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
+        $this->assertDatabaseCount('project_snapshots', 0);
+        $this->getJson("/api/v1/projects/{$project}")->assertJsonPath('data.state', 'review_required');
+        Log::shouldHaveReceived('critical')->withArgs(fn (string $message, array $context) => $message === 'product.integrity_failed'
+            && $context['product'] === $forged)->once();
+    }
+
+    public function test_an_approved_product_moved_into_another_batch_is_never_frozen(): void
+    {
+        Sanctum::actingAs($this->seller(810));
+        $source = $this->project();
+        $moved = $this->product($source, 'کیف');
+        $target = $this->project();
+        $this->product($target, 'کفش');
+        $this->finish($target, $this->version($target))->assertOk();
+        $version = $this->version($target);
+
+        // A database edit, not an API call: the target version does not change.
+        DB::table('products')->where('public_id', $moved)->update(['project_id' => DB::table('projects')->where('public_id', $target)->value('id')]);
+        $this->approveAll($target, $version)->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
+        $this->assertDatabaseCount('project_snapshots', 0);
+    }
+
+    public function test_a_nulled_approval_stamp_is_an_integrity_failure_not_a_pending_product(): void
+    {
+        Sanctum::actingAs($this->seller(811));
+        $project = $this->project();
+        $product = $this->product($project, 'کیف');
+        $this->finish($project, $this->version($project))->assertOk();
+        DB::table('product_revisions')->update(['approved_at' => null]);
+
+        $this->approveAll($project, $this->version($project))->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
+        $this->getJson("/api/v1/products/{$product}/approved")->assertStatus(500)->assertJsonPath('error.code', 'PRODUCT_INTEGRITY_FAILED');
     }
 }

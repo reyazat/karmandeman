@@ -10,6 +10,7 @@ use App\Models\ProductRevision;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -27,7 +28,8 @@ interface ProductRepositoryInterface
     /** @throws \DomainException PRODUCT_SKU_TAKEN */
     public function addRevision(Product $product, User $author, ProductRevisionDraft $draft): ProductRevision;
 
-    public function approve(Product $product, ProductRevision $revision, User $approver): ProductRevision;
+    /** Gate A stamp with its MAC from ProjectSnapshotSigner::approvalMac over the same second (ADR-019). */
+    public function approve(Product $product, ProductRevision $revision, User $approver, CarbonImmutable $approvedAt, string $approvalMac): ProductRevision;
 
     /** Reject (FR-041): revisions stay, SKUs are released. */
     public function archive(Product $product): Product;

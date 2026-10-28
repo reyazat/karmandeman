@@ -302,6 +302,22 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 باز: بازگشت از `product_approved`، لغو پروژه، intake تلگرام و storage خصوصی. `/products/{id}/approved` هنوز MAC را بررسی نمی‌کند.
 
+### برش چهارم گام ۳ (۲۸ اکتبر ۲۰۲۶)
+
+[ADR-019](adr/ADR-019-reopen-cancel-and-approval-integrity.md): `POST /projects/{id}/reopen` (فقط از `product_approved`)، `POST /projects/{id}/cancel` (فقط از `new`، `collecting_input`، `needs_clarification`، `review_required` و `product_approved`)، و `approval_mac` در Gate A. این MAC محصول، شناسه عمومی، پروژه، نسخه، MAC محتوا و ثانیه تأیید را امضا می‌کند و در `/products/{id}/approved`، پیش از ساخت snapshot و هنگام خواندن snapshot بررسی می‌شود. snapshot پروژه reopen‌شده یا لغوشده خروجی نمی‌دهد. در پروژه لغوشده فقط «رد» محصول باز است.
+
+بازبین مستقل پیش از commit P1 یا P2 نیافت. شش P3 بررسی شد:
+- **اصلاح‌شده با آزمون:** `project_id` و `approved_at` در MAC تأیید نبودند. پس جابه‌جایی محصول تأییدشده به Batch دیگر و تغییر زمان تأیید کشف نمی‌شدند. `approved_at` پاک‌شده به‌جای شکست یکپارچگی 422 «تأییدنشده» می‌داد. آزمون‌های snapshot، ردیف بدون MAC و همه وضعیت‌های لغو اضافه شدند.
+- **ثبت‌شده در ADR:** rollback به نسخه تأییدشده قبلی با دسترسی نوشتن DB کشف نمی‌شود (اشاره‌گر امضاشده بیرون از DB لازم است). تعارض اصلاح محصول در پروژه تأییدشده با PRD §۶ تصمیم مالک محصول را می‌خواهد.
+- آزمون هم‌زمانی cancel و approve در اجرای اول ناپایدار بود. علت در خود آزمون بود: cancel دیرتر پس از approve پاسخ `PROJECT_VERSION_CONFLICT` می‌گیرد، نه `PROJECT_STATE_CONFLICT`. انتظار آزمون اصلاح شد و کد تغییر نکرد.
+
+شواهد:
+- PostgreSQL موقت با OpenBao 2.4.1: **۱۸۱ تست / ۱۹۷۴ assertion** در سه اجرای پیاپی، شامل شش cancel/approve هم‌زمان (یک transition برنده).
+- SQLite: **۱۶۰ پاس / ۲۱ skip**.
+- Pint روی ۲۵۸ فایل و PHPStan بدون خطا. rollback و اجرای دوباره migration `2026_10_28_100004` روی PostgreSQL موقت موفق.
+
+باز: intake تلگرام و storage خصوصی، rollback امضاشده، تصمیم اصلاح پس از تأیید پروژه، لغو در وضعیت‌های گام ۴ و ۵.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

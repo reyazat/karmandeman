@@ -7,6 +7,7 @@ namespace App\Actions\Product;
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Enums\ProductStatus;
+use App\Enums\ProjectState;
 use App\Exceptions\ProductRequiresConfirmation;
 use App\Models\ProductRevision;
 use App\Models\User;
@@ -14,6 +15,8 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductDraftNormalizer;
+use App\Services\ProductIntake\ProjectSnapshotSigner;
+use Carbon\CarbonImmutable;
 use DomainException;
 
 /**
@@ -28,6 +31,7 @@ final readonly class ApproveProductRevisionAction
         private ProductRepositoryInterface $products,
         private ProjectRepositoryInterface $projects,
         private ProductDraftNormalizer $normalizer,
+        private ProjectSnapshotSigner $signer,
     ) {}
 
     /**
@@ -45,6 +49,11 @@ final readonly class ApproveProductRevisionAction
                 if ($product->status === ProductStatus::Archived) {
                     throw new DomainException('PRODUCT_ARCHIVED');
                 }
+                // A cancelled batch is closed; only "reject" stays open to free SKUs (ADR-019).
+                if ($product->project_id !== null
+                    && $this->projects->findForWorkspace($workspace, $product->project_id)?->state === ProjectState::Cancelled) {
+                    throw new DomainException('PROJECT_CANCELLED');
+                }
                 if ($product->current_revision !== $revision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
                 }
@@ -59,7 +68,9 @@ final readonly class ApproveProductRevisionAction
                     throw new ProductRequiresConfirmation($unconfirmed);
                 }
 
-                $approved = $this->products->approve($product, $current, $user);
+                // Whole seconds: the column keeps no fraction, and the MAC must match what is read back.
+                $at = CarbonImmutable::now()->startOfSecond();
+                $approved = $this->products->approve($product, $current, $user, $at, $this->signer->approvalMac($workspace, $product, $current, $at));
                 $this->projects->bumpVersion($workspace, $product->project_id);
 
                 return $approved;

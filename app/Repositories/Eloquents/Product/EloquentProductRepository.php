@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
+use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -53,13 +54,13 @@ final class EloquentProductRepository implements ProductRepositoryInterface
         return $this->writeRevision($product, $next, $author, $draft);
     }
 
-    public function approve(Product $product, ProductRevision $revision, User $approver): ProductRevision
+    public function approve(Product $product, ProductRevision $revision, User $approver, CarbonImmutable $approvedAt, string $approvalMac): ProductRevision
     {
         if ($revision->product_id !== $product->id || $revision->approved_at !== null) {
             throw new DomainException('INVALID_PRODUCT_APPROVAL');
         }
         $this->holdSkus($product, [$revision->sku_mac]);
-        $revision->forceFill(['approved_at' => now(), 'approved_by' => $approver->id])->save();
+        $revision->forceFill(['approved_at' => $approvedAt, 'approved_by' => $approver->id, 'approval_mac' => $approvalMac])->save();
         $product->forceFill(['status' => ProductStatus::Approved, 'approved_revision' => $revision->revision])->save();
 
         return $revision;
