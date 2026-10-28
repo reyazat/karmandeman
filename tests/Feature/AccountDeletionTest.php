@@ -11,6 +11,7 @@ use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
+use App\Enums\AccountDeletionStatus;
 use App\Jobs\Telegram\AnswerTelegramCallback;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AccountDeletion;
@@ -130,7 +131,7 @@ final class AccountDeletionTest extends TestCase
 
         $deletion = AccountDeletion::query()->sole();
         $this->assertSame($user->id, $deletion->user_id);
-        $this->assertSame('requested', $deletion->status);
+        $this->assertSame(AccountDeletionStatus::Requested, $deletion->status);
         $this->assertSame('telegram', $deletion->channel);
         $this->assertEquals(now(), $deletion->requested_at);
         $this->assertEquals(now()->addHours(168), $deletion->deadline_at);

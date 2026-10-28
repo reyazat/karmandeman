@@ -72,11 +72,12 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 | `workspaces.name`، `projects.name` | `projects.name` **کلید Workspace (S2)**؛ `workspaces.name` هنوز plaintext (همراه ستون‌های هویت) | کلید حساب/Workspace |
 | `telegram_onboardings.draft` | **کلید Workspace (S2)** | کلید حساب/Workspace |
 | `service_requests.details` و `details_hash` | **کلید Workspace (S2)**؛ hash با HMAC کلید مشتق‌شده (HKDF) از DEK همان Workspace | کلید حساب؛ HMAC با کلید همان حساب |
+| `api_idempotency_records.request_hash` | از ۲۸ اکتبر HMAC زیر کلید Workspace (قبلاً sha256 بی‌کلید ورودی) | کلید حساب |
 | `api_idempotency_records.result_attributes` | snapshot خام مدل؛ از S2 فیلدهای خصوصی برند/پروژه در آن ciphertext کلید Workspace‌اند؛ snapshot قدیمی plaintext مانع migration است | کلید حساب یا عدم نگهداری فیلد خصوصی |
 | `users.name` (نام نمایشی تلگرام) | plaintext | کلید حساب (مدل تک‌مالک) |
 | `user_identities.external_id` و `meta` (شناسه و username تلگرام) | plaintext | **تصمیم باز ۱** |
-| `conversation_events.message_key` | sha256 بدون کلید از chat/message id؛ برای شناسه معلوم قابل حدس | HMAC کلیددار و retention کوتاه |
-| `jobs`/`failed_jobs` (chat id و متن پاسخ) | `ShouldBeEncrypted` با APP_KEY | حذف ردیف‌های همان حساب در purge؛ retention کوتاه failed_jobs |
+| `conversation_events.message_key`، `subject_key` | از ADR-014: HMAC با کلید مشتق از APP_KEY؛ `subject_key` برای یافتن رویدادهای حساب در purge؛ رویدادهای قدیمی بدون `subject_key` | retention کوتاه (پیاده‌نشده) |
+| `jobs`/`failed_jobs` (chat id و متن پاسخ) | `ShouldBeEncrypted` با APP_KEY؛ از ADR-014 پیام‌های همان چت در purge حذف می‌شوند | retention کوتاه failed_jobs |
 | `telegram_auth_requests.encrypted_token`، `personal_access_tokens` | APP_KEY / hash | در T0 حذف می‌شوند (پیاده‌شده در FR-086) |
 | `workspace_consents`، `account_deletions`، `credit_ledger`، `wallets`، `employees` | بدون متن آزاد؛ وابسته به حساب | حذف کامل در purge |
 | فایل و مشتقات آینده | وجود ندارد | کلید حساب پیش از فعال‌سازی intake، با طراحی streaming |
@@ -84,7 +85,7 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 
 ## تصمیم‌های باز
 
-۱. **lookup شناسه تلگرام:** پیش از شناختن حساب باید کاربر را از `from.id` پیدا کرد؛ این ستون با کلید همان حساب رمزپذیر نیست. اگر در بکاپ ۱۴روزه بماند، شناسه شخص پس از روز هفتم باقی است. گزینه‌ها: (الف) blind index با HMAC کلید سراسری در OpenBao؛ برای کسی که کلید و بکاپ را دارد هنوز با حدس شناسه قابل اتصال است. (ب) جدول هویت در دیتابیس کوچک جدا با بکاپ حداکثر ۴۸ ساعت مثل key store. (ج) کاهش عمر بکاپ کل دیتابیس به ۷ روز. **پیشنهاد: (ب)**؛ تصمیم با مالک است.
+۱. **(بسته‌شده ۲۸ اکتبر ۲۰۲۶ — گزینه ج، [ADR-014](ADR-014-seven-day-database-backups-and-live-purge.md))** **lookup شناسه تلگرام:** پیش از شناختن حساب باید کاربر را از `from.id` پیدا کرد؛ این ستون با کلید همان حساب رمزپذیر نیست. اگر در بکاپ ۱۴روزه بماند، شناسه شخص پس از روز هفتم باقی است. گزینه‌ها: (الف) blind index با HMAC کلید سراسری در OpenBao؛ برای کسی که کلید و بکاپ را دارد هنوز با حدس شناسه قابل اتصال است. (ب) جدول هویت در دیتابیس کوچک جدا با بکاپ حداکثر ۴۸ ساعت مثل key store. (ج) کاهش عمر بکاپ کل دیتابیس به ۷ روز. **پیشنهاد: (ب)**؛ تصمیم با مالک است.
 ۲. میزبان جدای OpenBao، روش unseal و نگهدارنده کلیدهای unseal/recovery.
 ۳. فهرست موقت کلیدهای نابودشده برای restore: فقط شناسه تصادفی کلید، حداکثر به اندازه عمر بکاپ key store، بدون tombstone دائمی.
 
@@ -117,3 +118,12 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 - [Raft snapshot/restore](https://openbao.org/docs/api/system/storage/raft/): بازگشت وضعیت cluster با snapshot، مبنای ریسک احیای کلید قدیمی.
 - [OpenBao audit](https://openbao.org/docs/audit/): اطلاعات request/response و HMAC پیش‌فرض؛ تنظیم و inventory لاگ همچنان لازم است و HMAC به معنی داده ناشناسِ خارج از دامنه حذف نیست.
 - [AWS KMS deletion](https://docs.aws.amazon.com/kms/latest/developerguide/deleting-keys.html): انتظار اجباری و تأخیر احتمالی اضافه.
+
+## وضعیت پیاده‌سازی (FR-087 مرحله اول، ۲۸ اکتبر ۲۰۲۶)
+
+تصمیم باز ۱ با گزینه (ج) بسته شد و پاک‌سازی زنده، نابودی key ring، تکمیل مشروط و هشدار مهلت پیاده شدند. جزئیات و محدودیت‌ها در [ADR-014](ADR-014-seven-day-database-backups-and-live-purge.md) است. در بازبینی همان روز:
+
+- `destroy` adapter برای کلید ازپیش‌حذف‌شده no-op شد. OpenBao 2.4.1 برای config/delete کلید ناموجود 400 می‌دهد و retry پاک‌سازی همیشه شکست می‌خورد.
+- adapter آدرس غیر HTTPS را خارج از local/testing رد می‌کند.
+- DEKها پس از پایان هر job از حافظه worker پاک می‌شوند.
+- fingerprint درخواست idempotency به HMAC کلید Workspace تغییر کرد.

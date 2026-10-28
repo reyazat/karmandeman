@@ -29,6 +29,16 @@ x-app-common: &app-common
     REDIS_CLIENT: phpredis
     N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
     KM_GIFT_CREDITS: ${KM_GIFT_CREDITS:-0}
+    # Workspace keys (ADR-013). One shared token for now: the scheduler purge needs
+    # delete/config rights that app/worker should not have; split per service before release.
+    OPENBAO_ADDR: ${OPENBAO_ADDR:?OPENBAO_ADDR required}
+    OPENBAO_TOKEN: ${OPENBAO_TOKEN:?OPENBAO_TOKEN required}
+    OPENBAO_TRANSIT_MOUNT: ${OPENBAO_TRANSIT_MOUNT:-transit}
+    OPENBAO_KEY_PREFIX: ${OPENBAO_KEY_PREFIX:-ws-}
+    # Erasure timing (ADR-014); completion stays off until backup lifecycle is evidenced.
+    KM_DB_BACKUP_MAX_AGE_HOURS: ${KM_DB_BACKUP_MAX_AGE_HOURS:-144}
+    KM_KEY_BACKUP_MAX_AGE_HOURS: ${KM_KEY_BACKUP_MAX_AGE_HOURS:-48}
+    KM_ERASURE_BACKUP_LIFECYCLE_VERIFIED: ${KM_ERASURE_BACKUP_LIFECYCLE_VERIFIED:-false}
     # n8n public REST API for workflow management/execution. Default targets the
     # bundled service; for the standalone on-host container use
     # https://ai.smartystudio.co.uk or its container name on a shared network.

@@ -10,9 +10,11 @@ use App\Actions\Brand\UpdateBrandProfileAction;
 use App\Actions\Identity\HandleTelegramUpdateAction;
 use App\Actions\Identity\IssueTelegramTokenAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Privacy\PurgeAccountDataAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
+use App\Enums\AccountDeletionStatus;
 use App\Enums\CreditLedgerType;
 use App\Models\User;
 use App\Repositories\Contracts\BrandRepositoryInterface;
@@ -243,6 +245,27 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertDatabaseCount('account_deletions', 1);
         $this->assertDatabaseCount('personal_access_tokens', 0);
         $this->assertSame('deletion_pending', $workspace->fresh()->status);
+    }
+
+    public function test_parallel_purge_passes_and_messages_purge_once_without_deadlock(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(92077));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $deletion = app(RequestAccountDeletionAction::class)->execute($workspace, $user, 'telegram')[0];
+
+        // Purge locks user, workspace, receipt; webhook registration locks the user first too.
+        $results = $this->concurrently(fn (int $i): string => $i % 2 === 0
+            ? app(PurgeAccountDataAction::class)->execute($deletion)->status->value
+            : app(HandleTelegramUpdateAction::class)->execute(['update_id' => 500 + $i, 'message' => [
+                'message_id' => 500 + $i, 'text' => '/balance', 'from' => ['id' => 92077], 'chat' => ['id' => 92077, 'type' => 'private'],
+            ]]), 8);
+
+        $this->assertSame([], array_diff($results, ['awaiting_backup_expiry', 'ok']));
+        $this->assertSame(AccountDeletionStatus::AwaitingBackupExpiry, $deletion->fresh()->status);
+        $this->assertSame(0, DB::table('users')->where('id', $user->id)->count());
+        $this->assertSame(0, DB::table('workspaces')->where('id', $workspace->id)->count());
+        // A message after the purge may register a fresh account; never more than one.
+        $this->assertLessThanOrEqual(1, DB::table('user_identities')->where('external_id', '92077')->count());
     }
 
     public function test_outbox_is_invisible_to_other_connections_until_commit(): void

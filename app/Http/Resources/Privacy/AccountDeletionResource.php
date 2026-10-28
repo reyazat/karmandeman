@@ -19,7 +19,7 @@ final class AccountDeletionResource extends JsonResource
         return [
             'id' => $this->public_id,
             // Stays "requested" (in progress) until erasure is proven complete (FR-088).
-            'status' => $this->status,
+            'status' => $this->status->value,
             'requested_at' => $this->requested_at->toIso8601String(),
             'deadline_at' => $this->deadline_at->toIso8601String(),
         ];

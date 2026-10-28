@@ -174,6 +174,50 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - **S2:** ستون‌های خصوصی برند، حافظه و تاریخچه آن، نام پروژه، draft onboarding و متن/hash پشتیبانی زیر کلید Workspace رمز می‌شوند؛ snapshotهای تازه idempotency هم ciphertext نگه می‌دارند. جزئیات، محدودیت‌ها و باقی‌مانده در [ADR-013](adr/ADR-013-openbao-transit-key-service.md). migration جدید داده را بازنویسی نمی‌کند و با وجود plaintext قدیمی متوقف می‌شود؛ روی دیتابیس اصلی یا staging اجرا نشده است.
 - شواهد: PostgreSQL موقت **۱۱۸ تست / ۸۷۲ assertion** (۱۱ integration هم‌زمانی و ۳ آزمون OpenBao 2.4.1 واقعی)؛ SQLite **۱۰۴ پاس، ۱۴ skip**؛ Pint روی ۱۹۲ فایل و PHPStan سطح ۵ بدون خطا؛ frontend در کپی تمیز: `npm ci`، audit صفر، typecheck، lint، **Vitest ۷ تست** و build موفق. `node_modules` محلی مخزن کهنه است (`@vue/test-utils` ندارد و فایل root-owned دارد) و typecheck محلی را می‌شکند؛ lockfile سالم است و `npm ci` آن را رفع می‌کند. CI میزبانی‌شده، ربات زنده و OpenBao با TLS/AppRole آزموده نشده‌اند.
 
+### بازبینی پس از S2 و FR-087 مرحله اول (۲۸ اکتبر ۲۰۲۶)
+
+وضعیت اولیه، روی PostgreSQL موقت و OpenBao 2.4.1 در حالت dev:
+- **۱۱۸ تست / ۸۷۲ assertion**؛ Pint، PHPStan سطح ۵، و در کپی تمیز با Node 24: audit، typecheck، lint، Vitest (۷ تست) و build، همه پاس.
+- `composer audit` در شبکه ایزوله تست به دلیل نبود DNS اجرا نشد.
+
+یافته‌های تأییدشده و اصلاح‌شده. هر کدام آزمون بازتولید دارد که روی کد قبلی شکست خورد:
+- **hash بی‌کلید ورودی idempotency (متوسط):** `request_hash` برابر sha256 نام برند/پروژه بود و پس از نابودی کلید با حدس قابل تطبیق می‌ماند. اکنون HMAC زیر کلید Workspace است. کلید رسید پشتیبانی بدون `message_id` دیگر از متن پشتیبانی hash نمی‌شود.
+- **حذف کلید تکرارپذیر نبود (متوسط):** OpenBao برای config/delete کلید ناموجود 400 می‌دهد. پس retry پاک‌سازی پس از حذف موفق همیشه شکست می‌خورد. `destroy` اکنون با GET و پاسخ 404 متوقف می‌شود.
+- **nullability migration S2 (کم):** `memory_item_revisions.value_json` در up/down NOT NULL می‌شد. اکنون فقط `memory_items.value_json` NOT NULL است.
+- **سخت‌سازی (کم):**
+  - آدرس OpenBao غیر HTTPS خارج از local/testing رد می‌شود.
+  - DEKها پس از هر job از حافظه worker پاک می‌شوند.
+  - متغیرهای OpenBao در allowlist Compose نبودند و اضافه شدند.
+- **ثبت محدودیت:** AAD ردیف را نمی‌بندد، و docblock ادعای خلاف داشت. docblock اصلاح شد و محدودیت در ADR-014 ثبت شد.
+
+**FR-087 مرحله اول ([ADR-014](adr/ADR-014-seven-day-database-backups-and-live-purge.md)):**
+- مالک برای lookup هویت گزینه (ج) را انتخاب کرد: بکاپ دیتابیس برنامه حداکثر ۷ روز. مقدار عملیاتی ۱۴۴ ساعت است.
+- `PurgeAccountDataAction` کلید Transit را نابود می‌کند. سپس در یک تراکنش با ترتیب قفل کاربر، Workspace و رسید، همه ردیف‌های حساب را حذف می‌کند: پیام‌های outbox و failed job همان چت و رویدادهای گفتگو با `subject_key` هم حذف می‌شوند.
+- `CompleteAccountDeletionAction` فقط با `KM_ERASURE_BACKUP_LIFECYCLE_VERIFIED=true` و پس از هر دو بازه completed می‌کند. `ProcessAccountDeletionsAction` هشدار مهلت را ثبت می‌کند.
+- آزمون هم‌زمانی تازه در اولین اجرا race واقعی را نشان داد: دو پاس هم‌زمان، و پاس دوم روی کاربر حذف‌شده `ModelNotFoundException` می‌داد. با اصلاح، ۹ اجرای پیاپی پاس شد.
+- migration `2026_10_28_000001` روی PostgreSQL موقت rollback و دوباره اجرا شد. down با وجود رسید جدا متوقف می‌شود.
+
+بازبینی مستقل دوم روی diff این مرحله، پیش از commit:
+- **(HIGH) نابودی کلید پیش از بررسی پیش‌شرط:** اگر Workspace دوباره active شده بود یا حساب عضو/Workspace دیگری داشت، کلید نابود می‌شد ولی purge همیشه شکست می‌خورد و داده plaintext می‌ماند. اکنون همه پیش‌شرط‌ها زیر قفل کاربر، Workspace و رسید، پیش از `destroy` بررسی می‌شوند.
+- **(متوسط) نام کلید:** نام کلید از `workspace_data_keys.transit_key` خوانده می‌شود، نه از prefix جاری. `destroy` اکنون نبود کلید را گزارش می‌دهد. نبود کلید فقط وقتی «نابودشده» حساب می‌شود که `key_destroy_started_at` از تلاش قبلی ثبت شده باشد.
+- **(متوسط) قفل overlap:** قفل `withoutOverlapping` پیش‌فرض ۲۴ ساعت بود. یک اجرای killed پاک‌سازی را یک روز متوقف می‌کرد. اکنون ۱۰ دقیقه است.
+- **(کم) هم‌زمانی:** پاس دوم هم‌زمان دیگر روی رسید پاک‌شده `attempts` ثبت نمی‌کند.
+- **(کم) عضویت در Workspace دیگر:** کاربری که عضو Workspace دیگری است purge نمی‌شود، چون cascade داده آن Workspace را هم پاک می‌کرد.
+- پذیرفته‌شده و ثبت‌شده:
+  - رویدادهای گفتگوی قدیمی بدون `subject_key` با retention هفت‌روزه (ADR-015) حذف می‌شوند.
+  - تغییر قالب `request_hash` و `message_key` replay/dedupe همان لحظه deploy را می‌شکند. استقرار با داده واقعی وجود ندارد.
+  - migration ویرایش‌شده S2 روی هیچ دیتابیسی اجرا نشده است؛ dev DB محلی فقط migrationهای ۲۶ اکتبر را دارد.
+
+شواهد پایانی:
+- PostgreSQL موقت با OpenBao 2.4.1 در حالت dev: **۱۳۳ تست / ۱۰۶۵ assertion**.
+- SQLite: **۱۱۳ پاس / ۱۷ skip**.
+- Pint روی ۲۰۴ فایل و PHPStan بدون خطا. Compose config معتبر.
+
+آزمون‌نشده:
+- lifecycle واقعی بکاپ و restore ایزوله، QA-21 روی staging، پاک‌سازی storage لایه OpenBao.
+- ربات زنده و CI میزبانی‌شده این تغییرات.
+- متن بسته سیاست v3 هنوز بکاپ ۱۴روزه را می‌گوید.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

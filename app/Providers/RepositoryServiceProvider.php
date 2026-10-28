@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Repositories\Contracts\AccountDeletionRepositoryInterface;
+use App\Repositories\Contracts\AccountErasureRepositoryInterface;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\ConversationEventRepositoryInterface;
@@ -14,12 +15,14 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\ServiceRequestRepositoryInterface;
 use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
+use App\Repositories\Contracts\TelegramOutboxRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Repositories\Eloquents\AccountDeletion\EloquentAccountDeletionRepository;
+use App\Repositories\Eloquents\AccountErasure\EloquentAccountErasureRepository;
 use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
 use App\Repositories\Eloquents\Brand\EloquentBrandRepository;
 use App\Repositories\Eloquents\ConversationEvent\EloquentConversationEventRepository;
@@ -29,6 +32,7 @@ use App\Repositories\Eloquents\Project\EloquentProjectRepository;
 use App\Repositories\Eloquents\ServiceRequest\EloquentServiceRequestRepository;
 use App\Repositories\Eloquents\TelegramAuthRequest\EloquentTelegramAuthRequestRepository;
 use App\Repositories\Eloquents\TelegramOnboarding\EloquentTelegramOnboardingRepository;
+use App\Repositories\Eloquents\TelegramOutbox\DatabaseTelegramOutboxRepository;
 use App\Repositories\Eloquents\User\EloquentUserRepository;
 use App\Repositories\Eloquents\WalletLedger\EloquentWalletRepository;
 use App\Repositories\Eloquents\Workspace\EloquentWorkspaceRepository;
@@ -41,6 +45,8 @@ final class RepositoryServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AccountDeletionRepositoryInterface::class, EloquentAccountDeletionRepository::class);
+        $this->app->bind(AccountErasureRepositoryInterface::class, EloquentAccountErasureRepository::class);
+        $this->app->bind(TelegramOutboxRepositoryInterface::class, DatabaseTelegramOutboxRepository::class);
         $this->app->bind(ApiIdempotencyRepositoryInterface::class, EloquentApiIdempotencyRepository::class);
         $this->app->bind(TelegramAuthRequestRepositoryInterface::class, EloquentTelegramAuthRequestRepository::class);
         $this->app->bind(TelegramOnboardingRepositoryInterface::class, EloquentTelegramOnboardingRepository::class);
