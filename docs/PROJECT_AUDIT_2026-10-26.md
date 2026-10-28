@@ -218,6 +218,22 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - ربات زنده و CI میزبانی‌شده این تغییرات.
 - متن بسته سیاست v3 هنوز بکاپ ۱۴روزه را می‌گوید.
 
+### اجرای retention و حداقل‌سازی هویت (۲۸ اکتبر ۲۰۲۶)
+
+[ADR-015](adr/ADR-015-retention-enforcement-and-identity-minimisation.md):
+- `PruneRetentionAction`/`privacy:prune-retention` هر ساعت اجرا می‌شود. `sanctum:prune-expired --hours=1` هم زمان‌بندی شد.
+- ساعت صف تلگرام از `createdAt` داخل payload خوانده می‌شود، چون `created_at` جدول با هر retry دوباره تنظیم می‌شود. آزمون این را با شبیه‌سازی release می‌سنجد.
+- replay snapshot منقضی `409 IDEMPOTENCY_KEY_EXPIRED` می‌گیرد. payload دیگر با همان کلید همچنان conflict است و پروژه دوم ساخته نمی‌شود.
+- draft رهاشده پاک می‌شود. برند تأییدشده به `ready` برمی‌گردد و `isReady` حفظ می‌شود.
+- ثبت‌نام فقط شناسه تلگرام را نگه می‌دارد. migration `2026_10_28_000002` نام و meta موجود را پاک می‌کند. این کار برگشت‌ناپذیر است و پیش از اجرا روی داده واقعی بکاپ می‌خواهد.
+
+شواهد:
+- PostgreSQL موقت با OpenBao: **۱۴۰ تست / ۱۱۰۷ assertion**. SQLite: **۱۲۳ پاس / ۱۷ skip**.
+- Pint روی ۲۱۰ فایل و PHPStan بدون خطا.
+- rollback و اجرای دوباره migration روی PostgreSQL موقت موفق بود. `schedule:list` سه دستور زمان‌بندی‌شده را نشان داد.
+
+آزمون‌نشده: scheduler واقعی در Compose، حجم داده و lock روی دیتابیس واقعی، تصویب اعداد.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

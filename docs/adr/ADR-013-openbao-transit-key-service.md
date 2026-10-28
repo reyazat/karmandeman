@@ -69,13 +69,14 @@ snapshot خود OpenBao، backup ماشین/دیسک، object version، Raft log
 |---|---|---|
 | `brands` (نام، دسته، لحن، مخاطب، توضیح، رنگ، تماس، خروجی‌ها) | **کلید Workspace (S2)**؛ واحد پول، `required_product_fields`، نمایش قیمت و نسخه تنظیمات غیرشخصی و plaintext ماندند | کلید حساب/Workspace |
 | `memory_items.value_json`، `memory_item_revisions.value_json` | **کلید Workspace (S2)**؛ `key`، منبع و وضعیت plaintext | کلید حساب/Workspace |
-| `workspaces.name`، `projects.name` | `projects.name` **کلید Workspace (S2)**؛ `workspaces.name` هنوز plaintext (همراه ستون‌های هویت) | کلید حساب/Workspace |
+| `projects.name` | **کلید Workspace (S2)** | کلید حساب/Workspace |
 | `telegram_onboardings.draft` | **کلید Workspace (S2)** | کلید حساب/Workspace |
 | `service_requests.details` و `details_hash` | **کلید Workspace (S2)**؛ hash با HMAC کلید مشتق‌شده (HKDF) از DEK همان Workspace | کلید حساب؛ HMAC با کلید همان حساب |
 | `api_idempotency_records.request_hash` | از ۲۸ اکتبر HMAC زیر کلید Workspace (قبلاً sha256 بی‌کلید ورودی) | کلید حساب |
 | `api_idempotency_records.result_attributes` | snapshot خام مدل؛ از S2 فیلدهای خصوصی برند/پروژه در آن ciphertext کلید Workspace‌اند؛ snapshot قدیمی plaintext مانع migration است | کلید حساب یا عدم نگهداری فیلد خصوصی |
-| `users.name` (نام نمایشی تلگرام) | plaintext | کلید حساب (مدل تک‌مالک) |
-| `user_identities.external_id` و `meta` (شناسه و username تلگرام) | plaintext | **تصمیم باز ۱** |
+| `users.name` (نام نمایشی تلگرام)، `workspaces.name` | از ADR-015 ذخیره نمی‌شوند؛ migration مقدار موجود را پاک می‌کند | حداقل‌سازی به‌جای رمزنگاری |
+| `user_identities.external_id` | plaintext برای lookup؛ تصمیم باز ۱ با گزینه (ج) بسته شد (ADR-014) | بکاپ DB حداکثر ۷ روز و purge زنده |
+| `user_identities.meta` (username و زبان تلگرام) | از ADR-015 ذخیره نمی‌شود | حداقل‌سازی |
 | `conversation_events.message_key`، `subject_key` | از ADR-014: HMAC با کلید مشتق از APP_KEY؛ `subject_key` برای یافتن رویدادهای حساب در purge؛ رویدادهای قدیمی بدون `subject_key` | retention کوتاه (پیاده‌نشده) |
 | `jobs`/`failed_jobs` (chat id و متن پاسخ) | `ShouldBeEncrypted` با APP_KEY؛ از ADR-014 پیام‌های همان چت در purge حذف می‌شوند | retention کوتاه failed_jobs |
 | `telegram_auth_requests.encrypted_token`، `personal_access_tokens` | APP_KEY / hash | در T0 حذف می‌شوند (پیاده‌شده در FR-086) |

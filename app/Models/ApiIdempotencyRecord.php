@@ -6,7 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-/** @property array<string, mixed> $result_attributes */
+/** @property array<string, mixed>|null $result_attributes null once expired by retention (ADR-015) */
 final class ApiIdempotencyRecord extends Model
 {
     public $timestamps = false;

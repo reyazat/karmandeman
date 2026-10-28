@@ -12,6 +12,7 @@ use App\Repositories\Contracts\ConversationEventRepositoryInterface;
 use App\Repositories\Contracts\EmployeeRepositoryInterface;
 use App\Repositories\Contracts\MemoryItemRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Repositories\Contracts\RetentionRepositoryInterface;
 use App\Repositories\Contracts\ServiceRequestRepositoryInterface;
 use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
@@ -29,6 +30,7 @@ use App\Repositories\Eloquents\ConversationEvent\EloquentConversationEventReposi
 use App\Repositories\Eloquents\Employee\EloquentEmployeeRepository;
 use App\Repositories\Eloquents\MemoryItem\EloquentMemoryItemRepository;
 use App\Repositories\Eloquents\Project\EloquentProjectRepository;
+use App\Repositories\Eloquents\Retention\EloquentRetentionRepository;
 use App\Repositories\Eloquents\ServiceRequest\EloquentServiceRequestRepository;
 use App\Repositories\Eloquents\TelegramAuthRequest\EloquentTelegramAuthRequestRepository;
 use App\Repositories\Eloquents\TelegramOnboarding\EloquentTelegramOnboardingRepository;
@@ -57,6 +59,7 @@ final class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(WorkspaceRepositoryInterface::class, EloquentWorkspaceRepository::class);
         $this->app->bind(EmployeeRepositoryInterface::class, EloquentEmployeeRepository::class);
         $this->app->bind(ProjectRepositoryInterface::class, EloquentProjectRepository::class);
+        $this->app->bind(RetentionRepositoryInterface::class, EloquentRetentionRepository::class);
         $this->app->bind(WalletRepositoryInterface::class, EloquentWalletRepository::class);
         $this->app->bind(ConversationEventRepositoryInterface::class, EloquentConversationEventRepository::class);
         $this->app->bind(BrandRepositoryInterface::class, EloquentBrandRepository::class);

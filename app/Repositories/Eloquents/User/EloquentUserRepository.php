@@ -25,19 +25,14 @@ final class EloquentUserRepository implements UserRepositoryInterface
     {
         try {
             return DB::transaction(function () use ($telegramUser, $provider): User {
-                $user = User::create([
-                    'name' => $telegramUser->displayName(),
-                    'status' => 'active',
-                ]);
+                // Data minimisation (ADR-015): only the Telegram ID is needed to find
+                // the account; display name, username and language are never stored.
+                $user = User::create(['status' => 'active']);
 
                 $user->identities()->create([
                     'provider' => $provider,
                     'external_id' => (string) $telegramUser->id,
                     'verified_at' => now(),
-                    'meta' => array_filter([
-                        'username' => $telegramUser->username,
-                        'language_code' => $telegramUser->languageCode,
-                    ]),
                 ]);
 
                 return $user;

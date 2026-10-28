@@ -20,4 +20,17 @@ return [
         'batch_size' => (int) env('KM_ERASURE_BATCH_SIZE', 20),
     ],
 
+    // FR-084 retention limits in hours (ADR-015), from the proposed table
+    // retention-20261027-v3; final values follow the approved policy bundle.
+    'retention' => [
+        'conversation_event_hours' => (int) env('KM_RETENTION_EVENT_HOURS', 168),
+        'queued_message_hours' => (int) env('KM_RETENTION_QUEUED_MESSAGE_HOURS', 24),
+        // Both message clocks use the payload's original createdAt, which retries keep.
+        'failed_message_hours' => (int) env('KM_RETENTION_FAILED_MESSAGE_HOURS', 168),
+        // 8h token lifetime + 1h after expiry.
+        'auth_replay_hours' => (int) env('KM_RETENTION_AUTH_REPLAY_HOURS', 9),
+        'api_snapshot_hours' => (int) env('KM_RETENTION_API_SNAPSHOT_HOURS', 168),
+        'onboarding_draft_hours' => (int) env('KM_RETENTION_ONBOARDING_DRAFT_HOURS', 168),
+    ],
+
 ];

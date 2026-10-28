@@ -32,6 +32,12 @@ FR-087 مرحله اول در ۲۸ اکتبر ۲۰۲۶: مالک برای تصم
 - بازبینی مستقل پیش از آن، hash بی‌کلید ورودی idempotency، nullability migration S2 و تکرارناپذیری حذف کلید را یافت. هر سه با آزمون بازتولید اصلاح شدند.
 - باز: lifecycle واقعی بکاپ و پاک‌سازی storage لایه OpenBao، restore drill و QA-21 روی staging، retention رویدادهای قدیمی، رمزنگاری `users.name`/`workspaces.name`، نسخه تازه بسته سیاست با عدد ۷ روز، مسیر اپراتور، جداسازی token OpenBao برای scheduler.
 
+اجرای retention و حداقل‌سازی هویت در ۲۸ اکتبر ۲۰۲۶ ([ADR-015](adr/ADR-015-retention-enforcement-and-identity-minimisation.md)):
+- `privacy:prune-retention` هر ساعت محدودیت‌های پیشنهادی بسته `retention-20261027-v3` را اجرا می‌کند: رویداد گفتگو ۷ روز، صف تلگرام ۲۴ ساعت، failed job ۷ روز، replay ورود یک ساعت پس از انقضا یا لغو، snapshot پاسخ API ۷ روز، draft onboarding ۷ روز.
+- replay یک snapshot منقضی، `409 IDEMPOTENCY_KEY_EXPIRED` می‌گیرد و عملیات دوباره اجرا نمی‌شود.
+- نام نمایشی، username و زبان تلگرام دیگر ذخیره نمی‌شوند.
+- باز: بی‌فعالیتی ۱۸۰روزه، ممیزی و تیکت، مسیر اپراتور، تصویب نهایی اعداد.
+
 | گام | کار مشخص | شرط شروع / وابستگی | شاهد لازم برای پایان | مسئول پیشنهادی |
 |---|---|---|---|---|
 | ۰ | تعیین ICP، جمع‌آوری نمونه با رضایت، سیاست retention/حذف، سقف فایل، provider AI و تصمیم trial/payment | مرور تصمیم‌های باز PRD §۲۰ | تصمیم و مالک ثبت‌شده؛ نمونه‌های واقعی با مجوز؛ پرداخت تا تصمیم مستقل خاموش | PO + Tech + Legal |

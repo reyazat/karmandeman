@@ -36,11 +36,4 @@ final readonly class TelegramUserData
             languageCode: $data['language_code'] ?? null,
         );
     }
-
-    public function displayName(): ?string
-    {
-        $name = trim(implode(' ', array_filter([$this->firstName, $this->lastName])));
-
-        return $name === '' ? null : $name;
-    }
 }

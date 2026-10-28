@@ -19,9 +19,9 @@ class Workspace extends Model
 {
     use HasPublicId;
 
+    // No name: nothing writes one, and an unused plaintext column stays empty (ADR-015).
     protected $fillable = [
         'owner_id',
-        'name',
         'status',
     ];
 

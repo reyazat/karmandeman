@@ -51,7 +51,7 @@ final class CurrentBrandController extends Controller
                 $request->brandAttributes(),
             );
         } catch (DomainException $e) {
-            if (in_array($e->getMessage(), ['BRAND_VERSION_CONFLICT', 'IDEMPOTENCY_KEY_CONFLICT'], true)) {
+            if (in_array($e->getMessage(), ['BRAND_VERSION_CONFLICT', 'IDEMPOTENCY_KEY_CONFLICT', 'IDEMPOTENCY_KEY_EXPIRED'], true)) {
                 return ApiResponse::error($e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409);
             }
             if ($response = ApiResponse::fromPrivacyGate($e)) {

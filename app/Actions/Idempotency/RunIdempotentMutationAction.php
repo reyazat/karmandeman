@@ -45,6 +45,10 @@ final readonly class RunIdempotentMutationAction
                 if (! hash_equals($record->request_hash, $hash)) {
                     throw new DomainException('IDEMPOTENCY_KEY_CONFLICT');
                 }
+                // Snapshot expired by retention (ADR-015): the key stays spent, never re-run.
+                if ($record->result_attributes === null) {
+                    throw new DomainException('IDEMPOTENCY_KEY_EXPIRED');
+                }
 
                 $class = match ($operation) {
                     'project.create' => Project::class,

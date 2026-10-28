@@ -6,6 +6,7 @@ namespace App\Repositories\Eloquents\TelegramOutbox;
 
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Repositories\Contracts\TelegramOutboxRepositoryInterface;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,14 @@ final readonly class DatabaseTelegramOutboxRepository implements TelegramOutboxR
         $matches = fn (object $row): bool => $this->chatOf($row->payload) === (string) $chatId;
 
         return $this->forget($this->jobsTable(), $matches) + $this->forget($this->failedTable(), $matches);
+    }
+
+    public function forgetCreatedBefore(CarbonImmutable $queuedBefore, CarbonImmutable $failedBefore): int
+    {
+        // The row's created_at restarts on every release; the payload keeps the first push time.
+        $olderThan = fn (CarbonImmutable $cutoff): Closure => fn (object $row): bool => $this->createdAt($row) < $cutoff->getTimestamp();
+
+        return $this->forget($this->jobsTable(), $olderThan($queuedBefore)) + $this->forget($this->failedTable(), $olderThan($failedBefore));
     }
 
     /** @param Closure(object): bool $matches */
@@ -49,6 +58,14 @@ final readonly class DatabaseTelegramOutboxRepository implements TelegramOutboxR
     private function failedTable(): string
     {
         return (string) config('queue.failed.table');
+    }
+
+    private function createdAt(object $row): int
+    {
+        $createdAt = json_decode($row->payload, true)['createdAt'] ?? null;
+
+        // An unreadable payload counts as old: it cannot be delivered or attributed anyway.
+        return is_int($createdAt) ? $createdAt : 0;
     }
 
     private function chatOf(string $payload): ?string
