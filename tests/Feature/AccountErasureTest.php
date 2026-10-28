@@ -61,7 +61,7 @@ final class AccountErasureTest extends TestCase
         ], ['X-Telegram-Bot-Api-Secret-Token' => self::SECRET]);
     }
 
-    /** A seller with brand, memory, project, support ticket, ledger, replay snapshot and queued replies. */
+    /** A seller with brand, memory, project, approved product, support ticket, ledger, replay snapshot and queued replies. */
     private function seller(int $telegramId): array
     {
         $this->send('/start', $telegramId)->assertOk();
@@ -70,7 +70,9 @@ final class AccountErasureTest extends TestCase
         $this->grantPilotConsent($user);
         $this->actingAs($user, 'sanctum');
         $this->patchJson('/api/v1/brands/current', ['expected_version' => 1, 'name' => "Brand {$telegramId}"], ['Idempotency-Key' => "erasure-brand-{$telegramId}"])->assertOk();
-        $this->postJson('/api/v1/projects', ['name' => "Project {$telegramId}"], ['Idempotency-Key' => "erasure-project-{$telegramId}"])->assertCreated();
+        $project = $this->postJson('/api/v1/projects', ['name' => "Project {$telegramId}"], ['Idempotency-Key' => "erasure-project-{$telegramId}"])->assertCreated()->json('data.id');
+        $product = $this->postJson("/api/v1/projects/{$project}/products", ['name' => ['value' => "Product {$telegramId}", 'status' => 'confirmed']], ['Idempotency-Key' => "erasure-product-{$telegramId}"])->assertCreated()->json('data.product_id');
+        $this->postJson("/api/v1/products/{$product}/approve", ['revision' => 1], ['Idempotency-Key' => "erasure-approve-{$telegramId}"])->assertOk();
         $this->send("/support help {$telegramId}", $telegramId)->assertOk();
         $user->createToken('mini-app');
         $this->app->forgetScopedInstances();
@@ -160,6 +162,7 @@ final class AccountErasureTest extends TestCase
         $this->assertTrue(DB::table('conversation_events')->where('subject_key', $subjects->for(777))->exists());
         $this->app->forgetScopedInstances();
         $this->assertSame('Brand 777', Brand::query()->where('workspace_id', $otherWorkspace->id)->sole()->name);
+        $this->assertSame(1, DB::table('product_revisions')->where('workspace_id', $otherWorkspace->id)->whereNotNull('approved_at')->count());
         $this->assertSame('active', $otherWorkspace->fresh()->status);
         $this->assertSame(1, DB::table('user_identities')->where('user_id', $other->id)->count());
     }

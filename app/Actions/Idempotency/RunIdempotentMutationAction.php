@@ -6,6 +6,7 @@ namespace App\Actions\Idempotency;
 
 use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Brand;
+use App\Models\ProductRevision;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
@@ -53,6 +54,7 @@ final readonly class RunIdempotentMutationAction
                 $class = match ($operation) {
                     'project.create' => Project::class,
                     'brand.update' => Brand::class,
+                    'product.create', 'product.revise', 'product.approve' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),
                 };
 

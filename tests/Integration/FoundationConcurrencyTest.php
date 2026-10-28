@@ -12,6 +12,9 @@ use App\Actions\Identity\IssueTelegramTokenAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Actions\Privacy\PurgeAccountDataAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
+use App\Actions\Product\ApproveProductRevisionAction;
+use App\Actions\Product\CreateManualProductDraftAction;
+use App\Actions\Product\ReviseProductDraftAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\AccountDeletionStatus;
@@ -177,6 +180,37 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'BRAND_VERSION_CONFLICT')));
         $this->assertSame(2, app(BrandRepositoryInterface::class)->forWorkspace($workspace)->profile_version);
         $this->assertDatabaseCount('api_idempotency_records', 1);
+    }
+
+    public function test_parallel_product_approvals_and_revisions_commit_once(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91240));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, 'product-batch-key', 'Batch')[0];
+        $draft = ['name' => ['value' => 'Bag', 'status' => 'confirmed']];
+        $product = app(CreateManualProductDraftAction::class)
+            ->execute($workspace, $user, 'product-create-key', $project->public_id, $draft)[0]->product->public_id;
+
+        // Six clicks with distinct keys: one approval stamp, the rest see it already approved.
+        $stamps = $this->concurrently(fn (int $i) => app(ApproveProductRevisionAction::class)
+            ->execute($workspace, $user, "approve-click-{$i}", $product, 1)[0]->approved_at?->toIso8601String());
+        $this->assertCount(1, array_unique($stamps));
+        $this->assertSame(1, DB::table('product_revisions')->whereNotNull('approved_at')->count());
+
+        $results = $this->concurrently(function (int $i) use ($workspace, $user, $product, $draft): string {
+            try {
+                app(ReviseProductDraftAction::class)->execute($workspace, $user, "revise-race-{$i}", $product, 1, $draft);
+
+                return 'revised';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+        $this->assertSame(1, count(array_filter($results, fn ($result) => $result === 'revised')));
+        $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'PRODUCT_REVISION_CONFLICT')));
+        $this->assertSame(2, DB::table('product_revisions')->count());
+        $this->assertSame(2, (int) DB::table('products')->value('current_revision'));
     }
 
     public function test_parallel_token_retries_issue_one_token(): void
