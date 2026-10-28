@@ -48,11 +48,16 @@ final readonly class OpenBaoTransitKeyManager implements WorkspaceKeyManager
         $this->send('delete', "keys/{$keyName}/soft-delete");
     }
 
+    public function exists(string $keyName): bool
+    {
+        return ! $this->send('get', "keys/{$keyName}", allowNotFound: true)->notFound();
+    }
+
     public function destroy(string $keyName): bool
     {
         // OpenBao 2.4.1 answers 400 to config/delete of a missing key, so a
         // retried purge whose first destroy succeeded must see 404 and stop.
-        if ($this->send('get', "keys/{$keyName}", allowNotFound: true)->notFound()) {
+        if (! $this->exists($keyName)) {
             return false;
         }
         $this->send('post', "keys/{$keyName}/config", ['deletion_allowed' => true]);

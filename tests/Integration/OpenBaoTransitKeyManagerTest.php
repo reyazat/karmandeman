@@ -68,7 +68,10 @@ final class OpenBaoTransitKeyManagerTest extends TestCase
     {
         $name = $this->keyName();
         $this->manager->ensureKey($name);
+        $this->assertTrue($this->manager->exists($name));
+        $this->assertFalse($this->manager->exists($this->keyName()));
         $this->assertTrue($this->manager->destroy($name));
+        $this->assertFalse($this->manager->exists($name));
         // A purge retried after a crash must not fail on the already destroyed key,
         // and must be able to tell that nothing existed under the name.
         $this->assertFalse($this->manager->destroy($name));

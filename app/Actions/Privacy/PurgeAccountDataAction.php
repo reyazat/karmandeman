@@ -61,18 +61,14 @@ final readonly class PurgeAccountDataAction
         if ($deletion->status !== AccountDeletionStatus::Requested) {
             return $deletion;
         }
+        if ($deletion->key_destroy_started_at === null && $deletion->key_destroyed_at === null) {
+            $deletion = $this->confirmKey($deletion, $this->keys->exists((string) $deletion->transit_key));
+        }
 
         if ($deletion->key_destroyed_at === null) {
-            $retry = $deletion->key_destroy_started_at !== null;
-            $this->deletions->markKeyDestroyStarted($deletion, CarbonImmutable::now());
-            // External and irreversible: outside any transaction.
-            $existed = $this->keys->destroy((string) $deletion->transit_key);
-            $workspace = $deletion->workspace;
-            if (! $existed && ! $retry && $workspace !== null && $this->dataKeys->forWorkspace($workspace) !== null) {
-                // A stored data key whose Transit key is missing on first try means a
-                // wrong name or mount; the real key may survive, so never count it as gone.
-                throw new LogicException('Transit key for a stored data key was not found.');
-            }
+            // External and irreversible: outside any transaction. A key that is
+            // gone now was destroyed by an earlier run of this purge.
+            $this->keys->destroy((string) $deletion->transit_key);
             $this->deletions->markKeyDestroyed($deletion, CarbonImmutable::now());
         }
 
@@ -93,6 +89,38 @@ final readonly class PurgeAccountDataAction
 
             return $locked;
         });
+    }
+
+    /**
+     * key_destroy_started_at is set only once the key store has confirmed the
+     * key under the recorded name, and always before destroy is called, so a
+     * later "not found" can only mean this purge already destroyed it. A stored
+     * data key whose Transit key is missing (wrong name or mount) is never
+     * marked: every retry fails again and the real key is never counted as gone.
+     */
+    private function confirmKey(AccountDeletion $deletion, bool $exists): AccountDeletion
+    {
+        $missing = false;
+        $deletion = $this->underLocks($deletion, function (AccountDeletion $locked, Workspace $workspace) use ($exists, &$missing): AccountDeletion {
+            if ($locked->key_destroy_started_at !== null || $locked->key_destroyed_at !== null) {
+                return $locked;
+            }
+            if ($exists) {
+                $this->deletions->markKeyDestroyStarted($locked, CarbonImmutable::now());
+            } elseif ($this->dataKeys->forWorkspace($workspace) === null) {
+                // No data key and no orphaned key: nothing was created under the name.
+                $this->deletions->markKeyDestroyed($locked, CarbonImmutable::now());
+            } else {
+                $missing = true;
+            }
+
+            return $locked;
+        });
+        if ($missing) {
+            throw new LogicException('Transit key for a stored data key was not found.');
+        }
+
+        return $deletion;
     }
 
     /**

@@ -50,6 +50,11 @@ final class InMemoryWorkspaceKeyManager implements WorkspaceKeyManager
         return $plaintext;
     }
 
+    public function exists(string $keyName): bool
+    {
+        return isset($this->keys[$keyName]);
+    }
+
     public function softDelete(string $keyName): void
     {
         $this->keys[$keyName]['soft_deleted'] = true;

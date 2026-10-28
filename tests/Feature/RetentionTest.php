@@ -15,7 +15,9 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\TelegramAuthRequestRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Telegram\TelegramReplyService;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\TestCase;
@@ -126,6 +128,55 @@ final class RetentionTest extends TestCase
         $this->travel(144)->hours();
         $this->assertSame(2, $this->prune()['telegram_outbox']);
         $this->assertSame(0, DB::table('failed_jobs')->count());
+    }
+
+    private function work(): void
+    {
+        Artisan::call('queue:work', ['connection' => 'telegram', '--queue' => 'telegram', '--once' => true]);
+    }
+
+    public function test_expired_queued_message_is_dropped_by_the_worker_without_sending(): void
+    {
+        Http::fake();
+        app(TelegramReplyService::class)->sendMessage(111, 'queued long ago');
+
+        $this->travel(24)->hours();
+        $this->work();
+
+        Http::assertNothingSent();
+        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(0, DB::table('failed_jobs')->count());
+    }
+
+    public function test_delivery_failing_after_retention_never_stores_the_message_again(): void
+    {
+        app(TelegramReplyService::class)->sendMessage(111, 'in flight at the cutoff');
+        $this->travel(23)->hours();
+        // While the worker holds the job, retention deletes its row; then delivery fails.
+        Http::fake(function () {
+            $this->travel(2)->hours();
+            $this->assertSame(1, $this->prune()['telegram_outbox']);
+
+            return Http::response(['ok' => false], 502);
+        });
+
+        $this->work();
+
+        Http::assertSentCount(1);
+        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(0, DB::table('failed_jobs')->count());
+    }
+
+    public function test_delivery_failing_inside_retention_is_still_retried(): void
+    {
+        Http::fake(fn () => Http::response(['ok' => false], 502));
+        app(TelegramReplyService::class)->sendMessage(111, 'retry me');
+        $this->travel(23)->hours();
+
+        $this->work();
+
+        $this->assertSame(1, DB::table('jobs')->count());
+        $this->assertSame(1, DB::table('jobs')->value('attempts'));
     }
 
     public function test_auth_replay_expires_an_hour_after_the_token_or_on_revocation(): void

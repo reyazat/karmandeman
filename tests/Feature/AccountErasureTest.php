@@ -247,19 +247,26 @@ final class AccountErasureTest extends TestCase
         }
     }
 
-    public function test_missing_transit_key_on_first_try_is_not_counted_as_destroyed(): void
+    public function test_missing_transit_key_is_never_counted_as_destroyed_on_any_retry(): void
     {
         [$user, $workspace] = $this->seller(555);
+        $realName = app(WorkspaceFieldCipher::class)->keyName($workspace);
         $deletion = $this->requestDeletion($user, $workspace);
         // Stored data key points at a name the key service does not know (wrong prefix or mount).
         DB::table('workspace_data_keys')->where('workspace_id', $workspace->id)->update(['transit_key' => 'ws-renamed-elsewhere']);
 
-        $this->assertSame(1, $this->process()['failed']);
-
-        $pending = $deletion->fresh();
-        $this->assertSame('ws-renamed-elsewhere', $pending->transit_key);
-        $this->assertNull($pending->key_destroyed_at);
-        $this->assertSame(LogicException::class, $pending->last_error);
+        foreach ([1, 2, 3] as $attempt) {
+            $this->assertSame(1, $this->process()['failed']);
+            $pending = $deletion->fresh();
+            $this->assertSame($attempt, $pending->attempts);
+            $this->assertSame('ws-renamed-elsewhere', $pending->transit_key);
+            $this->assertNull($pending->key_destroy_started_at);
+            $this->assertNull($pending->key_destroyed_at);
+            $this->assertSame(AccountDeletionStatus::Requested, $pending->status);
+            $this->assertSame(LogicException::class, $pending->last_error);
+            $this->travel(5)->minutes();
+        }
+        $this->assertTrue($this->keys()->exists($realName));
         $this->assertSame(1, DB::table('users')->where('id', $user->id)->count());
     }
 
@@ -273,6 +280,59 @@ final class AccountErasureTest extends TestCase
         $this->keys()->destroy($name);
 
         $this->assertSame(1, $this->process()['purged']);
+        $this->assertSame(AccountDeletionStatus::AwaitingBackupExpiry, $deletion->fresh()->status);
+    }
+
+    /** @return list<int> jobs rows that send a message to the chat */
+    private function outboxRows(string $chatId): array
+    {
+        return DB::table('jobs')->get()->filter(function (object $row) use ($chatId): bool {
+            $data = json_decode($row->payload, true)['data'];
+
+            return $data['commandName'] === SendTelegramMessage::class
+                && (string) unserialize(Crypt::decrypt($data['command']))->chatId === $chatId;
+        })->pluck('id')->all();
+    }
+
+    public function test_message_being_delivered_blocks_the_purge_until_the_worker_lets_go(): void
+    {
+        [$user, $workspace] = $this->seller(555);
+        $this->seller(777);
+        $deletion = $this->requestDeletion($user, $workspace);
+        // A worker picked up a reply to the seller before the purge: releasing or
+        // failing it later would store the chat ID and text again.
+        $inFlight = $this->outboxRows('555')[0];
+        DB::table('jobs')->where('id', $inFlight)->update(['reserved_at' => now()->getTimestamp(), 'attempts' => 1]);
+        // Another tenant's delivery does not matter.
+        DB::table('jobs')->where('id', $this->outboxRows('777')[0])->update(['reserved_at' => now()->getTimestamp(), 'attempts' => 1]);
+
+        $this->assertSame(1, $this->process()['failed']);
+        $pending = $deletion->fresh();
+        $this->assertSame(AccountDeletionStatus::Requested, $pending->status);
+        $this->assertSame(RuntimeException::class, $pending->last_error);
+        $this->assertNull($pending->live_purged_at);
+        $this->assertContains('555', $this->outboxChats());
+        $this->assertSame(1, DB::table('users')->where('id', $user->id)->count());
+
+        // The worker released it for a retry: the next pass removes it.
+        DB::table('jobs')->where('id', $inFlight)->update(['reserved_at' => null]);
+        $this->assertSame(1, $this->process()['purged']);
+        $this->assertNotContains('555', $this->outboxChats());
+        $this->assertContains('777', $this->outboxChats());
+        $this->assertNoRowsFor($user->id, $workspace->id);
+    }
+
+    public function test_reservation_of_a_worker_killed_by_the_timeout_does_not_block_the_purge(): void
+    {
+        // Only a reservation older than retry_after is treated as abandoned.
+        $this->assertLessThan((int) config('queue.connections.telegram.retry_after'), (new SendTelegramMessage(1, 'x'))->timeout);
+        [$user, $workspace] = $this->seller(555);
+        $deletion = $this->requestDeletion($user, $workspace);
+        DB::table('jobs')->whereIn('id', $this->outboxRows('555'))->update(['reserved_at' => now()->getTimestamp(), 'attempts' => 1]);
+
+        $this->travel((int) config('queue.connections.telegram.retry_after') + 1)->seconds();
+        $this->assertSame(1, $this->process()['purged']);
+        $this->assertNotContains('555', $this->outboxChats());
         $this->assertSame(AccountDeletionStatus::AwaitingBackupExpiry, $deletion->fresh()->status);
     }
 

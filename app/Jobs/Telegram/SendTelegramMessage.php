@@ -32,11 +32,42 @@ final class SendTelegramMessage implements ShouldBeEncrypted, ShouldQueue
 
     public function handle(TelegramBotService $bot): void
     {
-        $bot->sendMessage($this->chatId, $this->text, $this->buttons);
+        if ($this->expired()) {
+            $this->drop();
+
+            return;
+        }
+        try {
+            $bot->sendMessage($this->chatId, $this->text, $this->buttons);
+        } catch (Throwable $exception) {
+            // A release or failure would store the chat ID and text again after
+            // retention may already have deleted this row (ADR-015).
+            if ($this->expired()) {
+                $this->drop();
+
+                return;
+            }
+            throw $exception;
+        }
     }
 
     public function failed(?Throwable $exception): void
     {
         Log::error('telegram.delivery_failed', ['exception_type' => $exception ? $exception::class : null]);
+    }
+
+    /** @phpstan-impure Depends on the clock, which moves during delivery. */
+    private function expired(): bool
+    {
+        $createdAt = $this->job?->payload()['createdAt'] ?? null;
+        $cutoff = now()->subHours((int) config('karmandeman.retention.queued_message_hours'))->getTimestamp();
+
+        return is_int($createdAt) && $createdAt <= $cutoff;
+    }
+
+    private function drop(): void
+    {
+        $this->delete();
+        Log::warning('telegram.delivery_expired');
     }
 }
