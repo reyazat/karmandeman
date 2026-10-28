@@ -21,7 +21,7 @@ final class IndexProductsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'filter' => ['sometimes', 'string', 'in:'.ProductRepositoryInterface::FILTER_NEEDS_REVIEW.','.ProductRepositoryInterface::FILTER_INCOMPLETE],
+            'filter' => ['sometimes', 'string', 'in:'.ProductRepositoryInterface::FILTER_NEEDS_REVIEW.','.ProductRepositoryInterface::FILTER_INCOMPLETE.','.ProductRepositoryInterface::FILTER_DUPLICATES],
         ];
     }
 

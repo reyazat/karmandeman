@@ -29,6 +29,20 @@ final class PersianTextNormalizer
 
     private const LATIN_DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
+    /** Letter forms a seller may type for one name; only for the duplicate key. */
+    private const NAME_LETTERS = [
+        "\u{0623}" => "\u{0627}", // alef with hamza above
+        "\u{0625}" => "\u{0627}", // alef with hamza below
+        "\u{0671}" => "\u{0627}", // alef wasla
+        "\u{0622}" => "\u{0627}", // alef with madda
+        "\u{0624}" => "\u{0648}", // waw with hamza
+        "\u{0626}" => "\u{06CC}", // yeh with hamza
+        "\u{0629}" => "\u{0647}", // teh marbuta
+        "\u{06C0}" => "\u{0647}", // heh with yeh above
+        "\u{06D5}" => "\u{0647}", // ae
+        "\u{0621}" => '',          // standalone hamza
+    ];
+
     /** Multi-line text such as a description: paragraph breaks are kept. */
     public function text(string $value): string
     {
@@ -54,6 +68,21 @@ final class PersianTextNormalizer
     public function skuKey(string $value): string
     {
         return mb_strtoupper($this->sku($this->unicode($value, Normalizer::FORM_KC)), 'UTF-8');
+    }
+
+    /**
+     * Comparison key for the near-duplicate warning (FR-034, ADR-020): letters
+     * and digits only, so spacing, ZWNJ, diacritics and punctuation do not
+     * matter. Empty when nothing comparable is left.
+     */
+    public function nameKey(string $value): string
+    {
+        $value = strtr($this->sku($this->unicode($value, Normalizer::FORM_KC)), self::NAME_LETTERS);
+        $value = $this->replace('/[\x{064B}-\x{065F}\x{0670}]/u', '', $value);
+        // Between digits a separator is part of a size: 1.5 is not 15, 40-41 is not 4041.
+        $value = $this->replace('/(?<=\p{N})[^\p{L}\p{N}]+(?=\p{N})/u', '.', $value);
+
+        return mb_strtolower($this->replace('/[^\p{L}\p{N}.]+|(?<!\p{N})\.|\.(?!\p{N})/u', '', $value), 'UTF-8');
     }
 
     private function normalize(string $value, bool $multiline): string

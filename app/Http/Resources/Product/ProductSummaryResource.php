@@ -8,9 +8,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Batch summary counted by the server (FR-040, ADR-017).
+ * Batch summary counted by the server (FR-040, ADR-017, ADR-020).
  *
- * @property array{total: int, needs_review: int, approved: int, archived: int, ready_for_approval: int, needs_confirmation: int, price_missing: int, image_missing: int} $resource
+ * @property array{total: int, needs_review: int, approved: int, archived: int, ready_for_approval: int, needs_confirmation: int, price_missing: int, image_missing: int, duplicate_suspected: int} $resource
  */
 final class ProductSummaryResource extends JsonResource
 {

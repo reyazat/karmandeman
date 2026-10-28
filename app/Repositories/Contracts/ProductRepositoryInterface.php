@@ -22,6 +22,8 @@ interface ProductRepositoryInterface
     /** Review queue (FR-031): unconfirmed fields, unknown price or no image. */
     public const FILTER_INCOMPLETE = 'incomplete';
 
+    public const FILTER_DUPLICATES = 'duplicates';
+
     /** @throws \DomainException PRODUCT_SKU_TAKEN */
     public function createWithRevision(Workspace $workspace, Project $project, User $author, ProductRevisionDraft $draft): ProductRevision;
 
@@ -53,7 +55,15 @@ interface ProductRepositoryInterface
     /**
      * Server-side batch counts (FR-040); archived products count only in total and archived.
      *
-     * @return array{total: int, needs_review: int, approved: int, archived: int, ready_for_approval: int, needs_confirmation: int, price_missing: int, image_missing: int}
+     * @return array{total: int, needs_review: int, approved: int, archived: int, ready_for_approval: int, needs_confirmation: int, price_missing: int, image_missing: int, duplicate_suspected: int}
      */
     public function summaryForProject(Workspace $workspace, Project $project): array;
+
+    /**
+     * Public ids of live products in the workspace with the same name key and
+     * not told apart by two SKUs (FR-034, ADR-020). A warning only.
+     *
+     * @return list<string>
+     */
+    public function suspectedDuplicatesOf(Workspace $workspace, Product $product, int $limit = 20): array;
 }

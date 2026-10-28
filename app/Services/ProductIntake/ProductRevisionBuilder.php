@@ -9,8 +9,8 @@ use App\Models\Workspace;
 use App\Services\Crypto\WorkspaceFieldCipher;
 
 /**
- * Turns a validated draft into a storable revision. Both MACs use the
- * workspace key, so neither outlives key destruction as a guessable digest.
+ * Turns a validated draft into a storable revision. Every MAC uses the
+ * workspace key, so none outlives key destruction as a guessable digest.
  */
 final readonly class ProductRevisionBuilder
 {
@@ -27,6 +27,8 @@ final readonly class ProductRevisionBuilder
     {
         $payload = $this->normalizer->normalize($draft);
         $sku = $payload['sku']['value'];
+        $name = $payload['name']['value'];
+        $nameKey = $name === null ? '' : $this->text->nameKey($name);
         $flags = $this->normalizer->reviewFlags($payload);
 
         return new ProductRevisionDraft(
@@ -36,6 +38,7 @@ final readonly class ProductRevisionBuilder
             needsConfirmation: $flags['needs_confirmation'],
             priceMissing: $flags['price_missing'],
             imageMissing: $flags['image_missing'],
+            nameMac: $nameKey === '' ? null : $this->cipher->mac($workspace, 'products.name', $nameKey),
         );
     }
 }

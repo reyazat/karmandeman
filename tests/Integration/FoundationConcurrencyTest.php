@@ -241,6 +241,21 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertDatabaseCount('product_skus', 1);
     }
 
+    public function test_parallel_same_name_products_all_carry_the_duplicate_warning(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91262));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, 'duplicate-batch-key', 'Batch')[0];
+
+        // Each refresh reads the group under the workspace lock, so no write misses another (ADR-020).
+        $this->concurrently(fn (int $i) => app(CreateManualProductDraftAction::class)->execute(
+            $workspace, $user, "duplicate-race-{$i}", $project->public_id, ['name' => ['value' => 'Bag', 'status' => 'confirmed']],
+        )[0]->product->public_id);
+        $this->assertDatabaseCount('products', 6);
+        $this->assertSame(6, DB::table('products')->where('duplicate_suspected', true)->count());
+    }
+
     public function test_parallel_batch_approvals_freeze_one_snapshot(): void
     {
         $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91260));

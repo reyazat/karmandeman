@@ -447,6 +447,76 @@ class ProductApiTest extends TestCase
             && $context['product'] === $product && ! str_contains(json_encode($context), 'کیف'))->times(6);
     }
 
+    public function test_near_duplicates_are_only_flagged_never_removed(): void
+    {
+        $seller = $this->seller(731);
+        Sanctum::actingAs($seller);
+        $project = $this->project();
+        $named = fn (string $name, ?string $sku = null) => ['name' => ['value' => $name, 'status' => 'confirmed']]
+            + ($sku === null ? [] : ['sku' => ['value' => $sku, 'status' => 'confirmed']]);
+        $review = fn (string $product) => $this->getJson("/api/v1/products/{$product}")->assertOk()->json('data.review');
+
+        // Spacing, ZWNJ, Arabic letter forms, diacritics and punctuation do not hide a repeat.
+        $first = $this->create($project, $named('کیف‌چرمی آوا'))->assertCreated()->json('data.product_id');
+        $second = $this->create($project, $named('كيف چرمي - آوا'))->assertCreated()->json('data.product_id');
+        $this->assertSame(['duplicate_suspected' => true, 'duplicates' => [$second]], array_intersect_key($review($first), ['duplicate_suspected' => 1, 'duplicates' => 1]));
+        $this->assertSame([$first], $review($second)['duplicates']);
+        // The repository too: the same name in another batch of the workspace.
+        $elsewhere = $this->create($this->project(), $named('کیفِ چرمیِ آوا'))->assertCreated()->json('data.product_id');
+        $this->assertSame([$second, $elsewhere], $review($first)['duplicates']);
+
+        // Two different SKUs are two products; one without a SKU stays suspect.
+        $skuA = $this->create($project, $named('کفش', 'SH-1'))->json('data.product_id');
+        $skuB = $this->create($project, $named('کفش', 'SH-2'))->json('data.product_id');
+        $this->assertFalse($review($skuA)['duplicate_suspected']);
+        $noSku = $this->create($project, $named('کفش'))->json('data.product_id');
+        $this->assertSame([$skuA, $skuB], $review($noSku)['duplicates']);
+        $this->assertSame([$noSku], $review($skuA)['duplicates']);
+
+        $summary = "/api/v1/projects/{$project}/products/summary";
+        $this->getJson($summary)->assertJsonPath('data.duplicate_suspected', 5);
+        $ids = fn () => array_column($this->getJson("/api/v1/projects/{$project}/products?filter=duplicates")->assertOk()->json('data'), 'id');
+        $this->assertSame([$first, $second, $skuA, $skuB, $noSku], $ids());
+
+        // A warning never blocks Gate A, and nothing is merged or archived.
+        $this->approve($first, 1)->assertOk();
+        $this->assertTrue($review($first)['duplicate_suspected']);
+        $this->assertSame(0, DB::table('products')->where('status', 'archived')->count());
+
+        // Adding a SKU tells the products apart; so does a new name.
+        $this->revise($noSku, 1, $named('کفش', 'SH-3'))->assertOk();
+        $this->assertFalse($review($noSku)['duplicate_suspected']);
+        $this->assertFalse($review($skuA)['duplicate_suspected']);
+        $this->assertFalse($review($skuB)['duplicate_suspected']);
+        $late = $this->create($project, $named('کفش'))->json('data.product_id');
+        $this->assertTrue($review($skuA)['duplicate_suspected']);
+        $this->revise($late, 1, $named('کفش ورزشی'))->assertOk();
+        $this->assertFalse($review($skuA)['duplicate_suspected']);
+        // Rejecting the only SKU-less member clears its SKU'd partners.
+        $this->revise($late, 2, $named('کفش'))->assertOk();
+        $this->assertTrue($review($skuB)['duplicate_suspected']);
+        $this->archive($late)->assertOk();
+        $this->assertFalse($review($skuB)['duplicate_suspected']);
+        $this->archive($second)->assertOk();
+        $this->assertSame([$elsewhere], $review($first)['duplicates']);
+        $this->assertFalse($review($second)['duplicate_suspected']);
+        $this->archive($elsewhere)->assertOk();
+        $this->assertFalse($review($first)['duplicate_suspected']);
+        $this->getJson($summary)->assertJsonPath('data.duplicate_suspected', 0);
+
+        // Another workspace with the same name is never compared, and the name is not stored in clear.
+        Sanctum::actingAs($this->seller(732));
+        $foreign = $this->create($this->project(), $named('کیف چرمی آوا'))->assertCreated()->json('data.product_id');
+        $this->assertFalse($review($foreign)['duplicate_suspected']);
+        $row = DB::table('products')->where('public_id', $foreign)->first();
+        $this->assertSame(64, strlen($row->name_mac));
+        $this->assertNotSame(DB::table('products')->where('public_id', $first)->value('name_mac'), $row->name_mac);
+        $this->assertStringNotContainsString($row->name_mac, $this->getJson("/api/v1/products/{$foreign}")->getContent());
+        $this->assertStringNotContainsString('name_mac', $this->getJson("/api/v1/products/{$foreign}")->getContent());
+        $this->assertStringNotContainsString('کیف', json_encode(DB::table('products')->get(), JSON_UNESCAPED_UNICODE));
+        $this->assertStringNotContainsString('آوا', json_encode(DB::table('products')->get(), JSON_UNESCAPED_UNICODE));
+    }
+
     public function test_review_queue_and_batch_summary_are_counted_by_the_server(): void
     {
         Sanctum::actingAs($this->seller(713));
@@ -468,6 +538,7 @@ class ProductApiTest extends TestCase
         $this->getJson($summary)->assertOk()->assertJsonPath('data', [
             'total' => 5, 'needs_review' => 3, 'approved' => 1, 'archived' => 1,
             'ready_for_approval' => 2, 'needs_confirmation' => 1, 'price_missing' => 1, 'image_missing' => 4,
+            'duplicate_suspected' => 0,
         ]);
 
         $ids = fn (string $query) => array_column($this->getJson("/api/v1/projects/{$project}/products{$query}")->assertOk()->json('data'), 'id');
@@ -481,6 +552,7 @@ class ProductApiTest extends TestCase
         $this->assertStringContainsString('filter=incomplete', (string) $this->getJson("/api/v1/projects/{$project}/products?filter=incomplete")->json('links.next'));
         $this->getJson("/api/v1/products/{$unsure}")->assertJsonPath('data.review', [
             'needs_confirmation' => true, 'price_missing' => false, 'image_missing' => true,
+            'duplicate_suspected' => false, 'duplicates' => [],
         ]);
 
         // Flags follow the current revision.

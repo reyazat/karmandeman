@@ -6,7 +6,8 @@ namespace App\Data\Product;
 
 /**
  * A normalized revision ready to store: the encrypted payload, its MAC, the
- * SKU uniqueness MAC and the review flags counted in SQL (ADR-016, ADR-017).
+ * SKU uniqueness MAC, the duplicate-warning name MAC and the review flags
+ * counted in SQL (ADR-016, ADR-017, ADR-020).
  */
 final readonly class ProductRevisionDraft
 {
@@ -20,5 +21,6 @@ final readonly class ProductRevisionDraft
         public bool $needsConfirmation,
         public bool $priceMissing,
         public bool $imageMissing,
+        public ?string $nameMac,
     ) {}
 }

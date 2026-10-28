@@ -54,4 +54,23 @@ class PersianTextNormalizerTest extends TestCase
         // Alef + combining madda above composes to آ (U+0622).
         $this->assertSame("\u{0622}ب", $this->text->line("\u{0627}\u{0653}ب"));
     }
+
+    public function test_name_key_ignores_spacing_letter_forms_and_marks(): void
+    {
+        $key = $this->text->nameKey('کیف چرمی آوا');
+        $this->assertSame($key, $this->text->nameKey("کیف\u{200C}چرمی-آوا"));
+        $this->assertSame($key, $this->text->nameKey('كيف چرمي (آوا)'));
+        $this->assertSame($key, $this->text->nameKey('کیفِ چرمیِ اوا'));
+        $this->assertSame($this->text->nameKey('مؤسسه'), $this->text->nameKey('موسسه'));
+        $this->assertSame($this->text->nameKey('Bag 25'), $this->text->nameKey('bag ۲۵'));
+        $this->assertSame($this->text->nameKey('ﻛﻴﻒ'), $this->text->nameKey('کیف'));
+        $this->assertNotSame($key, $this->text->nameKey('کیف چرمی آوا ۲'));
+        $this->assertSame('', $this->text->nameKey(" \u{200C}-ـ "));
+        // A separator between digits is part of a size, elsewhere it is noise.
+        $this->assertNotSame($this->text->nameKey('روغن ۱.۵ لیتری'), $this->text->nameKey('روغن ۱۵ لیتری'));
+        $this->assertNotSame($this->text->nameKey('کفش 40-41'), $this->text->nameKey('کفش 4041'));
+        $this->assertSame($this->text->nameKey('روغن ۱٫۵ لیتری.'), $this->text->nameKey('روغن 1 / 5 لیتری'));
+        $this->assertSame($this->text->nameKey('کیف.آوا'), $this->text->nameKey('کیف آوا'));
+        $this->assertSame($this->text->nameKey('مسءله'), $this->text->nameKey('مسله'));
+    }
 }

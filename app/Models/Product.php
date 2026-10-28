@@ -19,6 +19,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property bool $needs_confirmation
  * @property bool $price_missing
  * @property bool $image_missing
+ * @property string|null $name_mac
+ * @property bool $has_sku
+ * @property bool $duplicate_suspected
  */
 class Product extends Model
 {
@@ -33,7 +36,12 @@ class Product extends Model
         'needs_confirmation',
         'price_missing',
         'image_missing',
+        'name_mac',
+        'has_sku',
+        'duplicate_suspected',
     ];
+
+    protected $hidden = ['name_mac'];
 
     /**
      * @return BelongsTo<Workspace, $this>
@@ -70,6 +78,8 @@ class Product extends Model
             'needs_confirmation' => 'boolean',
             'price_missing' => 'boolean',
             'image_missing' => 'boolean',
+            'has_sku' => 'boolean',
+            'duplicate_suspected' => 'boolean',
         ];
     }
 }

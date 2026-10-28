@@ -70,7 +70,7 @@ final class ProductController extends Controller
 
         return $found === null
             ? ApiResponse::error('PRODUCT_NOT_FOUND', 'محصول یافت نشد.', 404)
-            : ApiResponse::success(new ProductResource($found));
+            : ApiResponse::success((new ProductResource($found))->withDuplicates($products->suspectedDuplicatesOf($workspace, $found)));
     }
 
     public function revise(string $product, StoreProductDraftRequest $request, ReviseProductDraftAction $revise): JsonResponse
