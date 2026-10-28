@@ -8,6 +8,7 @@ use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Brand;
 use App\Models\ProductRevision;
 use App\Models\Project;
+use App\Models\ProjectSnapshot;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
@@ -52,7 +53,8 @@ final readonly class RunIdempotentMutationAction
                 }
 
                 $class = match ($operation) {
-                    'project.create' => Project::class,
+                    'project.create', 'project.finish_input' => Project::class,
+                    'project.approve_products' => ProjectSnapshot::class,
                     'brand.update' => Brand::class,
                     'product.create', 'product.revise', 'product.approve', 'product.archive' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),

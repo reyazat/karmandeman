@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 /**
  * @property ProductStatus $status
  * @property string $public_id
+ * @property int|null $project_id
  * @property int $current_revision
  * @property int|null $approved_revision
  * @property bool $needs_confirmation

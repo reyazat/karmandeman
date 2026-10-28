@@ -286,6 +286,22 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 باز: شمارش «متناقض» FR-040، شبه‌تکراری FR-034، intake تلگرام، storage خصوصی و `finish-input`.
 
+### برش سوم گام ۳ (۲۸ اکتبر ۲۰۲۶)
+
+[ADR-018](adr/ADR-018-batch-finish-input-and-approved-snapshot.md): `finish-input`، تأیید پروژه فقط پس از Gate A همه محصولات، snapshot تغییرناپذیر با HMAC (FR-043) و `GET /projects/{id}/snapshot` که پیش از خروجی MAC فهرست و محتوای هر نسخه را دوباره بررسی می‌کند.
+
+بازبین مستقل پیش از commit یک P2 و دو P3 یافت. هر سه با آزمون دائمی اصلاح شدند:
+- **(P2)** `version` پروژه با تغییر محصول عوض نمی‌شد. تأیید Batch با نمای قدیمی، محصول ردشده را بی‌صدا حذف و محصول تازه را بدون دیدن اضافه می‌کرد. اکنون هر mutation محصول `version` پروژه را زیاد می‌کند. آزمون روی کد قبلی شکست می‌خورد.
+- **(P3)** ciphertext دست‌کاری‌شده خطای عمومی 500 بدون لاگ می‌داد. اکنون `SNAPSHOT_INTEGRITY_FAILED` با لاگ critical.
+- **(P3)** شناسه عمومی محصول امضا نمی‌شد. اکنون در فهرست امضاشده است.
+
+شواهد:
+- PostgreSQL موقت با OpenBao 2.4.1: **۱۷۳ تست / ۱۷۳۹ assertion**، شامل شش تأیید هم‌زمان Batch (یک snapshot، پنج `PROJECT_STATE_CONFLICT`) و پنج نوع دست‌کاری snapshot.
+- SQLite: **۱۵۳ پاس / ۲۰ skip**.
+- Pint روی ۲۵۲ فایل و PHPStan بدون خطا. rollback و اجرای دوباره migration `2026_10_28_100003` روی PostgreSQL موقت موفق.
+
+باز: بازگشت از `product_approved`، لغو پروژه، intake تلگرام و storage خصوصی. `/products/{id}/approved` هنوز MAC را بررسی نمی‌کند.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

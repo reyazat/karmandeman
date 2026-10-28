@@ -11,6 +11,7 @@ use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
+use App\Repositories\Contracts\ProjectRepositoryInterface;
 use DomainException;
 
 /**
@@ -23,6 +24,7 @@ final readonly class ArchiveProductAction
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
         private ProductRepositoryInterface $products,
+        private ProjectRepositoryInterface $projects,
     ) {}
 
     /**
@@ -39,6 +41,7 @@ final readonly class ArchiveProductAction
                     ?? throw new DomainException('PRODUCT_NOT_FOUND');
                 if ($product->status !== ProductStatus::Archived) {
                     $this->products->archive($product);
+                    $this->projects->bumpVersion($workspace, $product->project_id);
                 }
 
                 return $this->products->revision($product, $product->current_revision)

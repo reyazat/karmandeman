@@ -12,6 +12,7 @@ use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
+use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductDraftNormalizer;
 use DomainException;
 
@@ -25,6 +26,7 @@ final readonly class ApproveProductRevisionAction
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
         private ProductRepositoryInterface $products,
+        private ProjectRepositoryInterface $projects,
         private ProductDraftNormalizer $normalizer,
     ) {}
 
@@ -57,7 +59,10 @@ final readonly class ApproveProductRevisionAction
                     throw new ProductRequiresConfirmation($unconfirmed);
                 }
 
-                return $this->products->approve($product, $current, $user);
+                $approved = $this->products->approve($product, $current, $user);
+                $this->projects->bumpVersion($workspace, $product->project_id);
+
+                return $approved;
             },
         );
 

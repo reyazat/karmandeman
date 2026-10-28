@@ -41,6 +41,20 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->where('public_id', $publicId)->first();
     }
 
+    public function advance(Project $project, ProjectState $state): Project
+    {
+        $project->forceFill(['state' => $state, 'version' => $project->version + 1])->save();
+
+        return $project;
+    }
+
+    public function bumpVersion(Workspace $workspace, ?int $projectId): void
+    {
+        if ($projectId !== null) {
+            Project::query()->where('workspace_id', $workspace->id)->whereKey($projectId)->increment('version');
+        }
+    }
+
     public function paginateFor(Workspace $workspace, int $perPage = 20): LengthAwarePaginator
     {
         $page = Project::query()

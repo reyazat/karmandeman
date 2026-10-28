@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Crypto;
 
 use App\Actions\Workspace\LockActiveWorkspaceAction;
+use App\Exceptions\UndecryptableValue;
 use App\Models\Workspace;
 use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
 use Illuminate\Support\Facades\DB;
@@ -53,14 +54,14 @@ final class WorkspaceFieldCipher
     {
         $raw = str_starts_with($value, self::PREFIX) ? base64_decode(substr($value, strlen(self::PREFIX)), true) : false;
         if ($raw === false || strlen($raw) < self::NONCE_BYTES + self::TAG_BYTES) {
-            throw new RuntimeException('Encrypted value is malformed.');
+            throw new UndecryptableValue('Encrypted value is malformed.');
         }
         $plaintext = openssl_decrypt(
             substr($raw, self::NONCE_BYTES + self::TAG_BYTES), 'aes-256-gcm', $this->dataKey($workspace, create: false), OPENSSL_RAW_DATA,
             substr($raw, 0, self::NONCE_BYTES), substr($raw, self::NONCE_BYTES, self::TAG_BYTES), $this->aad($workspace, $context),
         );
         if ($plaintext === false) {
-            throw new RuntimeException('Encrypted value cannot be decrypted.');
+            throw new UndecryptableValue('Encrypted value cannot be decrypted.');
         }
 
         return $plaintext;

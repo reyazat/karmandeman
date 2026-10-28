@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property ProjectState $state
  * @property string $public_id
+ * @property int $version
  */
 class Project extends Model
 {
@@ -47,6 +48,7 @@ class Project extends Model
         return [
             'name' => WorkspaceEncrypted::class,
             'state' => ProjectState::class,
+            'version' => 'integer',
         ];
     }
 }

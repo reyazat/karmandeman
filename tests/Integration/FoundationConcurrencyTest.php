@@ -15,7 +15,9 @@ use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Product\ApproveProductRevisionAction;
 use App\Actions\Product\CreateManualProductDraftAction;
 use App\Actions\Product\ReviseProductDraftAction;
+use App\Actions\Project\ApproveProjectProductsAction;
 use App\Actions\Project\CreateApiProjectAction;
+use App\Actions\Project\FinishProjectInputAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\AccountDeletionStatus;
 use App\Enums\CreditLedgerType;
@@ -236,6 +238,34 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'PRODUCT_SKU_TAKEN')));
         $this->assertDatabaseCount('products', 1);
         $this->assertDatabaseCount('product_skus', 1);
+    }
+
+    public function test_parallel_batch_approvals_freeze_one_snapshot(): void
+    {
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91260));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, 'snapshot-batch-key', 'Batch')[0];
+        $product = app(CreateManualProductDraftAction::class)->execute($workspace, $user, 'snapshot-product-key', $project->public_id, [
+            'name' => ['value' => 'Bag', 'status' => 'confirmed'],
+        ])[0]->product->public_id;
+        app(ApproveProductRevisionAction::class)->execute($workspace, $user, 'snapshot-approve-key', $product, 1);
+        app(FinishProjectInputAction::class)->execute($workspace, $user->id, 'snapshot-finish-key', $project->public_id, 3);
+
+        // Six clicks with distinct keys: one snapshot, the rest see the batch already approved (ADR-018).
+        $results = $this->concurrently(function (int $i) use ($workspace, $user, $project): string {
+            try {
+                app(ApproveProjectProductsAction::class)->execute($workspace, $user, "snapshot-race-{$i}", $project->public_id, 4);
+
+                return 'approved';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+        $this->assertSame(1, count(array_filter($results, fn ($result) => $result === 'approved')));
+        $this->assertSame(5, count(array_filter($results, fn ($result) => $result === 'PROJECT_STATE_CONFLICT')));
+        $this->assertDatabaseCount('project_snapshots', 1);
+        $this->assertSame(5, (int) DB::table('projects')->value('version'));
     }
 
     public function test_parallel_token_retries_issue_one_token(): void

@@ -73,6 +73,8 @@ final class AccountErasureTest extends TestCase
         $project = $this->postJson('/api/v1/projects', ['name' => "Project {$telegramId}"], ['Idempotency-Key' => "erasure-project-{$telegramId}"])->assertCreated()->json('data.id');
         $product = $this->postJson("/api/v1/projects/{$project}/products", ['name' => ['value' => "Product {$telegramId}", 'status' => 'confirmed'], 'sku' => ['value' => 'SKU-1', 'status' => 'confirmed']], ['Idempotency-Key' => "erasure-product-{$telegramId}"])->assertCreated()->json('data.product_id');
         $this->postJson("/api/v1/products/{$product}/approve", ['revision' => 1], ['Idempotency-Key' => "erasure-approve-{$telegramId}"])->assertOk();
+        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => 3], ['Idempotency-Key' => "erasure-finish-{$telegramId}"])->assertOk();
+        $this->postJson("/api/v1/projects/{$project}/approve-products", ['version' => 4], ['Idempotency-Key' => "erasure-batch-{$telegramId}"])->assertCreated();
         $this->send("/support help {$telegramId}", $telegramId)->assertOk();
         $user->createToken('mini-app');
         $this->app->forgetScopedInstances();
@@ -164,6 +166,7 @@ final class AccountErasureTest extends TestCase
         $this->assertSame('Brand 777', Brand::query()->where('workspace_id', $otherWorkspace->id)->sole()->name);
         $this->assertSame(1, DB::table('product_revisions')->where('workspace_id', $otherWorkspace->id)->whereNotNull('approved_at')->count());
         $this->assertSame(1, DB::table('product_skus')->where('workspace_id', $otherWorkspace->id)->count());
+        $this->assertSame(1, DB::table('project_snapshots')->where('workspace_id', $otherWorkspace->id)->count());
         $this->assertSame('active', $otherWorkspace->fresh()->status);
         $this->assertSame(1, DB::table('user_identities')->where('user_id', $other->id)->count());
     }

@@ -50,7 +50,10 @@ final readonly class CreateManualProductDraftAction
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }
 
-                return $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $draft));
+                $revision = $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $draft));
+                $this->projects->bumpVersion($workspace, $project->id);
+
+                return $revision;
             },
         );
 

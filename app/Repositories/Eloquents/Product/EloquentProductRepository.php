@@ -16,6 +16,7 @@ use App\Repositories\Contracts\ProductRepositoryInterface;
 use DomainException;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 final class EloquentProductRepository implements ProductRepositoryInterface
 {
@@ -118,6 +119,19 @@ final class EloquentProductRepository implements ProductRepositoryInterface
         }
 
         return $page;
+    }
+
+    public function activeForProject(Workspace $workspace, Project $project): Collection
+    {
+        $products = Product::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('project_id', $project->id)
+            ->where('status', '!=', ProductStatus::Archived->value)
+            ->orderBy('id')
+            ->get();
+        $products->each->setRelation('workspace', $workspace);
+
+        return $products->toBase();
     }
 
     public function summaryForProject(Workspace $workspace, Project $project): array

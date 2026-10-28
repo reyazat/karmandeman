@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface ProductRepositoryInterface
 {
@@ -39,6 +40,13 @@ interface ProductRepositoryInterface
      * @return LengthAwarePaginator<int, Product>
      */
     public function paginateForProject(Workspace $workspace, Project $project, ?string $filter = null, int $perPage = 20): LengthAwarePaginator;
+
+    /**
+     * Products of the batch that are not archived, oldest first.
+     *
+     * @return Collection<int, Product>
+     */
+    public function activeForProject(Workspace $workspace, Project $project): Collection;
 
     /**
      * Server-side batch counts (FR-040); archived products count only in total and archived.

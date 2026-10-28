@@ -11,6 +11,7 @@ use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
+use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
 use DomainException;
 
@@ -24,6 +25,7 @@ final readonly class ReviseProductDraftAction
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
         private ProductRepositoryInterface $products,
+        private ProjectRepositoryInterface $projects,
         private ProductRevisionBuilder $builder,
     ) {}
 
@@ -49,7 +51,10 @@ final readonly class ReviseProductDraftAction
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
                 }
 
-                return $this->products->addRevision($product, $user, $this->builder->build($workspace, $draft));
+                $revision = $this->products->addRevision($product, $user, $this->builder->build($workspace, $draft));
+                $this->projects->bumpVersion($workspace, $product->project_id);
+
+                return $revision;
             },
         );
 
