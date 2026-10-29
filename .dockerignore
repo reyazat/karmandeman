@@ -27,6 +27,9 @@ storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
+storage/framework/testing
+storage/app/assets/*
+storage/app/private/*
 bootstrap/cache/*.php
 storage/framework/cache/phpstan
 .phpunit.cache

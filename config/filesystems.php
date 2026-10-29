@@ -38,6 +38,16 @@ return [
             'report' => false,
         ],
 
+        // Encrypted batch input files in development and tests (ADR-022).
+        'assets' => [
+            'driver' => 'local',
+            'root' => storage_path('app/assets'),
+            'visibility' => 'private',
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
@@ -56,7 +66,7 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            'throw' => true,
             'report' => false,
         ],
 

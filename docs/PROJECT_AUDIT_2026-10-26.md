@@ -359,6 +359,31 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 باز: Policy تیکت (مدل یا endpoint ندارد)، تفکیک `view` و `update` با تعریف نقش‌ها.
 
+### برش هفتم گام ۳ (۲۹ اکتبر ۲۰۲۶)
+
+[ADR-022](adr/ADR-022-private-encrypted-asset-storage.md): storage خصوصی عکس‌های ورودی Batch (FR-025)، پیش‌شرط گام ۳.
+- `POST /projects/{id}/assets` فقط JPEG، PNG و WebP را می‌پذیرد. نوع و ابعاد از خود بایت‌ها خوانده می‌شود. سقف ۱۰ مگابایت و ۴۰ میلیون پیکسل، throttle بیست در دقیقه.
+- بایت‌ها با AES-256-GCM و کلید داده Workspace رمز می‌شوند و AAD به شناسه asset بسته است. کلید object تصادفی است، زیر `ws/{workspace}`. ردیف هیچ hash ساده، نام فایل یا URL ندارد. تکرار در پروژه با HMAC کلیددار کشف می‌شود.
+- `GET /assets/{id}/download` با Policy رکورد، `attachment`، `no-store` و `nosniff`. object جابه‌جاشده، دست‌کاری‌شده، گم‌شده یا بیرون از prefix: `500 ASSET_INTEGRITY_FAILED` با لاگ critical فقط با شناسه.
+- حذف حساب کل prefix Workspace را پاک می‌کند. در production هر disk غیر از S3 رد می‌شود.
+- **انحراف از PRD:** به‌جای `sha256` ساده، HMAC کلیددار ذخیره می‌شود تا اثرانگشت عکس با کلید از بین برود.
+
+بازبین مستقل پیش از commit P1 نیافت. دو P2 و چهار P3 گزارش داد:
+- **(P2، اصلاح‌شده)** پیش‌فرض PHP (`upload_max_filesize=2M`) عکس عادی موبایل را رد می‌کرد. هر دو image حالا `12M`/`13M` دارند. image dev ساخته و مقدار بررسی شد. image production ساخته نشد.
+- **(P2، اصلاح‌شده با آزمون)** production بی‌صدا روی دیسک کانتینر می‌نوشت، و disk `s3` بدون `throw` قطع storage را شکست یکپارچگی گزارش می‌کرد. حالا production فقط driver `s3` را می‌پذیرد، compose پیش‌فرض `KM_ASSET_DISK=s3` دارد، disk `s3` خطا پرتاب می‌کند و خواندن ناموفق `500 REQUEST_FAILED` بدون هشدار یکپارچگی است. آزمون تازه روی کد قبلی شکست می‌خورد.
+- **(P3، اصلاح‌شده)** خطای پاک‌سازی object می‌توانست خطای اصلی را پنهان کند. `storage/framework/testing` در `.gitignore` و storage محلی در `.dockerignore` نبود.
+- **(P3، ثبت‌شده در ADR)** object یتیم پس از شکست commit، نوشتن object زیر قفل Workspace، و پذیرش polyglot (دانلود امن است).
+
+شواهد:
+- PostgreSQL موقت با OpenBao 2.4.1: **۱۹۵ تست / ۲۵۴۴ assertion** در دو اجرای پیاپی.
+- SQLite: **۱۷۸ پاس / ۱۷ skip**.
+- Pint روی ۲۷۸ فایل و PHPStan بدون خطا. rollback و اجرای دوباره migration `2026_10_29_100001` روی PostgreSQL موقت موفق. `docker compose config` با `.env.production.example` معتبر.
+- آزمون‌ها disk جعلی محلی دارند. fixtureهای JPEG و WebP فقط header معتبر دارند، چون image dev افزونه GD ندارد.
+
+آزمون‌نشده: bucket واقعی S3 و دسترسی آن از میزبان، بارگذاری واقعی بالای ۲ مگابایت از طریق HTTP، build image production، versioning/lifecycle bucket.
+
+باز: دریافت عکس از تلگرام، اتصال asset به محصول (`image_asset_ids`، `image_missing`)، پاک‌سازی دوره‌ای object یتیم، دسته نگهداری فایل در بسته سیاست، streaming برای فایل بزرگ.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

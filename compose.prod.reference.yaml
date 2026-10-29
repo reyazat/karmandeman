@@ -35,6 +35,8 @@ x-app-common: &app-common
     OPENBAO_TOKEN: ${OPENBAO_TOKEN:?OPENBAO_TOKEN required}
     OPENBAO_TRANSIT_MOUNT: ${OPENBAO_TRANSIT_MOUNT:-transit}
     OPENBAO_KEY_PREFIX: ${OPENBAO_KEY_PREFIX:-ws-}
+    # Batch photos (ADR-022): production refuses any disk but the private bucket below.
+    KM_ASSET_DISK: ${KM_ASSET_DISK:-s3}
     # Erasure timing (ADR-014); completion stays off until backup lifecycle is evidenced.
     KM_DB_BACKUP_MAX_AGE_HOURS: ${KM_DB_BACKUP_MAX_AGE_HOURS:-144}
     KM_KEY_BACKUP_MAX_AGE_HOURS: ${KM_KEY_BACKUP_MAX_AGE_HOURS:-48}

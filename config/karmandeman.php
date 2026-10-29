@@ -9,6 +9,15 @@ return [
     // Default employee template provisioned for every new workspace.
     'default_employee_template' => 'product-prep',
 
+    // Private batch input files (FR-025, ADR-022). The disk must be private;
+    // production uses the S3-compatible bucket. Files are encrypted in memory,
+    // so the size cap also bounds memory per request.
+    'assets' => [
+        'disk' => env('KM_ASSET_DISK', 'assets'),
+        'max_kilobytes' => (int) env('KM_ASSET_MAX_KILOBYTES', 10240),
+        'max_pixels' => (int) env('KM_ASSET_MAX_PIXELS', 40_000_000),
+    ],
+
     // FR-087 / NFR-12 erasure timing (ADR-011, ADR-013, ADR-014). Completion is
     // only recorded when Ops has evidenced that both backup caps are enforced.
     'erasure' => [

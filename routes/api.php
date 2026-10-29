@@ -5,6 +5,7 @@ use App\Http\Controllers\API\V1\Identity\MeController;
 use App\Http\Controllers\API\V1\Identity\TelegramAuthController;
 use App\Http\Controllers\API\V1\Privacy\AccountDeletionController;
 use App\Http\Controllers\API\V1\Product\ProductController;
+use App\Http\Controllers\API\V1\Project\ProjectAssetController;
 use App\Http\Controllers\API\V1\Project\ProjectController;
 use App\Http\Controllers\API\V1\Project\ProjectWorkflowController;
 use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
@@ -32,6 +33,9 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/projects/{project}', [ProjectController::class, 'show'])->whereUuid('project');
             Route::apiResource('/projects', ProjectController::class)->only(['index', 'store']);
             Route::get('/projects/{project}/products', [ProductController::class, 'index'])->whereUuid('project');
+            Route::get('/projects/{project}/assets', [ProjectAssetController::class, 'index'])->whereUuid('project');
+            Route::post('/projects/{project}/assets', [ProjectAssetController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
+            Route::get('/assets/{asset}/download', [ProjectAssetController::class, 'download'])->whereUuid('asset');
             Route::post('/projects/{project}/products', [ProductController::class, 'store'])->whereUuid('project');
             Route::get('/projects/{project}/products/summary', [ProductController::class, 'summary'])->whereUuid('project');
             Route::post('/projects/{project}/finish-input', [ProjectWorkflowController::class, 'finishInput'])->whereUuid('project');

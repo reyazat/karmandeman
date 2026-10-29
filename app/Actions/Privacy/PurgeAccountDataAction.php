@@ -16,6 +16,7 @@ use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
 use App\Services\Crypto\WorkspaceKeyManager;
+use App\Services\Storage\PrivateAssetStore;
 use App\Services\Telegram\TelegramSubjectKey;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -43,6 +44,7 @@ final readonly class PurgeAccountDataAction
         private TelegramSubjectKey $subjects,
         private WorkspaceFieldCipher $cipher,
         private WorkspaceKeyManager $keys,
+        private PrivateAssetStore $assets,
     ) {}
 
     public function execute(AccountDeletion $deletion): AccountDeletion
@@ -77,6 +79,9 @@ final readonly class PurgeAccountDataAction
             foreach ($telegramIds as $telegramId) {
                 $this->outbox->forgetChat($telegramId);
             }
+            // Already unreadable without the key; the objects go before their rows,
+            // so a failed delete rolls back and the next pass retries it.
+            $this->assets->deleteWorkspace($workspace);
             $this->erasure->purge($workspace, $user, array_map($this->subjects->for(...), $telegramIds));
             $purgedAt = CarbonImmutable::now();
             $this->deletions->markLivePurged($locked, $purgedAt);

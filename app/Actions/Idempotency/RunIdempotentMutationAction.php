@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Idempotency;
 
 use App\Actions\Workspace\LockActiveWorkspaceAction;
+use App\Models\Asset;
 use App\Models\Brand;
 use App\Models\ProductRevision;
 use App\Models\Project;
@@ -55,6 +56,7 @@ final readonly class RunIdempotentMutationAction
                 $class = match ($operation) {
                     'project.create', 'project.finish_input', 'project.reopen', 'project.cancel' => Project::class,
                     'project.approve_products' => ProjectSnapshot::class,
+                    'project.attach_asset' => Asset::class,
                     'brand.update' => Brand::class,
                     'product.create', 'product.revise', 'product.approve', 'product.archive' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),

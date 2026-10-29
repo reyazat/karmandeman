@@ -17,7 +17,9 @@ RUN apk add --no-cache icu-libs libpq libzip freetype libjpeg-turbo libpng onigu
     && docker-php-ext-install -j2 bcmath exif gd intl mbstring opcache pcntl pdo_pgsql zip \
     && pecl install redis \
     && docker-php-ext-enable redis \
-    && apk del .build-deps
+    && apk del .build-deps \
+    # Photo uploads up to KM_ASSET_MAX_KILOBYTES (10 MB, ADR-022), under Caddy's 25 MB body cap.
+    && printf 'upload_max_filesize=12M\npost_max_size=13M\n' > /usr/local/etc/php/conf.d/uploads.ini
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 WORKDIR /var/www/html
 COPY composer.json composer.lock ./

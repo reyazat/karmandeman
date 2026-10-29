@@ -18,14 +18,17 @@ use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
 use App\Services\Crypto\WorkspaceKeyManager;
 use App\Services\Telegram\TelegramSubjectKey;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use LogicException;
 use RuntimeException;
 use Tests\Concerns\UsesApprovedPilotPolicy;
+use Tests\Fakes\ImageFixture;
 use Tests\Fakes\InMemoryWorkspaceKeyManager;
 use Tests\TestCase;
 
@@ -47,6 +50,7 @@ final class AccountErasureTest extends TestCase
             'services.telegram.bot_token' => '123:test-token',
             'karmandeman.gift_credits' => 100,
         ]);
+        Storage::fake('assets');
     }
 
     private function send(string $text, int $telegramId): TestResponse
@@ -73,13 +77,19 @@ final class AccountErasureTest extends TestCase
         $project = $this->postJson('/api/v1/projects', ['name' => "Project {$telegramId}"], ['Idempotency-Key' => "erasure-project-{$telegramId}"])->assertCreated()->json('data.id');
         $product = $this->postJson("/api/v1/projects/{$project}/products", ['name' => ['value' => "Product {$telegramId}", 'status' => 'confirmed'], 'sku' => ['value' => 'SKU-1', 'status' => 'confirmed']], ['Idempotency-Key' => "erasure-product-{$telegramId}"])->assertCreated()->json('data.product_id');
         $this->postJson("/api/v1/products/{$product}/approve", ['revision' => 1], ['Idempotency-Key' => "erasure-approve-{$telegramId}"])->assertOk();
-        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => 3], ['Idempotency-Key' => "erasure-finish-{$telegramId}"])->assertOk();
-        $this->postJson("/api/v1/projects/{$project}/approve-products", ['version' => 4], ['Idempotency-Key' => "erasure-batch-{$telegramId}"])->assertCreated();
+        $this->post("/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('p.png', $this->png($telegramId))], ['Idempotency-Key' => "erasure-asset-{$telegramId}", 'Accept' => 'application/json'])->assertCreated();
+        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => 4], ['Idempotency-Key' => "erasure-finish-{$telegramId}"])->assertOk();
+        $this->postJson("/api/v1/projects/{$project}/approve-products", ['version' => 5], ['Idempotency-Key' => "erasure-batch-{$telegramId}"])->assertCreated();
         $this->send("/support help {$telegramId}", $telegramId)->assertOk();
         $user->createToken('mini-app');
         $this->app->forgetScopedInstances();
 
         return [$user, $workspace];
+    }
+
+    private function png(int $seed): string
+    {
+        return ImageFixture::make($seed, 'png', 8, 8);
     }
 
     private function requestDeletion(User $user, Workspace $workspace): AccountDeletion
@@ -140,6 +150,8 @@ final class AccountErasureTest extends TestCase
         $this->assertSame(['purged' => 1, 'failed' => 0, 'completed' => 0, 'at_risk' => 0], $this->process());
 
         $this->assertNoRowsFor($user->id, $workspace->id);
+        $this->assertSame([], Storage::disk('assets')->allFiles("ws/{$workspace->public_id}"));
+        $this->assertCount(1, Storage::disk('assets')->allFiles("ws/{$otherWorkspace->public_id}"));
         $this->assertNotContains('555', $this->outboxChats());
         $this->assertFalse(DB::table('conversation_events')->where('subject_key', $subjects->for(555))->exists());
         $this->assertNull(app(UserRepositoryInterface::class)->findByIdentity('telegram', '555'));

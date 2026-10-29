@@ -23,6 +23,8 @@ final class WorkspaceFieldCipher
 {
     private const PREFIX = 'kmv1:';
 
+    private const BINARY_PREFIX = 'KMB1';
+
     private const NONCE_BYTES = 12;
 
     private const TAG_BYTES = 16;
@@ -59,6 +61,41 @@ final class WorkspaceFieldCipher
         $plaintext = openssl_decrypt(
             substr($raw, self::NONCE_BYTES + self::TAG_BYTES), 'aes-256-gcm', $this->dataKey($workspace, create: false), OPENSSL_RAW_DATA,
             substr($raw, 0, self::NONCE_BYTES), substr($raw, self::NONCE_BYTES, self::TAG_BYTES), $this->aad($workspace, $context),
+        );
+        if ($plaintext === false) {
+            throw new UndecryptableValue('Encrypted value cannot be decrypted.');
+        }
+
+        return $plaintext;
+    }
+
+    /**
+     * Binary form for file contents (ADR-022): nonce, tag and ciphertext with
+     * no text encoding. The context should name the row so a swapped object fails.
+     */
+    public function encryptBytes(Workspace $workspace, string $context, #[\SensitiveParameter] string $plaintext): string
+    {
+        $nonce = random_bytes(self::NONCE_BYTES);
+        $tag = '';
+        $ciphertext = openssl_encrypt(
+            $plaintext, 'aes-256-gcm', $this->dataKey($workspace), OPENSSL_RAW_DATA, $nonce, $tag, $this->aad($workspace, $context), self::TAG_BYTES,
+        );
+        if ($ciphertext === false) {
+            throw new RuntimeException('Encryption failed.');
+        }
+
+        return self::BINARY_PREFIX.$nonce.$tag.$ciphertext;
+    }
+
+    public function decryptBytes(Workspace $workspace, string $context, string $value): string
+    {
+        $offset = strlen(self::BINARY_PREFIX);
+        if (! str_starts_with($value, self::BINARY_PREFIX) || strlen($value) < $offset + self::NONCE_BYTES + self::TAG_BYTES) {
+            throw new UndecryptableValue('Encrypted value is malformed.');
+        }
+        $plaintext = openssl_decrypt(
+            substr($value, $offset + self::NONCE_BYTES + self::TAG_BYTES), 'aes-256-gcm', $this->dataKey($workspace, create: false), OPENSSL_RAW_DATA,
+            substr($value, $offset, self::NONCE_BYTES), substr($value, $offset + self::NONCE_BYTES, self::TAG_BYTES), $this->aad($workspace, $context),
         );
         if ($plaintext === false) {
             throw new UndecryptableValue('Encrypted value cannot be decrypted.');

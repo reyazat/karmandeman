@@ -12,11 +12,15 @@ use App\Models\Wallet;
 use App\Models\Workspace;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use DomainException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\UsesApprovedPilotPolicy;
+use Tests\Fakes\ImageFixture;
 use Tests\TestCase;
 
 /** Record Policies behind the repository filter, and the lock-guarded brand read (ADR-021). */
@@ -37,6 +41,7 @@ class RecordPolicyTest extends TestCase
             'services.telegram.bot_token' => '123:test-token',
         ]);
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        Storage::fake('assets');
     }
 
     private function seller(int $telegramId): User
@@ -56,7 +61,7 @@ class RecordPolicyTest extends TestCase
     }
 
     /**
-     * @return array{string, string, string} project, draft product and approved product public ids
+     * @return array{string, string, string, string} project, draft product, approved product and asset public ids
      */
     private function batch(): array
     {
@@ -70,16 +75,37 @@ class RecordPolicyTest extends TestCase
             ], ['Idempotency-Key' => 'product-'.++$this->keys])->assertCreated()->json('data.product_id');
         }
         $this->postJson("/api/v1/products/{$products[1]}/approve", ['revision' => 1], ['Idempotency-Key' => 'approve-'.++$this->keys])->assertOk();
+        $asset = $this->post("/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('p.png', $this->png(1))], ['Idempotency-Key' => 'asset-key-'.++$this->keys, 'Accept' => 'application/json'])
+            ->assertCreated()->json('data.id');
 
-        return [$project, $products[0], $products[1]];
+        return [$project, $products[0], $products[1], $asset];
+    }
+
+    /**
+     * @param  array<string, mixed>  $body
+     */
+    private function send(string $method, string $path, array $body, string $key): TestResponse
+    {
+        $headers = ['Idempotency-Key' => $key, 'Accept' => 'application/json'];
+
+        // Form posts, not JSON: one endpoint takes a file.
+        return $method === 'GET' ? $this->get($path, $headers) : $this->{strtolower($method)}($path, $body, $headers);
+    }
+
+    private function png(int $seed): string
+    {
+        return ImageFixture::make($seed, 'png', 8, 8);
     }
 
     /**
      * @return array<string, array{string, string, array<string, mixed>}> every record endpoint: method, path, body
      */
-    private function endpoints(string $project, string $draft, string $approved): array
+    private function endpoints(string $project, string $draft, string $approved, string $asset): array
     {
         return [
+            'assets.index' => ['GET', "/api/v1/projects/{$project}/assets", []],
+            'asset.download' => ['GET', "/api/v1/assets/{$asset}/download", []],
+            'assets.store' => ['POST', "/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('q.png', $this->png(2))]],
             'project.show' => ['GET', "/api/v1/projects/{$project}", []],
             'products.index' => ['GET', "/api/v1/projects/{$project}/products", []],
             'products.summary' => ['GET', "/api/v1/projects/{$project}/products/summary", []],
@@ -147,7 +173,7 @@ class RecordPolicyTest extends TestCase
     public function test_every_record_endpoint_asks_the_record_policy(): void
     {
         Sanctum::actingAs($this->seller(900));
-        [$project, $draft, $approved] = $this->batch();
+        [$project, $draft, $approved, $asset] = $this->batch();
         $checked = [];
         Gate::after(function (User $user, string $ability, ?bool $result, array $arguments) use (&$checked): void {
             if (in_array($ability, ['view', 'update'], true)) {
@@ -159,6 +185,8 @@ class RecordPolicyTest extends TestCase
         // The exact record from the path, not merely a record of the right class.
         $workspaceKey = 'ws'.Project::query()->where('public_id', $project)->value('workspace_id');
         $expected = [
+            'assets.index' => "view:Project:{$project}", 'asset.download' => "view:Asset:{$asset}",
+            'assets.store' => "update:Project:{$project}",
             'project.show' => "view:Project:{$project}", 'products.index' => "view:Project:{$project}",
             'products.summary' => "view:Project:{$project}", 'snapshot' => "view:Project:{$project}",
             'product.show' => "view:Product:{$draft}", 'product.approved' => "view:Product:{$approved}",
@@ -168,9 +196,9 @@ class RecordPolicyTest extends TestCase
             'approve-products' => "update:Project:{$project}", 'reopen' => "update:Project:{$project}",
             'cancel' => "update:Project:{$project}",
         ];
-        foreach ($this->endpoints($project, $draft, $approved) as $name => [$method, $path, $body]) {
+        foreach ($this->endpoints($project, $draft, $approved, $asset) as $name => [$method, $path, $body]) {
             $checked = [];
-            $this->json($method, $path, $body, ['Idempotency-Key' => 'checked-'.++$this->keys]);
+            $this->send($method, $path, $body, 'checked-'.++$this->keys);
             $this->assertContains($expected[$name], $checked, $name);
         }
     }
@@ -178,7 +206,7 @@ class RecordPolicyTest extends TestCase
     public function test_a_denied_policy_stops_every_endpoint_before_it_reads_or_writes(): void
     {
         Sanctum::actingAs($this->seller(901));
-        [$project, $draft, $approved] = $this->batch();
+        [$project, $draft, $approved, $asset] = $this->batch();
         $before = Project::query()->where('public_id', $project)->firstOrFail()->only(['state', 'version']);
         $counts = fn (): array => [
             Product::query()->count(),
@@ -186,6 +214,8 @@ class RecordPolicyTest extends TestCase
             Product::query()->where('public_id', $draft)->value('status'),
             DB::table('project_snapshots')->count(),
             DB::table('api_idempotency_records')->count(),
+            DB::table('assets')->count(),
+            Storage::disk('assets')->allFiles(),
         ];
         $snapshot = $counts();
         // Every statement a request runs before the Policy answers. A rollback hides a late
@@ -205,10 +235,10 @@ class RecordPolicyTest extends TestCase
             return false;
         });
 
-        foreach ($this->endpoints($project, $draft, $approved) as $name => [$method, $path, $body]) {
+        foreach ($this->endpoints($project, $draft, $approved, $asset) as $name => [$method, $path, $body]) {
             $statements = [];
             $atCheck = null;
-            $this->json($method, $path, $body, ['Idempotency-Key' => 'denied-'.str_replace('.', '-', $name)])
+            $this->send($method, $path, $body, 'denied-'.str_replace('.', '-', $name))
                 ->assertForbidden()->assertJsonPath('error.code', 'FORBIDDEN')->assertJsonMissingPath('data');
             $this->assertNotNull($atCheck, $name);
             foreach ($atCheck as $sql) {
