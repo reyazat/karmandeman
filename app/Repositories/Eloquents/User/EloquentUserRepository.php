@@ -46,4 +46,16 @@ final class EloquentUserRepository implements UserRepositoryInterface
     {
         $user->tokens()->delete();
     }
+
+    public function find(int $id): ?User
+    {
+        return User::query()->find($id);
+    }
+
+    public function telegramChatId(User $user): ?string
+    {
+        $id = $user->identities()->where('provider', 'telegram')->value('external_id');
+
+        return $id === null ? null : (string) $id;
+    }
 }

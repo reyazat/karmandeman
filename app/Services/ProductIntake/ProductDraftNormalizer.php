@@ -96,6 +96,57 @@ final readonly class ProductDraftNormalizer
     }
 
     /**
+     * The draft a stored payload was built from, with the raw text kept under
+     * `originals`: normalizing it again gives the same payload. A correction that
+     * changes one field starts from it, so the other fields stay as they are (ADR-029).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function draftFrom(array $payload): array
+    {
+        $originals = $payload['originals'] ?? [];
+        $raw = fn (string $path, string $value): string => $originals[$path] ?? $value;
+        $draft = [];
+        foreach (self::TEXT_FIELDS as $field) {
+            if ($payload[$field]['value'] !== null) {
+                $draft[$field] = ['value' => $raw("{$field}.value", $payload[$field]['value']), 'status' => $payload[$field]['status']];
+            }
+        }
+        $pricing = $payload['pricing'];
+        if ($pricing['regular_price_irr'] !== null) {
+            // Toman input was multiplied by exactly 10, so dividing back is exact.
+            $toman = $pricing['display_unit'] === 'toman';
+            $draft['pricing'] = [
+                'regular_price' => $toman ? intdiv((int) $pricing['regular_price_irr'], 10) : (int) $pricing['regular_price_irr'],
+                'input_unit' => $toman ? 'IRT' : 'IRR',
+                'status' => $pricing['status'],
+            ];
+        }
+        $draft['attributes'] = [];
+        foreach ($payload['attributes'] as $index => $attribute) {
+            $values = $attribute['values'];
+            $draft['attributes'][] = [
+                'name' => $raw("attributes.{$index}.name", $attribute['name']),
+                'values' => $values === null ? null : array_map(
+                    fn (int $i): string => $raw("attributes.{$index}.values.{$i}", $values[$i]), array_keys($values),
+                ),
+                'status' => $attribute['status'],
+            ];
+        }
+        $path = $payload['category_path']['value'];
+        if ($path !== null) {
+            $draft['category_path'] = [
+                'value' => array_map(fn (int $i): string => $raw("category_path.value.{$i}", $path[$i]), array_keys($path)),
+                'status' => $payload['category_path']['status'],
+            ];
+        }
+        $draft['image_asset_ids'] = $payload['image_asset_ids'];
+
+        return $draft;
+    }
+
+    /**
      * @param  array<string, mixed>  $draft
      * @return list<string>
      */

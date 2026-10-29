@@ -60,6 +60,11 @@ final readonly class ArchiveProductAction
                     }
                 }
                 if ($product->status !== ProductStatus::Archived) {
+                    // Rejecting a product changes an approved batch as much as editing it (ADR-029).
+                    if ($product->project_id !== null
+                        && $this->projects->findForWorkspace($workspace, $product->project_id)?->state->hasApprovedSnapshot() === true) {
+                        throw new DomainException('PROJECT_REOPEN_REQUIRED');
+                    }
                     $this->products->archive($product);
                     // A rejected product hands its bot photos back for the next /product (ADR-026).
                     $this->assets->releaseClaims($product);

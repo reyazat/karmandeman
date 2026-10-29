@@ -47,6 +47,12 @@ final class TelegramWebhookRequest extends FormRequest
             'message.document.file_id' => ['required_with:message.document', 'string', 'max:255'],
             'message.document.mime_type' => ['sometimes', 'string', 'max:100'],
             'message.document.file_size' => ['sometimes', 'integer', 'min:0'],
+            // A reply to a product card (ADR-029): only who sent the card and its buttons are kept.
+            // No size or type limits: a reply to any other message must not be rejected, or
+            // Telegram retries it; the service checks the shape and ignores what is not a card.
+            'message.reply_to_message.from.id' => ['sometimes'],
+            'message.reply_to_message.from.is_bot' => ['sometimes'],
+            'message.reply_to_message.reply_markup.inline_keyboard.*.*.callback_data' => ['sometimes'],
             'callback_query' => ['sometimes', 'array'],
             'callback_query.id' => ['required_with:callback_query', 'string', 'max:128'],
             'callback_query.from' => ['required_with:callback_query', 'array'],

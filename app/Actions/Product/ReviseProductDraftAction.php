@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * Manual correction (FR-033) as a new immutable revision. Earlier revisions,
- * including an approved one, stay unchanged (ADR-016).
+ * including an approved one, stay unchanged (ADR-016). A batch past approval
+ * must be reopened first (ADR-029).
  */
 final readonly class ReviseProductDraftAction
 {
@@ -54,6 +55,11 @@ final readonly class ReviseProductDraftAction
                 // A cancelled batch is closed; only "reject" stays open to free SKUs (ADR-019).
                 if ($project?->state === ProjectState::Cancelled) {
                     throw new DomainException('PROJECT_CANCELLED');
+                }
+                // An approved batch is corrected only after reopen, so no two approved
+                // versions of one product exist side by side (PRD §6, ADR-029).
+                if ($project?->state->hasApprovedSnapshot() === true) {
+                    throw new DomainException('PROJECT_REOPEN_REQUIRED');
                 }
                 if ($product->current_revision !== $expectedRevision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');

@@ -14,4 +14,9 @@ interface UserRepositoryInterface
     public function createWithIdentity(TelegramUserData $telegramUser, string $provider): User;
 
     public function revokeAccessTokens(User $user): void;
+
+    public function find(int $id): ?User;
+
+    /** The private chat of the user's Telegram identity, which is its user ID. */
+    public function telegramChatId(User $user): ?string;
 }

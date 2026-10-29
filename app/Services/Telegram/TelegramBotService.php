@@ -61,6 +61,25 @@ final readonly class TelegramBotService
     }
 
     /**
+     * One file to the chat (ADR-030). The bytes go as multipart upload, never in a URL.
+     */
+    public function sendDocument(int|string $chatId, string $filename, string $contents, string $caption): void
+    {
+        $token = $this->token();
+        try {
+            $response = Http::connectTimeout(3)->timeout(30)
+                ->attach('document', $contents, $filename, ['Content-Type' => 'application/json'])
+                ->post("https://api.telegram.org/bot{$token}/sendDocument", ['chat_id' => (string) $chatId, 'caption' => $caption]);
+            if (! $response->successful() || $response->json('ok') !== true) {
+                throw new RuntimeException('Telegram document rejected.');
+            }
+        } catch (Throwable) {
+            // HTTP exceptions include the token URL and must not reach failed_jobs/logs.
+            throw new RuntimeException('Telegram document delivery failed.');
+        }
+    }
+
+    /**
      * Bot API file metadata (ADR-024). The file path is valid for about an hour.
      *
      * @return array{path: string, size: int|null}

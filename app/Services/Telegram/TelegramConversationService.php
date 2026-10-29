@@ -14,10 +14,13 @@ use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Product\ApproveTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Product\RejectTelegramProductAction;
+use App\Actions\Product\ReviseTelegramProductAction;
 use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CreateProjectAction;
 use App\Actions\Project\FinishTelegramBatchAction;
 use App\Actions\Project\QueueTelegramPhotoAction;
+use App\Actions\Project\ReopenTelegramProjectAction;
+use App\Actions\Project\RequestTelegramSnapshotAction;
 use App\Actions\Project\SelectTelegramProjectAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Privacy\ContainedAccount;
@@ -37,7 +40,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject)|project:approve):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject)|project:(approve|reopen|json)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -51,6 +54,9 @@ final readonly class TelegramConversationService
         private CreateTelegramProductDraftAction $createProduct,
         private ApproveTelegramProductAction $approveProduct,
         private RejectTelegramProductAction $rejectProduct,
+        private ReviseTelegramProductAction $reviseProduct,
+        private ReopenTelegramProjectAction $reopenProject,
+        private RequestTelegramSnapshotAction $requestSnapshot,
         private SelectTelegramProjectAction $selectProject,
         private FinishTelegramBatchAction $finishBatch,
         private ApproveTelegramBatchAction $approveBatch,
@@ -104,6 +110,13 @@ final readonly class TelegramConversationService
         }
         if ($text === '') {
             $this->replyOnboarding($message, $chatId, 'prompt');
+
+            return;
+        }
+        // A reply to a product card corrects that card's revision (ADR-029).
+        $card = str_starts_with($text, '/') ? null : $this->repliedCard($message);
+        if ($card !== null) {
+            $this->handleProductEdit($message, $chatId, $card, $text);
 
             return;
         }
@@ -215,6 +228,48 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
     }
 
+    /**
+     * @param  array{0: string, 1: int}  $card  product public id and the revision the card showed
+     */
+    private function handleProductEdit(array $message, int|string $chatId, array $card, string $text): void
+    {
+        $user = $this->resolveUser($message);
+        if (! $this->readyForProject($user, $chatId)) {
+            return;
+        }
+        $reply = $this->reviseProduct->execute(
+            $this->workspaceFor($user), $user, $this->subjects->message($chatId, $message['message_id'] ?? Str::uuid()->toString()),
+            $card[0], $card[1], $text,
+        );
+        $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
+    }
+
+    /**
+     * The product card a message replies to: one of this bot's own messages
+     * carrying a product button. Anything else is not a card.
+     *
+     * @return array{0: string, 1: int}|null
+     */
+    private function repliedCard(array $message): ?array
+    {
+        $replied = $message['reply_to_message'] ?? null;
+        $botId = (int) strtok((string) config('services.telegram.bot_token'), ':');
+        if (! is_array($replied) || ($replied['from']['is_bot'] ?? false) !== true || $botId < 1
+            || ($replied['from']['id'] ?? null) !== $botId) {
+            return null;
+        }
+        foreach ($replied['reply_markup']['inline_keyboard'] ?? [] as $row) {
+            foreach (is_array($row) ? $row : [] as $button) {
+                $data = is_array($button) && is_string($button['callback_data'] ?? null) ? $button['callback_data'] : '';
+                if (preg_match('/^product:(?:approve|reject):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-9][0-9]{0,5})$/D', $data, $match) === 1) {
+                    return [$match[1], (int) $match[2]];
+                }
+            }
+        }
+
+        return null;
+    }
+
     private function handleProjects(array $message, int|string $chatId): void
     {
         $user = $this->resolveUser($message);
@@ -310,9 +365,22 @@ final readonly class TelegramConversationService
             return;
         }
         $workspace = $this->workspaceFor($user);
+        if ($parts[1] === 'reopen') {
+            foreach ($this->reopenProject->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]) as $reply) {
+                $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
+            }
+
+            return;
+        }
+        if ($parts[1] === 'approve') {
+            $reply = $this->approveBatch->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]);
+            $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
+
+            return;
+        }
         $this->bot->sendMessage($chat['id'], $parts[1] === 'select'
             ? $this->selectProject->execute($workspace, $user, $parts[2])
-            : $this->approveBatch->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]));
+            : $this->requestSnapshot->execute($workspace, $user, $parts[2], (int) $parts[3]));
     }
 
     private function handleDone(array $message, int|string $chatId): void
@@ -468,6 +536,7 @@ final readonly class TelegramConversationService
             '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
             '/product نام (و قیمت در خط دوم) — ثبت محصول با عکس‌های تازه همین پروژه',
             '/done — پایان ورودی پروژه و تأیید محصولات و پروژه',
+            'پاسخ (Reply) به کارت محصول — اصلاح نام و قیمت همان محصول',
             '/projects — آخرین پروژه‌ها و انتخاب پروژه جاری',
             '/mybrand — مشاهده پروفایل برند',
             '/balance — مشاهده موجودی اعتبار',

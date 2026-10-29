@@ -143,10 +143,14 @@ class ProjectWorkflowTest extends TestCase
         $this->getJson("/api/v1/projects/{$project}")->assertJsonPath('data.state', 'product_approved')->assertJsonPath('data.version', $version + 1);
         $this->assertDatabaseCount('project_snapshots', 1);
 
-        // Later edits stay in the Product Repository; the snapshot keeps what was approved (FR-043).
+        // An approved batch is corrected or trimmed only after reopen (ADR-029).
         $this->patchJson("/api/v1/products/{$first}/draft", [
             'name' => ['value' => 'کیف تازه', 'status' => 'confirmed'], 'expected_revision' => 1,
-        ], ['Idempotency-Key' => 'revise-after-snapshot'])->assertOk();
+        ], ['Idempotency-Key' => 'revise-after-snapshot'])->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_REOPEN_REQUIRED');
+        $this->postJson("/api/v1/products/{$pending}/archive", [], ['Idempotency-Key' => 'archive-after-snapshot'])
+            ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_REOPEN_REQUIRED');
+        $this->assertDatabaseCount('product_revisions', 3);
+        $this->assertSame(1, DB::table('products')->where('status', 'archived')->count());
         $this->postJson("/api/v1/projects/{$project}/products", ['name' => ['value' => 'دیر', 'status' => 'confirmed']], ['Idempotency-Key' => 'late-product'])
             ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_ACCEPTING_PRODUCTS');
 

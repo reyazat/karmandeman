@@ -155,6 +155,9 @@ final class ProductController extends Controller
                 'PRODUCT_ARCHIVED', 'PROJECT_NOT_ACCEPTING_PRODUCTS', 'PROJECT_CANCELLED' => ApiResponse::error(
                     $e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409,
                 ),
+                'PROJECT_REOPEN_REQUIRED' => ApiResponse::error(
+                    'PROJECT_REOPEN_REQUIRED', 'پروژه تأیید شده است؛ برای اصلاح یا رد محصول ابتدا پروژه را بازگشایی کنید.', 409,
+                ),
                 'PRODUCT_SKU_TAKEN' => ApiResponse::error('PRODUCT_SKU_TAKEN', 'این SKU برای محصول دیگری در همین فضای کاری ثبت شده است.', 409),
                 default => throw $e,
             };

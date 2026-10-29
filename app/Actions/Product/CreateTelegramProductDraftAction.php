@@ -13,8 +13,8 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
-use App\Services\ProductIntake\PersianTextNormalizer;
 use App\Services\Telegram\TelegramProductCard;
+use App\Services\Telegram\TelegramProductText;
 use DomainException;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -35,13 +35,13 @@ final readonly class CreateTelegramProductDraftAction
         private TelegramMediaIntakeRepositoryInterface $intakes,
         private AssetRepositoryInterface $assets,
         private CreateManualProductDraftAction $create,
-        private PersianTextNormalizer $text,
+        private TelegramProductText $productText,
         private TelegramProductCard $card,
     ) {}
 
     public function execute(Workspace $workspace, User $user, string $messageKey, string $input): BotReply
     {
-        $parsed = $this->parse($input);
+        $parsed = $this->productText->parse($input, "نام محصول را در خط اول و قیمت را (اختیاری) با واحد در خط دوم بنویس:\n/product کیف چرم مشکی\n۱۲۰٬۰۰۰ تومان");
         if (is_string($parsed)) {
             return new BotReply($parsed);
         }
@@ -88,45 +88,7 @@ final readonly class CreateTelegramProductDraftAction
         return $this->card->reply($revision->product, $revision,
             'محصول '.$this->card->summary($revision)." در پروژه «{$project->name}» ثبت شد.\n"
             .($left ? "عکس‌های بیشتر از ۱۰ تا برای /product بعدی می‌مانند.\n" : '')
-            .'اگر درست است تأیید کن؛ اگر اشتباه است رد کن و دوباره بفرست.',
+            .'اگر درست است تأیید کن؛ اگر نه، رد یا اصلاحش کن.',
         );
-    }
-
-    /**
-     * @return array{name: string, price: int|null, unit: 'IRR'|'IRT'|null}|string the draft parts, or the reply explaining the format
-     */
-    private function parse(string $input): array|string
-    {
-        $help = "نام محصول را در خط اول و قیمت را (اختیاری) با واحد در خط دوم بنویس:\n/product کیف چرم مشکی\n۱۲۰٬۰۰۰ تومان";
-        $lines = preg_split('/\R/u', trim($input)) ?: [];
-        if (count($lines) > 2) {
-            return $help;
-        }
-        $name = trim($lines[0] ?? '');
-        if ($this->text->line($name) === '') {
-            return $help;
-        }
-        if (mb_strlen($name) > 200) {
-            return 'نام محصول باید حداکثر ۲۰۰ نویسه باشد.';
-        }
-        // Direction marks and ZWNJ from Persian keyboards carry no meaning in a price.
-        $priceLine = preg_replace('/[\x{200B}-\x{200F}\x{2066}-\x{2069}]/u', '', $this->text->sku($lines[1] ?? '')) ?? '';
-        if ($priceLine === '') {
-            return ['name' => $name, 'price' => null, 'unit' => null];
-        }
-        // Separators only between groups of three: 12.5 or 1,5 is never read as 125 or 15.
-        if (preg_match('/^([0-9]{1,3}(?:[,٬.][0-9]{3})+|[0-9]+)\s*(تومان|ریال)?$/u', $priceLine, $match) !== 1) {
-            return "قیمت را فقط با عدد صحیح و واحد بنویس، مثلاً ۱۲۰٬۰۰۰ تومان.\n".$help;
-        }
-        // PRD E04: an amount without its unit is asked about, never assumed.
-        if (($match[2] ?? '') === '') {
-            return 'واحد قیمت را بنویس: تومان یا ریال، مثلاً ۱۲۰٬۰۰۰ تومان.';
-        }
-        $digits = str_replace([',', '٬', '.'], '', $match[1]);
-        if (strlen($digits) > 12 || (int) $digits < 1) {
-            return 'قیمت معتبر نیست.';
-        }
-
-        return ['name' => $name, 'price' => (int) $digits, 'unit' => $match[2] === 'ریال' ? 'IRR' : 'IRT'];
     }
 }
