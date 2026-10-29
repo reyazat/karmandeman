@@ -10,6 +10,7 @@ use App\Enums\ProductStatus;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use DomainException;
@@ -26,6 +27,7 @@ final readonly class ArchiveProductAction
         private EnsurePolicyConsentAction $consent,
         private ProductRepositoryInterface $products,
         private ProjectRepositoryInterface $projects,
+        private AssetRepositoryInterface $assets,
     ) {}
 
     /**
@@ -43,6 +45,8 @@ final readonly class ArchiveProductAction
                 Gate::forUser($user)->authorize('update', $product);
                 if ($product->status !== ProductStatus::Archived) {
                     $this->products->archive($product);
+                    // A rejected product hands its bot photos back for the next /product (ADR-026).
+                    $this->assets->releaseClaims($product);
                     $this->projects->bumpVersion($workspace, $product->project_id);
                 }
 

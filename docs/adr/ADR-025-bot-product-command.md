@@ -28,7 +28,7 @@
 
 ۴. **اجرا:** همه چیز داخل تراکنش webhook و پس از قفل ردیف Workspace انجام می‌شود: رضایت، جدیدترین پروژه `collecting_input`، انتخاب عکس‌ها، `CreateManualProductDraftAction` (Policy، بررسی Batch برای عکس‌ها طبق ADR-023، idempotency) و علامت‌زدن عکس‌ها. پس دو `/product` هم‌زمان یک عکس را برنمی‌دارند. کلید idempotency از کلید پیام تلگرام ساخته می‌شود و update تکراری از قبل با `update_id` حذف می‌شود.
    - منشأ همه مقدارها `manual_override` است، چون کاربر آن‌ها را تایپ کرده است.
-   - Gate A از ربات ساخته نشده است و پاسخ ربات این را می‌گوید.
+   - Gate A از ربات در [ADR-026](ADR-026-bot-product-approval.md) اضافه شد.
 
 ## محدودیت‌ها و کار باز
 

@@ -40,6 +40,8 @@ interface AssetRepositoryInterface
      */
     public function claim(array $assets, Product $product): void;
 
+    public function releaseClaims(Product $product): void;
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset;
 
     /**

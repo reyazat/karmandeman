@@ -6,6 +6,7 @@ namespace App\Actions\Product;
 
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
+use App\Data\Telegram\BotReply;
 use App\Enums\ProjectState;
 use App\Models\User;
 use App\Models\Workspace;
@@ -36,32 +37,32 @@ final readonly class CreateTelegramProductDraftAction
         private PersianTextNormalizer $text,
     ) {}
 
-    public function execute(Workspace $workspace, User $user, string $messageKey, string $input): string
+    public function execute(Workspace $workspace, User $user, string $messageKey, string $input): BotReply
     {
         $parsed = $this->parse($input);
         if (is_string($parsed)) {
-            return $parsed;
+            return new BotReply($parsed);
         }
         try {
             $this->consent->execute($workspace);
         } catch (DomainException) {
-            return 'پیش از ثبت محصول، شرایط و سیاست داده را با /start بپذیر.';
+            return new BotReply('پیش از ثبت محصول، شرایط و سیاست داده را با /start بپذیر.');
         }
         // Held to the end of the webhook transaction: two /product messages
         // never claim the same photo.
         $this->lockActive->execute($workspace);
         $project = $this->projects->latestInState($workspace, ProjectState::CollectingInput);
         if ($project === null) {
-            return 'پروژه بازی نداری؛ اول با /new یک پروژه بساز.';
+            return new BotReply('پروژه بازی نداری؛ اول با /new یک پروژه بساز.');
         }
 
         // A photo still being imported would land on the next product instead (ADR-024).
         if ($this->intakes->pendingForProject($project)) {
-            return 'عکس‌ها هنوز در حال دریافت‌اند؛ چند لحظه بعد /product را دوباره بفرست.';
+            return new BotReply('عکس‌ها هنوز در حال دریافت‌اند؛ چند لحظه بعد /product را دوباره بفرست.');
         }
         $limit = 'telegram-product:'.$user->id;
         if (RateLimiter::tooManyAttempts($limit, (int) config('karmandeman.assets.uploads_per_minute'))) {
-            return 'محصول‌ها خیلی سریع فرستاده شدند؛ یک دقیقه صبر کن.';
+            return new BotReply('محصول‌ها خیلی سریع فرستاده شدند؛ یک دقیقه صبر کن.');
         }
         RateLimiter::hit($limit, 60);
 
@@ -83,9 +84,13 @@ final readonly class CreateTelegramProductDraftAction
             ? 'بدون قیمت'
             : 'قیمت '.number_format($parsed['price']).' '.($parsed['unit'] === 'IRR' ? 'ریال' : 'تومان');
 
-        return "محصول «{$revision->payload['name']['value']}» با ".count($photos)." عکس و {$price} در پروژه «{$project->name}» ثبت شد.\n"
+        return new BotReply(
+            "محصول «{$revision->payload['name']['value']}» با ".count($photos)." عکس و {$price} در پروژه «{$project->name}» ثبت شد.\n"
             .($left ? "عکس‌های بیشتر از ۱۰ تا برای /product بعدی می‌مانند.\n" : '')
-            .'تأیید محصول هنوز از ربات فعال نیست.';
+            .'اگر درست است تأیید کن. اگر اشتباه است تأیید نکن؛ اصلاح محصول از ربات هنوز فعال نیست.',
+            // Gate A of exactly this revision (ADR-026).
+            [[['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$revision->product->public_id}:{$revision->revision}"]]],
+        );
     }
 
     /**

@@ -73,6 +73,14 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
         }
     }
 
+    public function releaseClaims(Product $product): void
+    {
+        Asset::query()
+            ->where('workspace_id', $product->workspace_id)
+            ->where('claimed_by_product_id', $product->id)
+            ->update(['claimed_by_product_id' => null]);
+    }
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset
     {
         return Asset::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->first();

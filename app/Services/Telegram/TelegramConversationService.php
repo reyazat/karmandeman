@@ -11,6 +11,7 @@ use App\Actions\Privacy\ConfirmTelegramAccountDeletionAction;
 use App\Actions\Privacy\FindContainedTelegramAccountAction;
 use App\Actions\Privacy\PrepareTelegramAccountDeletionAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
+use App\Actions\Product\ApproveTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Project\CreateProjectAction;
 use App\Actions\Project\QueueTelegramPhotoAction;
@@ -32,7 +33,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel))$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|product:approve:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -44,6 +45,7 @@ final readonly class TelegramConversationService
         private CreateProjectAction $createProject,
         private QueueTelegramPhotoAction $queuePhoto,
         private CreateTelegramProductDraftAction $createProduct,
+        private ApproveTelegramProductAction $approveProduct,
         private TelegramSubjectKey $subjects,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
@@ -196,9 +198,10 @@ final readonly class TelegramConversationService
         if (! $this->readyForProject($user, $chatId)) {
             return;
         }
-        $this->bot->sendMessage($chatId, $this->createProduct->execute(
+        $reply = $this->createProduct->execute(
             $this->workspaceFor($user), $user, $this->subjects->message($chatId, $message['message_id'] ?? Str::uuid()->toString()), $input,
-        ));
+        );
+        $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
     }
 
     private function handleProjects(array $message, int|string $chatId): void
@@ -259,9 +262,21 @@ final readonly class TelegramConversationService
             $this->bot->sendMessage($chat['id'], $this->containedNotice($contained));
         } elseif (str_starts_with($data, 'delete:')) {
             $this->handleDeletionCallback($from['id'], $chat['id'], $data);
+        } elseif (str_starts_with($data, 'product:')) {
+            $this->handleProductCallback($from, $chat, (string) $callback['id'], $data);
         } else {
             $this->handleOnboardingCallback($from, $chat, $data);
         }
+    }
+
+    private function handleProductCallback(array $from, array $chat, string $callbackId, string $callbackData): void
+    {
+        [, , $product, $revision] = explode(':', $callbackData);
+        $user = $this->resolveUser(['from' => $from]);
+        if (! $this->readyForProject($user, $chat['id'])) {
+            return;
+        }
+        $this->bot->sendMessage($chat['id'], $this->approveProduct->execute($this->workspaceFor($user), $user, $callbackId, $product, (int) $revision));
     }
 
     private function handleOnboardingCallback(array $from, array $chat, string $callbackData): void
