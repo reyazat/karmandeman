@@ -33,9 +33,13 @@ final readonly class CreateProjectAction
                 throw new DomainException('NO_ACTIVE_EMPLOYEE');
             }
 
-            return $this->projects->create($workspace, $employee, [
+            $project = $this->projects->create($workspace, $employee, [
                 'name' => $name ?: 'پروژه '.now()->format('Y-m-d'),
             ]);
+            // A new batch becomes the bot's current one, whichever channel created it (ADR-028).
+            $this->projects->selectForBot($project);
+
+            return $project;
         });
     }
 }

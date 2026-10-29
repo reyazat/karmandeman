@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Enums\ProjectState;
 use App\Models\User;
 use App\Models\Workspace;
@@ -17,10 +18,16 @@ use Illuminate\Support\Facades\Gate;
  */
 final readonly class SelectTelegramProjectAction
 {
-    public function __construct(private ProjectRepositoryInterface $projects) {}
+    public function __construct(
+        private ProjectRepositoryInterface $projects,
+        private LockActiveWorkspaceAction $lockActive,
+    ) {}
 
     public function execute(Workspace $workspace, User $user, string $projectPublicId): string
     {
+        // A selection is a write: like every mutation it waits for, and is refused
+        // after, a deletion request (FR-086). Held to the end of the webhook transaction.
+        $this->lockActive->execute($workspace);
         $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId);
         if ($project === null || Gate::forUser($user)->denies('view', $project)) {
             return 'پروژه یافت نشد.';

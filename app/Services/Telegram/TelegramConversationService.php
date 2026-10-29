@@ -194,8 +194,6 @@ final readonly class TelegramConversationService
             return;
         }
         $project = $this->createProject->execute($this->workspaceFor($user), $name);
-        // A new batch becomes the bot's current one (ADR-028).
-        $this->projects->selectForBot($project);
 
         $this->bot->sendMessage(
             $chatId,

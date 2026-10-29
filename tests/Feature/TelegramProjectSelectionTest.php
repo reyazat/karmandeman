@@ -6,13 +6,16 @@ namespace Tests\Feature;
 
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Project\SelectTelegramProjectAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Jobs\Telegram\AnswerTelegramCallback;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\Product;
 use App\Models\Project;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -219,5 +222,35 @@ class TelegramProjectSelectionTest extends TestCase
         $this->postJson("/api/v1/products/{$product->public_id}/archive", [], ['Idempotency-Key' => 'archive-by-api'])->assertOk();
         $this->press($reject, 1207)->assertOk();
         $this->replied('تغییر کرده است');
+    }
+
+    public function test_a_batch_created_through_the_api_becomes_the_current_one(): void
+    {
+        $owner = $this->seller(1208);
+        Sanctum::actingAs($owner);
+        $this->postJson('/api/v1/projects', ['name' => 'From API'], ['Idempotency-Key' => 'api-current'])->assertCreated();
+        $api = Project::query()->orderByDesc('id')->first();
+
+        $this->text("/product کیف\n۱۰۰ تومان", 1208)->assertOk();
+        $this->replied('در پروژه «From API» ثبت شد');
+        $this->assertSame($api->id, Product::query()->sole()->project_id);
+    }
+
+    public function test_selection_waits_for_and_is_refused_after_a_deletion_request(): void
+    {
+        $user = $this->seller(1209);
+        $this->text('/new Second', 1209)->assertOk();
+        $first = Project::query()->orderBy('id')->first();
+        $before = DB::table('projects')->where('id', $first->id)->value('bot_selected_at');
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        Workspace::query()->whereKey($workspace->id)->update(['status' => 'deletion_pending']);
+
+        try {
+            DB::transaction(fn () => app(SelectTelegramProjectAction::class)->execute($workspace, $user, $first->public_id));
+            $this->fail('A selection after T0 must be refused.');
+        } catch (DomainException $e) {
+            $this->assertSame('ACCOUNT_DELETION_PENDING', $e->getMessage());
+        }
+        $this->assertSame($before, DB::table('projects')->where('id', $first->id)->value('bot_selected_at'));
     }
 }
