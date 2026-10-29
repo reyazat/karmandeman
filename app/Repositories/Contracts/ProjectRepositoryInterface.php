@@ -16,11 +16,20 @@ interface ProjectRepositoryInterface
 
     public function findForWorkspace(Workspace $workspace, int $projectId): ?Project;
 
-    /** The newest project of the workspace in this state. */
-    public function latestInState(Workspace $workspace, ProjectState $state): ?Project;
+    /**
+     * The bot's current batch (ADR-028): the project selected or created last,
+     * in whatever state; without any selection, the newest open project.
+     */
+    public function currentForBot(Workspace $workspace): ?Project;
 
-    /** The project of the workspace in this state that changed last (a product edit or approval counts). */
-    public function lastTouchedInState(Workspace $workspace, ProjectState $state): ?Project;
+    /**
+     * Open projects (collecting input or in review), newest first.
+     *
+     * @return list<Project>
+     */
+    public function openForBot(Workspace $workspace, int $limit): array;
+
+    public function selectForBot(Project $project): void;
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project;
 

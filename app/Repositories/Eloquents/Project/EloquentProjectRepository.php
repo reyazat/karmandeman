@@ -35,15 +35,29 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->find($projectId);
     }
 
-    public function latestInState(Workspace $workspace, ProjectState $state): ?Project
+    public function currentForBot(Workspace $workspace): ?Project
     {
-        return Project::query()->where('workspace_id', $workspace->id)->where('state', $state->value)->orderByDesc('id')->first();
+        // The last selection stays current even once closed: input is refused
+        // rather than sent to an older batch the seller did not pick.
+        $selected = Project::query()->where('workspace_id', $workspace->id)->whereNotNull('bot_selected_at')
+            ->orderByDesc('bot_selected_at')->orderByDesc('id')->first();
+
+        return $selected ?? Project::query()->where('workspace_id', $workspace->id)
+            ->whereIn('state', [ProjectState::CollectingInput->value, ProjectState::ReviewRequired->value])
+            ->orderByDesc('id')->first();
     }
 
-    public function lastTouchedInState(Workspace $workspace, ProjectState $state): ?Project
+    public function openForBot(Workspace $workspace, int $limit): array
     {
-        return Project::query()->where('workspace_id', $workspace->id)->where('state', $state->value)
-            ->orderByDesc('updated_at')->orderByDesc('id')->first();
+        return Project::query()->where('workspace_id', $workspace->id)
+            ->whereIn('state', [ProjectState::CollectingInput->value, ProjectState::ReviewRequired->value])
+            ->orderByDesc('id')->limit($limit)->get()->all();
+    }
+
+    public function selectForBot(Project $project): void
+    {
+        Project::query()->where('workspace_id', $project->workspace_id)->whereKey($project->id)
+            ->update(['bot_selected_at' => now()->format('Y-m-d H:i:s.u')]);
     }
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project

@@ -10,8 +10,8 @@ use App\Models\ProductRevision;
 
 /**
  * One product revision as the bot shows it, with the Gate A button for exactly
- * that revision (ADR-026, ADR-027). The button never appears without the name,
- * photo count, price and unit it approves.
+ * that revision, and the reject button (ADR-026 to ADR-028). The buttons never
+ * appear without the name, photo count, price and unit they act on.
  */
 final readonly class TelegramProductCard
 {
@@ -31,9 +31,9 @@ final readonly class TelegramProductCard
 
     public function reply(Product $product, ProductRevision $revision, string $text): BotReply
     {
-        return new BotReply($text, [[[
-            'text' => 'تأیید محصول',
-            'callback_data' => "product:approve:{$product->public_id}:{$revision->revision}",
-        ]]]);
+        return new BotReply($text, [[
+            ['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$product->public_id}:{$revision->revision}"],
+            ['text' => 'رد محصول', 'callback_data' => "product:reject:{$product->public_id}:{$revision->revision}"],
+        ]]);
     }
 }

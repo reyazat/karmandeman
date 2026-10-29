@@ -53,9 +53,12 @@ final readonly class CreateTelegramProductDraftAction
         // Held to the end of the webhook transaction: two /product messages
         // never claim the same photo.
         $this->lockActive->execute($workspace);
-        $project = $this->projects->latestInState($workspace, ProjectState::CollectingInput);
+        $project = $this->projects->currentForBot($workspace);
         if ($project === null) {
             return new BotReply('پروژه بازی نداری؛ اول با /new یک پروژه بساز.');
+        }
+        if ($project->state !== ProjectState::CollectingInput) {
+            return new BotReply("پروژه جاری «{$project->name}» دیگر ورودی نمی‌پذیرد؛ /done را بفرست، یا با /projects پروژه دیگری انتخاب کن یا با /new بساز.");
         }
 
         // A photo still being imported would land on the next product instead (ADR-024).
@@ -85,7 +88,7 @@ final readonly class CreateTelegramProductDraftAction
         return $this->card->reply($revision->product, $revision,
             'محصول '.$this->card->summary($revision)." در پروژه «{$project->name}» ثبت شد.\n"
             .($left ? "عکس‌های بیشتر از ۱۰ تا برای /product بعدی می‌مانند.\n" : '')
-            .'اگر درست است تأیید کن. اگر اشتباه است تأیید نکن؛ اصلاح محصول از ربات هنوز فعال نیست.',
+            .'اگر درست است تأیید کن؛ اگر اشتباه است رد کن و دوباره بفرست.',
         );
     }
 

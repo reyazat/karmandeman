@@ -177,7 +177,7 @@ class TelegramBatchApprovalTest extends TestCase
         $this->assertSame('review_required', $project->fresh()->state->value);
     }
 
-    public function test_done_follows_the_batch_product_writes_to_and_shows_revised_content(): void
+    public function test_done_follows_the_current_batch_and_shows_revised_content(): void
     {
         $owner = $this->seller(1104);
         $this->productButton(1104, 'الف');
@@ -185,22 +185,29 @@ class TelegramBatchApprovalTest extends TestCase
         $this->productButton(1104, 'ب');
         [$first, $second] = Project::query()->orderBy('id')->get()->all();
 
-        // /done closes the batch /product writes to: the newest open one.
+        // /done closes the current batch: the one created last.
         $this->text('/done', 1104)->assertOk();
         $this->assertSame('review_required', $second->fresh()->state->value);
         $this->assertSame('collecting_input', $first->fresh()->state->value);
+        // It stays current, so /product refuses instead of writing elsewhere.
+        $this->text("/product ج\n۵۰ تومان", 1104)->assertOk();
+        $this->replied('پروژه جاری «Second» دیگر ورودی نمی‌پذیرد');
+        $this->assertSame(2, Product::query()->count());
+
+        $this->press("project:select:{$first->public_id}", 1104)->assertOk();
         $this->text("/product ج\n۵۰ تومان", 1104)->assertOk();
         $this->text('/done', 1104)->assertOk();
         $this->assertSame('review_required', $first->fresh()->state->value);
         $this->replied('ورودی پروژه «Batch» بسته است. 2 از 2');
 
-        // A product revised after the card was sent gets a card with the new content.
+        // A product revised after its card was sent gets a card with the new content.
         $product = Product::query()->where('project_id', $second->id)->sole();
         Sanctum::actingAs($owner);
         $this->patchJson("/api/v1/products/{$product->public_id}/draft", [
             'expected_revision' => 1, 'name' => ['value' => 'ب', 'status' => 'confirmed'],
             'pricing' => ['regular_price' => 999_999, 'input_unit' => 'IRT', 'status' => 'confirmed'],
         ], ['Idempotency-Key' => 'revise-second'])->assertOk();
+        $this->press("project:select:{$second->public_id}", 1104)->assertOk();
         $this->text('/done', 1104)->assertOk();
         $this->assertSame(["product:approve:{$product->public_id}:2"], $this->buttonsOf('«ب» با 0 عکس و قیمت 999,999 تومان'));
     }

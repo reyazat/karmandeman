@@ -17,8 +17,8 @@ use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 
 /**
- * `/done` in the bot (ADR-027): closes the input of the batch /product writes
- * to, or shows again the batch in review that changed last, with one card and
+ * `/done` in the bot (ADR-027): closes the input of the bot's current batch
+ * (ADR-028), or shows it again once in review, with one card and
  * approve button per product still waiting for Gate A and, when none is, the
  * batch approval button for the version shown. Refusals are answered.
  */
@@ -38,11 +38,13 @@ final readonly class FinishTelegramBatchAction
      */
     public function execute(Workspace $workspace, User $user, string $messageKey): array
     {
-        // The batch /product writes to first; otherwise the batch in review that changed last.
-        $project = $this->projects->latestInState($workspace, ProjectState::CollectingInput)
-            ?? $this->projects->lastTouchedInState($workspace, ProjectState::ReviewRequired);
+        // The same current batch photos and /product use (ADR-028).
+        $project = $this->projects->currentForBot($workspace);
         if ($project === null) {
             return [new BotReply('پروژه بازی نداری؛ با /new پروژه بساز.')];
+        }
+        if (! in_array($project->state, [ProjectState::CollectingInput, ProjectState::ReviewRequired], true)) {
+            return [new BotReply("پروژه جاری «{$project->name}» بسته است؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.")];
         }
         if ($project->state === ProjectState::CollectingInput) {
             try {

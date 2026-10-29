@@ -53,9 +53,12 @@ final readonly class QueueTelegramPhotoAction
         } catch (DomainException) {
             return 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.';
         }
-        $project = $this->projects->latestInState($workspace, ProjectState::CollectingInput);
+        $project = $this->projects->currentForBot($workspace);
         if ($project === null) {
             return 'پروژه بازی برای دریافت عکس نداری؛ اول با /new یک پروژه بساز.';
+        }
+        if ($project->state !== ProjectState::CollectingInput) {
+            return "پروژه جاری «{$project->name}» دیگر عکس نمی‌پذیرد؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.";
         }
         Gate::forUser($user)->authorize('update', $project);
         // Same budget as the API upload route: each photo costs a download, encryption and storage.
