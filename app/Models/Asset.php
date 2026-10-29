@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int $height
  * @property string $source
  * @property string|null $source_message_key
+ * @property int|null $claimed_by_product_id
  * @property Carbon|null $created_at
  */
 class Asset extends Model
@@ -40,7 +41,7 @@ class Asset extends Model
         'size_bytes', 'width', 'height', 'source', 'source_message_key', 'created_by',
     ];
 
-    protected $hidden = ['storage_key', 'content_mac', 'source_message_key'];
+    protected $hidden = ['storage_key', 'content_mac', 'source_message_key', 'claimed_by_product_id'];
 
     /**
      * @return BelongsTo<Project, $this>

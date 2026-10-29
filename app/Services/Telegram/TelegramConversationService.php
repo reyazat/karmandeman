@@ -11,6 +11,7 @@ use App\Actions\Privacy\ConfirmTelegramAccountDeletionAction;
 use App\Actions\Privacy\FindContainedTelegramAccountAction;
 use App\Actions\Privacy\PrepareTelegramAccountDeletionAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
+use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Project\CreateProjectAction;
 use App\Actions\Project\QueueTelegramPhotoAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
@@ -42,6 +43,8 @@ final readonly class TelegramConversationService
         private AdvanceTelegramOnboardingAction $onboarding,
         private CreateProjectAction $createProject,
         private QueueTelegramPhotoAction $queuePhoto,
+        private CreateTelegramProductDraftAction $createProduct,
+        private TelegramSubjectKey $subjects,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
         private PilotPolicyService $policies,
@@ -94,7 +97,7 @@ final readonly class TelegramConversationService
 
             return;
         }
-        $command = strtok($text, " \n");
+        $command = strtok($text, " \r\n");
 
         match ($command) {
             '/start' => $this->handleStart($message, $chatId),
@@ -102,6 +105,7 @@ final readonly class TelegramConversationService
             '/balance' => $this->handleBalance($message, $chatId),
             '/new' => $this->handleNew($message, $chatId, $text),
             '/projects' => $this->handleProjects($message, $chatId),
+            '/product' => $this->handleProduct($message, $chatId, trim(mb_substr($text, mb_strlen('/product')))),
             '/mybrand' => $this->handleMyBrand($message, $chatId),
             '/brand' => $this->replyOnboarding($message, $chatId, 'edit'),
             '/skip' => $this->replyOnboarding($message, $chatId, 'skip'),
@@ -184,6 +188,17 @@ final readonly class TelegramConversationService
         if ($reply !== null) {
             $this->bot->sendMessage($chatId, $reply);
         }
+    }
+
+    private function handleProduct(array $message, int|string $chatId, string $input): void
+    {
+        $user = $this->resolveUser($message);
+        if (! $this->readyForProject($user, $chatId)) {
+            return;
+        }
+        $this->bot->sendMessage($chatId, $this->createProduct->execute(
+            $this->workspaceFor($user), $user, $this->subjects->message($chatId, $message['message_id'] ?? Str::uuid()->toString()), $input,
+        ));
     }
 
     private function handleProjects(array $message, int|string $chatId): void
@@ -386,6 +401,7 @@ final readonly class TelegramConversationService
             '/forget name|category|tone — حذف یک بخش حافظه برند',
             '/skip — گذشتن از پرسش اختیاری',
             '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
+            '/product نام (و قیمت در خط دوم) — ثبت محصول با عکس‌های تازه همین پروژه',
             '/projects — آخرین پروژه‌ها',
             '/mybrand — مشاهده پروفایل برند',
             '/balance — مشاهده موجودی اعتبار',

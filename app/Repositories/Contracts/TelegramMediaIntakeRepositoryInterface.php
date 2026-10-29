@@ -17,6 +17,8 @@ interface TelegramMediaIntakeRepositoryInterface
 
     public function find(int $id): ?TelegramMediaIntake;
 
+    public function pendingForProject(Project $project): bool;
+
     public function delete(TelegramMediaIntake $intake): void;
 
     public function deleteCreatedBefore(CarbonImmutable $cutoff): int;

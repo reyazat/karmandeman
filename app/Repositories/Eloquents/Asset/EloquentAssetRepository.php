@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories\Eloquents\Asset;
 
 use App\Models\Asset;
+use App\Models\Product;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
@@ -48,6 +49,28 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
             ->all();
 
         return $ids;
+    }
+
+    public function unclaimedInProject(Project $project, int $limit): array
+    {
+        return Asset::query()
+            ->where('workspace_id', $project->workspace_id)
+            ->where('project_id', $project->id)
+            ->whereNull('claimed_by_product_id')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get()
+            ->all();
+    }
+
+    public function claim(array $assets, Product $product): void
+    {
+        if ($assets !== []) {
+            Asset::query()
+                ->where('workspace_id', $product->workspace_id)
+                ->whereKey(array_map(fn (Asset $asset): int => $asset->id, $assets))
+                ->update(['claimed_by_product_id' => $product->id]);
+        }
     }
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset

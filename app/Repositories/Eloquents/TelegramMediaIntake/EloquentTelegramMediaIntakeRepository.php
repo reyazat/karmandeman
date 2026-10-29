@@ -33,6 +33,11 @@ final class EloquentTelegramMediaIntakeRepository implements TelegramMediaIntake
         return TelegramMediaIntake::query()->find($id);
     }
 
+    public function pendingForProject(Project $project): bool
+    {
+        return TelegramMediaIntake::query()->where('workspace_id', $project->workspace_id)->where('project_id', $project->id)->exists();
+    }
+
     public function delete(TelegramMediaIntake $intake): void
     {
         TelegramMediaIntake::query()->whereKey($intake->id)->delete();

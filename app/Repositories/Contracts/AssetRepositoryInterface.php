@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories\Contracts;
 
 use App\Models\Asset;
+use App\Models\Product;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
@@ -26,6 +27,18 @@ interface AssetRepositoryInterface
      * @return list<string>
      */
     public function publicIdsInProject(Project $project, array $publicIds): array;
+
+    /**
+     * Photos of the batch no bot /product has claimed yet, oldest first (ADR-025).
+     *
+     * @return list<Asset>
+     */
+    public function unclaimedInProject(Project $project, int $limit): array;
+
+    /**
+     * @param  list<Asset>  $assets
+     */
+    public function claim(array $assets, Product $product): void;
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset;
 
