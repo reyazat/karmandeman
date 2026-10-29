@@ -113,7 +113,7 @@ final readonly class AdvanceTelegramOnboardingAction
                 }
                 $this->onboardings->save($state, 'ready');
 
-                return new OnboardingReply('برند تأیید شد؛ شناخت اولیه رایگان است. با /new پروژه بسازید. دریافت فایل محصول هنوز فعال نیست.');
+                return new OnboardingReply('برند تأیید شد؛ شناخت اولیه رایگان است. با /new پروژه بسازید و عکس محصولات را بفرستید.');
             }
 
             if ($event === 'input' || $event === 'skip' || $event === 'unit') {
@@ -201,7 +201,7 @@ final readonly class AdvanceTelegramOnboardingAction
                 ['text' => 'تأیید برند', 'callback_data' => 'onboard:confirm:'.$this->reviewToken($state)],
                 ['text' => 'اصلاح', 'callback_data' => 'onboard:edit'],
             ]]),
-            'ready' => new OnboardingReply('برند تأیید شده است. برای مشاهده /mybrand، برای اصلاح /brand و برای شروع پروژه /new را بفرستید. فایل تجاری هنوز دریافت نمی‌شود.'),
+            'ready' => new OnboardingReply('برند تأیید شده است. برای مشاهده /mybrand، برای اصلاح /brand و برای شروع پروژه /new را بفرستید؛ عکس محصولات بعد از /new پذیرفته می‌شود.'),
             default => throw new DomainException('INVALID_ONBOARDING_STEP'),
         };
     }

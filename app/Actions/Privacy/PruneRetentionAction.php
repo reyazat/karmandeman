@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Privacy;
 
 use App\Repositories\Contracts\RetentionRepositoryInterface;
+use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Repositories\Contracts\TelegramOutboxRepositoryInterface;
 use Carbon\CarbonImmutable;
 
@@ -18,6 +19,7 @@ final readonly class PruneRetentionAction
     public function __construct(
         private RetentionRepositoryInterface $retention,
         private TelegramOutboxRepositoryInterface $outbox,
+        private TelegramMediaIntakeRepositoryInterface $mediaIntakes,
     ) {}
 
     /** @return array<string, int> affected rows per category */
@@ -31,6 +33,7 @@ final readonly class PruneRetentionAction
             'auth_replays' => $this->retention->deleteAuthReplaysBefore($hours('auth_replay_hours')),
             'api_snapshots' => $this->retention->expireIdempotencySnapshotsBefore($hours('api_snapshot_hours')),
             'onboarding_drafts' => $this->retention->resetOnboardingDraftsBefore($hours('onboarding_draft_hours')),
+            'media_intakes' => $this->mediaIntakes->deleteCreatedBefore($hours('media_intake_hours')),
         ];
     }
 }

@@ -6,9 +6,10 @@ creation, gift-credit ledger and a manual product draft/revision/approval
 slice with text normalization, SKU uniqueness, a review queue and an approved
 batch snapshot, project reopen/cancel, signed Gate A approvals, a
 near-duplicate warning, record Policies for project/product/wallet and
-private encrypted photo storage with tenant-scoped download and product
-photos limited to their own batch (ADR-016 to ADR-023) with code and tests. These are partial foundations, not a
-completed MVP. Telegram photo intake, AI product extraction, file exports, full wallet
+private encrypted photo storage with tenant-scoped download, product
+photos limited to their own batch and bot photo intake (ADR-016 to ADR-024)
+with code and tests. These are partial foundations, not a
+completed MVP. Telegram text-to-product intake, AI product extraction, file exports, full wallet
 lifecycle and n8n workflows are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and
 `docs/DEVELOPMENT_PLAN.md` for the implementation order. Do not claim a build,

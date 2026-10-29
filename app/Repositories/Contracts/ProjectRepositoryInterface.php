@@ -16,6 +16,9 @@ interface ProjectRepositoryInterface
 
     public function findForWorkspace(Workspace $workspace, int $projectId): ?Project;
 
+    /** The newest project of the workspace in this state. */
+    public function latestInState(Workspace $workspace, ProjectState $state): ?Project;
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project;
 
     /** Move to the next state and bump the optimistic version (PRD §6). */

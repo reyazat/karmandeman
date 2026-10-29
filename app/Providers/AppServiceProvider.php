@@ -39,6 +39,6 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('workspace-api', fn (Request $request) => Limit::perMinute(60)->by((string) $request->user()->id));
         RateLimiter::for('account-deletion', fn (Request $request) => Limit::perMinute(5)->by((string) $request->user()->id));
         // Each upload is held and encrypted in memory (ADR-022).
-        RateLimiter::for('asset-upload', fn (Request $request) => Limit::perMinute(20)->by((string) $request->user()->id));
+        RateLimiter::for('asset-upload', fn (Request $request) => Limit::perMinute((int) config('karmandeman.assets.uploads_per_minute'))->by((string) $request->user()->id));
     }
 }

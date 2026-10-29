@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property int $width
  * @property int $height
  * @property string $source
+ * @property string|null $source_message_key
  * @property Carbon|null $created_at
  */
 class Asset extends Model
@@ -32,12 +33,14 @@ class Asset extends Model
 
     public const SOURCE_API_UPLOAD = 'api_upload';
 
+    public const SOURCE_TELEGRAM = 'telegram';
+
     protected $fillable = [
         'workspace_id', 'project_id', 'storage_key', 'content_mac', 'mime',
-        'size_bytes', 'width', 'height', 'source', 'created_by',
+        'size_bytes', 'width', 'height', 'source', 'source_message_key', 'created_by',
     ];
 
-    protected $hidden = ['storage_key', 'content_mac'];
+    protected $hidden = ['storage_key', 'content_mac', 'source_message_key'];
 
     /**
      * @return BelongsTo<Project, $this>

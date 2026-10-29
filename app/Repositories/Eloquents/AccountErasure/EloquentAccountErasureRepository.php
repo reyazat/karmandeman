@@ -21,7 +21,7 @@ final class EloquentAccountErasureRepository implements AccountErasureRepository
     /** Tables keyed by workspace_id, children before parents. */
     private const WORKSPACE_TABLES = [
         'api_idempotency_records', 'service_requests', 'telegram_onboardings', 'memory_item_revisions',
-        'memory_items', 'workspace_consents', 'product_skus', 'product_revisions', 'products', 'project_snapshots', 'assets', 'projects', 'employees', 'brands', 'conversation_events',
+        'memory_items', 'workspace_consents', 'product_skus', 'product_revisions', 'products', 'project_snapshots', 'telegram_media_intakes', 'assets', 'projects', 'employees', 'brands', 'conversation_events',
         'audit_logs', 'workspace_data_keys', 'workspace_memberships',
     ];
 

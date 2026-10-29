@@ -19,7 +19,8 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * A product photo into an open batch (FR-025, ADR-022). The file is checked
+ * A product photo into an open batch (FR-025, ADR-022), from the API or
+ * from the bot (ADR-024). The file is checked
  * to be a real image, encrypted under the workspace key and stored privately.
  * The same bytes twice in one batch return the first asset.
  */
@@ -46,15 +47,17 @@ final readonly class AttachProjectAssetAction
     /**
      * @return array{Asset, bool}
      */
-    public function execute(Workspace $workspace, User $user, string $key, string $projectPublicId, #[\SensitiveParameter] string $bytes): array
-    {
+    public function execute(
+        Workspace $workspace, User $user, string $key, string $projectPublicId, #[\SensitiveParameter] string $bytes,
+        string $source = Asset::SOURCE_API_UPLOAD, ?string $sourceMessageKey = null,
+    ): array {
         $image = $this->inspect($bytes);
 
         /** @var array{Asset, bool} $result */
         $result = $this->idempotency->execute(
             // The fingerprint is MACed by the wrapper; the plain digest is never stored.
             $workspace, $user->id, 'project.attach_asset', $key, ['project' => $projectPublicId, 'sha256' => hash('sha256', $bytes)],
-            function () use ($workspace, $user, $projectPublicId, $bytes, $image): Asset {
+            function () use ($workspace, $user, $projectPublicId, $bytes, $image, $source, $sourceMessageKey): Asset {
                 $this->consent->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
@@ -79,7 +82,8 @@ final readonly class AttachProjectAssetAction
                         'size_bytes' => strlen($bytes),
                         'width' => $image['width'],
                         'height' => $image['height'],
-                        'source' => Asset::SOURCE_API_UPLOAD,
+                        'source' => $source,
+                        'source_message_key' => $sourceMessageKey,
                     ]);
                     $this->projects->bumpVersion($workspace, $project->id);
                 } catch (Throwable $e) {

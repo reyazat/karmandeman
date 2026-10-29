@@ -13,7 +13,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 interface AssetRepositoryInterface
 {
     /**
-     * @param  array{storage_key: string, content_mac: string, mime: string, size_bytes: int, width: int, height: int, source: string}  $attributes
+     * @param  array{storage_key: string, content_mac: string, mime: string, size_bytes: int, width: int, height: int, source: string, source_message_key: string|null}  $attributes
      */
     public function create(Workspace $workspace, Project $project, User $uploader, string $publicId, array $attributes): Asset;
 

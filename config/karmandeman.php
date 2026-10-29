@@ -16,6 +16,8 @@ return [
         'disk' => env('KM_ASSET_DISK', 'assets'),
         'max_kilobytes' => (int) env('KM_ASSET_MAX_KILOBYTES', 10240),
         'max_pixels' => (int) env('KM_ASSET_MAX_PIXELS', 40_000_000),
+        // Per user, for both the API route and the bot (ADR-024).
+        'uploads_per_minute' => (int) env('KM_ASSET_UPLOADS_PER_MINUTE', 20),
     ],
 
     // FR-087 / NFR-12 erasure timing (ADR-011, ADR-013, ADR-014). Completion is
@@ -40,6 +42,8 @@ return [
         'auth_replay_hours' => (int) env('KM_RETENTION_AUTH_REPLAY_HOURS', 9),
         'api_snapshot_hours' => (int) env('KM_RETENTION_API_SNAPSHOT_HOURS', 168),
         'onboarding_draft_hours' => (int) env('KM_RETENTION_ONBOARDING_DRAFT_HOURS', 168),
+        // A bot photo not imported by then is dropped with its encrypted file reference (ADR-024).
+        'media_intake_hours' => (int) env('KM_RETENTION_MEDIA_INTAKE_HOURS', 24),
     ],
 
 ];

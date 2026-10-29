@@ -12,6 +12,7 @@ use App\Actions\Privacy\FindContainedTelegramAccountAction;
 use App\Actions\Privacy\PrepareTelegramAccountDeletionAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Project\CreateProjectAction;
+use App\Actions\Project\QueueTelegramPhotoAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Privacy\ContainedAccount;
 use App\Data\Telegram\TelegramUserData;
@@ -40,6 +41,7 @@ final readonly class TelegramConversationService
         private EnsureBrandAction $ensureBrand,
         private AdvanceTelegramOnboardingAction $onboarding,
         private CreateProjectAction $createProject,
+        private QueueTelegramPhotoAction $queuePhoto,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
         private PilotPolicyService $policies,
@@ -81,6 +83,12 @@ final readonly class TelegramConversationService
             return;
         }
 
+        // A caption is ignored: the photo is batch input, not a command (ADR-024).
+        if (isset($message['photo']) || isset($message['document'])) {
+            $this->handlePhoto($message, $chatId);
+
+            return;
+        }
         if ($text === '') {
             $this->replyOnboarding($message, $chatId, 'prompt');
 
@@ -162,8 +170,20 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage(
             $chatId,
             "پروژه «{$project->name}» ساخته شد.\n".
-            'پروژه ثبت شد؛ دریافت و پردازش فایل هنوز فعال نیست. فعلاً فایل تجاری ارسال نکن.'
+            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). پردازش خودکار هنوز فعال نیست.'
         );
+    }
+
+    private function handlePhoto(array $message, int|string $chatId): void
+    {
+        $user = $this->resolveUser($message);
+        if (! $this->readyForProject($user, $chatId)) {
+            return;
+        }
+        $reply = $this->queuePhoto->execute($this->workspaceFor($user), $user, $message);
+        if ($reply !== null) {
+            $this->bot->sendMessage($chatId, $reply);
+        }
     }
 
     private function handleProjects(array $message, int|string $chatId): void
@@ -365,7 +385,7 @@ final readonly class TelegramConversationService
             '/brand — اصلاح برند تأییدشده',
             '/forget name|category|tone — حذف یک بخش حافظه برند',
             '/skip — گذشتن از پرسش اختیاری',
-            '/new — ثبت پروژه جدید (دریافت فایل هنوز فعال نیست)',
+            '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
             '/projects — آخرین پروژه‌ها',
             '/mybrand — مشاهده پروفایل برند',
             '/balance — مشاهده موجودی اعتبار',
