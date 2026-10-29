@@ -9,6 +9,7 @@ use App\Enums\ProjectState;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use DomainException;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -27,7 +28,12 @@ final readonly class SelectTelegramProjectAction
     {
         // A selection is a write: like every mutation it waits for, and is refused
         // after, a deletion request (FR-086). Held to the end of the webhook transaction.
-        $this->lockActive->execute($workspace);
+        // Answered, not thrown: a rollback would also drop the button's acknowledgement.
+        try {
+            $this->lockActive->execute($workspace);
+        } catch (DomainException) {
+            return 'حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.';
+        }
         $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId);
         if ($project === null || Gate::forUser($user)->denies('view', $project)) {
             return 'پروژه یافت نشد.';

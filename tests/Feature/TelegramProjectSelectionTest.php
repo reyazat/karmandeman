@@ -15,7 +15,6 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
-use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -245,12 +244,9 @@ class TelegramProjectSelectionTest extends TestCase
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
         Workspace::query()->whereKey($workspace->id)->update(['status' => 'deletion_pending']);
 
-        try {
-            DB::transaction(fn () => app(SelectTelegramProjectAction::class)->execute($workspace, $user, $first->public_id));
-            $this->fail('A selection after T0 must be refused.');
-        } catch (DomainException $e) {
-            $this->assertSame('ACCOUNT_DELETION_PENDING', $e->getMessage());
-        }
+        // The race after the webhook's containment check: answered, never thrown.
+        $reply = DB::transaction(fn () => app(SelectTelegramProjectAction::class)->execute($workspace, $user, $first->public_id));
+        $this->assertSame('حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.', $reply);
         $this->assertSame($before, DB::table('projects')->where('id', $first->id)->value('bot_selected_at'));
     }
 }

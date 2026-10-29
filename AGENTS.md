@@ -11,7 +11,8 @@ photos limited to their own batch, bot photo intake, a bot /product
 command, Gate A and reject from bot buttons, batch finish/approval with
 /done and an explicit current batch, product correction by replying to a
 bot card with mandatory reopen of an approved batch, and the approved batch
-as a JSON file from the bot (ADR-016 to ADR-030) with code and tests. These
+as a JSON file from the bot, and batch cancel with /cancel (ADR-016 to ADR-031)
+with code and tests. These
 are partial foundations, not a completed MVP. AI product extraction,
 CSV/PDF/ZIP/catalogue exports, full wallet lifecycle and n8n workflows are
 still missing. Read
