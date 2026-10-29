@@ -40,6 +40,12 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
         return Project::query()->where('workspace_id', $workspace->id)->where('state', $state->value)->orderByDesc('id')->first();
     }
 
+    public function lastTouchedInState(Workspace $workspace, ProjectState $state): ?Project
+    {
+        return Project::query()->where('workspace_id', $workspace->id)->where('state', $state->value)
+            ->orderByDesc('updated_at')->orderByDesc('id')->first();
+    }
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project
     {
         return Project::query()->where('workspace_id', $workspace->id)

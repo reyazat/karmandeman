@@ -13,7 +13,9 @@ use App\Actions\Privacy\PrepareTelegramAccountDeletionAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Product\ApproveTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
+use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CreateProjectAction;
+use App\Actions\Project\FinishTelegramBatchAction;
 use App\Actions\Project\QueueTelegramPhotoAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Privacy\ContainedAccount;
@@ -33,7 +35,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|product:approve:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product|project):approve:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -46,6 +48,8 @@ final readonly class TelegramConversationService
         private QueueTelegramPhotoAction $queuePhoto,
         private CreateTelegramProductDraftAction $createProduct,
         private ApproveTelegramProductAction $approveProduct,
+        private FinishTelegramBatchAction $finishBatch,
+        private ApproveTelegramBatchAction $approveBatch,
         private TelegramSubjectKey $subjects,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
@@ -108,6 +112,7 @@ final readonly class TelegramConversationService
             '/new' => $this->handleNew($message, $chatId, $text),
             '/projects' => $this->handleProjects($message, $chatId),
             '/product' => $this->handleProduct($message, $chatId, trim(mb_substr($text, mb_strlen('/product')))),
+            '/done' => $this->handleDone($message, $chatId),
             '/mybrand' => $this->handleMyBrand($message, $chatId),
             '/brand' => $this->replyOnboarding($message, $chatId, 'edit'),
             '/skip' => $this->replyOnboarding($message, $chatId, 'skip'),
@@ -264,6 +269,8 @@ final readonly class TelegramConversationService
             $this->handleDeletionCallback($from['id'], $chat['id'], $data);
         } elseif (str_starts_with($data, 'product:')) {
             $this->handleProductCallback($from, $chat, (string) $callback['id'], $data);
+        } elseif (str_starts_with($data, 'project:')) {
+            $this->handleBatchCallback($from, $chat, (string) $callback['id'], $data);
         } else {
             $this->handleOnboardingCallback($from, $chat, $data);
         }
@@ -277,6 +284,30 @@ final readonly class TelegramConversationService
             return;
         }
         $this->bot->sendMessage($chat['id'], $this->approveProduct->execute($this->workspaceFor($user), $user, $callbackId, $product, (int) $revision));
+    }
+
+    private function handleBatchCallback(array $from, array $chat, string $callbackId, string $callbackData): void
+    {
+        [, , $project, $version] = explode(':', $callbackData);
+        $user = $this->resolveUser(['from' => $from]);
+        if (! $this->readyForProject($user, $chat['id'])) {
+            return;
+        }
+        $this->bot->sendMessage($chat['id'], $this->approveBatch->execute($this->workspaceFor($user), $user, $callbackId, $project, (int) $version));
+    }
+
+    private function handleDone(array $message, int|string $chatId): void
+    {
+        $user = $this->resolveUser($message);
+        if (! $this->readyForProject($user, $chatId)) {
+            return;
+        }
+        $replies = $this->finishBatch->execute(
+            $this->workspaceFor($user), $user, $this->subjects->message($chatId, $message['message_id'] ?? Str::uuid()->toString()),
+        );
+        foreach ($replies as $reply) {
+            $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
+        }
     }
 
     private function handleOnboardingCallback(array $from, array $chat, string $callbackData): void
@@ -417,6 +448,7 @@ final readonly class TelegramConversationService
             '/skip — گذشتن از پرسش اختیاری',
             '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
             '/product نام (و قیمت در خط دوم) — ثبت محصول با عکس‌های تازه همین پروژه',
+            '/done — پایان ورودی پروژه و تأیید محصولات و پروژه',
             '/projects — آخرین پروژه‌ها',
             '/mybrand — مشاهده پروفایل برند',
             '/balance — مشاهده موجودی اعتبار',

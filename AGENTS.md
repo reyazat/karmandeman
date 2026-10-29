@@ -8,8 +8,9 @@ batch snapshot, project reopen/cancel, signed Gate A approvals, a
 near-duplicate warning, record Policies for project/product/wallet and
 private encrypted photo storage with tenant-scoped download, product
 photos limited to their own batch, bot photo intake, a bot /product
-command and Gate A from a bot button (ADR-016 to ADR-026) with code and tests. These are partial foundations, not a
-completed MVP. Bot product editing and batch approval, AI product extraction, file exports, full wallet
+command, Gate A from a bot button and batch finish/approval with /done
+(ADR-016 to ADR-027) with code and tests. These are partial foundations, not a
+completed MVP. Bot product editing, file exports from the bot, AI product extraction, file exports, full wallet
 lifecycle and n8n workflows are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and
 `docs/DEVELOPMENT_PLAN.md` for the implementation order. Do not claim a build,

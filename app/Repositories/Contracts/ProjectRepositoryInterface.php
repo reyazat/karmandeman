@@ -19,6 +19,9 @@ interface ProjectRepositoryInterface
     /** The newest project of the workspace in this state. */
     public function latestInState(Workspace $workspace, ProjectState $state): ?Project;
 
+    /** The project of the workspace in this state that changed last (a product edit or approval counts). */
+    public function lastTouchedInState(Workspace $workspace, ProjectState $state): ?Project;
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project;
 
     /** Move to the next state and bump the optimistic version (PRD §6). */

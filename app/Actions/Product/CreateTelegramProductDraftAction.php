@@ -14,6 +14,7 @@ use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\ProductIntake\PersianTextNormalizer;
+use App\Services\Telegram\TelegramProductCard;
 use DomainException;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -35,6 +36,7 @@ final readonly class CreateTelegramProductDraftAction
         private AssetRepositoryInterface $assets,
         private CreateManualProductDraftAction $create,
         private PersianTextNormalizer $text,
+        private TelegramProductCard $card,
     ) {}
 
     public function execute(Workspace $workspace, User $user, string $messageKey, string $input): BotReply
@@ -80,16 +82,10 @@ final readonly class CreateTelegramProductDraftAction
         [$revision] = $this->create->execute($workspace, $user, 'telegram-'.substr($messageKey, 0, 48), $project->public_id, $draft);
         $this->assets->claim($photos, $revision->product);
 
-        $price = $parsed['price'] === null
-            ? 'بدون قیمت'
-            : 'قیمت '.number_format($parsed['price']).' '.($parsed['unit'] === 'IRR' ? 'ریال' : 'تومان');
-
-        return new BotReply(
-            "محصول «{$revision->payload['name']['value']}» با ".count($photos)." عکس و {$price} در پروژه «{$project->name}» ثبت شد.\n"
+        return $this->card->reply($revision->product, $revision,
+            'محصول '.$this->card->summary($revision)." در پروژه «{$project->name}» ثبت شد.\n"
             .($left ? "عکس‌های بیشتر از ۱۰ تا برای /product بعدی می‌مانند.\n" : '')
             .'اگر درست است تأیید کن. اگر اشتباه است تأیید نکن؛ اصلاح محصول از ربات هنوز فعال نیست.',
-            // Gate A of exactly this revision (ADR-026).
-            [[['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$revision->product->public_id}:{$revision->revision}"]]],
         );
     }
 
