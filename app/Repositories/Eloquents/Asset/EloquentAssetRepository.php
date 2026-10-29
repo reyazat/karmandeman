@@ -37,6 +37,19 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
             ->first();
     }
 
+    public function publicIdsInProject(Project $project, array $publicIds): array
+    {
+        /** @var list<string> $ids */
+        $ids = Asset::query()
+            ->where('workspace_id', $project->workspace_id)
+            ->where('project_id', $project->id)
+            ->whereIn('public_id', $publicIds)
+            ->pluck('public_id')
+            ->all();
+
+        return $ids;
+    }
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset
     {
         return Asset::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->first();

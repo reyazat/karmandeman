@@ -50,16 +50,16 @@ final readonly class ReviseProductDraftAction
                 if ($product->status === ProductStatus::Archived) {
                     throw new DomainException('PRODUCT_ARCHIVED');
                 }
+                $project = $product->project_id === null ? null : $this->projects->findForWorkspace($workspace, $product->project_id);
                 // A cancelled batch is closed; only "reject" stays open to free SKUs (ADR-019).
-                if ($product->project_id !== null
-                    && $this->projects->findForWorkspace($workspace, $product->project_id)?->state === ProjectState::Cancelled) {
+                if ($project?->state === ProjectState::Cancelled) {
                     throw new DomainException('PROJECT_CANCELLED');
                 }
                 if ($product->current_revision !== $expectedRevision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
                 }
 
-                $revision = $this->products->addRevision($product, $user, $this->builder->build($workspace, $draft));
+                $revision = $this->products->addRevision($product, $user, $this->builder->build($workspace, $project, $draft));
                 $this->projects->bumpVersion($workspace, $product->project_id);
 
                 return $revision;

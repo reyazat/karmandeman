@@ -84,12 +84,24 @@ final readonly class ProductDraftNormalizer
             $evidence[] = ['field' => 'category_path', 'source' => $source];
         }
 
-        // Asset intake is a later slice; the key is part of the schema already.
-        $payload['image_asset_ids'] = [];
+        // Ids of private assets of the same batch, checked by ProductImageGuard (ADR-023).
+        $payload['image_asset_ids'] = self::imageAssetIds($draft);
+        if ($payload['image_asset_ids'] !== []) {
+            $evidence[] = ['field' => 'image_asset_ids', 'source' => $source];
+        }
         $payload['evidence'] = $evidence;
         $payload['originals'] = $originals;
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $draft
+     * @return list<string>
+     */
+    public static function imageAssetIds(array $draft): array
+    {
+        return array_map(fn (mixed $id): string => strtolower((string) $id), array_values($draft['image_asset_ids'] ?? []));
     }
 
     /**

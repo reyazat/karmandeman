@@ -50,7 +50,8 @@ FR-087 مرحله اول در ۲۸ اکتبر ۲۰۲۶: مالک برای تصم
 - برش پنجم ([ADR-020](adr/ADR-020-near-duplicate-warning.md)): هشدار شبه‌تکراری FR-034 با HMAC کلید نرمال‌شده نام در Workspace؛ فقط هشدار، بدون حذف یا ادغام.
 - برش ششم ([ADR-021](adr/ADR-021-record-policies-and-structural-fixes.md)): `ProjectPolicy`، `ProductPolicy` و `WalletPolicy` مستقل از فیلتر repository، ساخت برند فقط زیر قفل Workspace فعال، و `WalletLedgerResource`. سه یافته ساختاری ممیزی بسته شد.
 - برش هفتم ([ADR-022](adr/ADR-022-private-encrypted-asset-storage.md)): بارگذاری عکس JPEG/PNG/WebP در Batch با API، رمزنگاری با کلید Workspace در storage خصوصی (production فقط bucket S3)، دانلود tenant-scoped و پاک‌شدن objectها در حذف حساب.
-- باز در گام ۳: intake متن/عکس تلگرام، اتصال عکس به محصول، شمارش «متناقض» FR-040، شباهت تقریبی FR-034 (گام ۴)، دسته نگهداری محصول در بسته سیاست، UI بررسی، تصمیم مالک درباره اصلاح محصول در پروژه تأییدشده (ADR-019).
+- برش هشتم ([ADR-023](adr/ADR-023-product-photos-from-batch-assets.md)): `image_asset_ids` در پیش‌نویس محصول فقط از assetهای همان Batch؛ پرچم `image_missing` واقعی شد و snapshot شناسه‌ها را امضاشده نگه می‌دارد.
+- باز در گام ۳: intake متن/عکس تلگرام، شمارش «متناقض» FR-040، شباهت تقریبی FR-034 (گام ۴)، دسته نگهداری محصول در بسته سیاست، UI بررسی، تصمیم مالک درباره اصلاح محصول در پروژه تأییدشده (ADR-019).
 
 | گام | کار مشخص | شرط شروع / وابستگی | شاهد لازم برای پایان | مسئول پیشنهادی |
 |---|---|---|---|---|

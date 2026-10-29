@@ -19,6 +19,14 @@ interface AssetRepositoryInterface
 
     public function findByContent(Project $project, string $contentMac): ?Asset;
 
+    /**
+     * The given public ids that name assets of this project.
+     *
+     * @param  list<string>  $publicIds
+     * @return list<string>
+     */
+    public function publicIdsInProject(Project $project, array $publicIds): array;
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset;
 
     /**

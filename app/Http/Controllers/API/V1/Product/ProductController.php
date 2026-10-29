@@ -9,6 +9,7 @@ use App\Actions\Product\ArchiveProductAction;
 use App\Actions\Product\CreateManualProductDraftAction;
 use App\Actions\Product\ReadApprovedProductAction;
 use App\Actions\Product\ReviseProductDraftAction;
+use App\Exceptions\ProductAssetsRejected;
 use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\ProductRequiresConfirmation;
 use App\Http\Controllers\Controller;
@@ -142,6 +143,8 @@ final class ProductController extends Controller
 
         try {
             [$revision, $replayed] = $mutation($workspace);
+        } catch (ProductAssetsRejected $e) {
+            return ApiResponse::error($e->getMessage(), 'این عکس‌ها در همین پروژه بارگذاری نشده‌اند.', 422, ['fields' => $e->fields]);
         } catch (ProductRequiresConfirmation $e) {
             return ApiResponse::error($e->getMessage(), 'برخی مشخصات نیازمند تأیید هستند.', 422, ['fields' => $e->fields]);
         } catch (DomainException $e) {

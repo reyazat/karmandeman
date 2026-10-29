@@ -17,8 +17,9 @@ use DomainException;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * Seller types a product into an open batch (Step 3 slice, ADR-016). No AI,
- * no file: every value is a manual_override of this user.
+ * Seller types a product into an open batch (Step 3 slice, ADR-016). No AI
+ * extraction: every value is a manual_override of this user, and photos
+ * must be assets of the same batch (ADR-023).
  */
 final readonly class CreateManualProductDraftAction
 {
@@ -52,7 +53,7 @@ final readonly class CreateManualProductDraftAction
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }
 
-                $revision = $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $draft));
+                $revision = $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $project, $draft));
                 $this->projects->bumpVersion($workspace, $project->id);
 
                 return $revision;

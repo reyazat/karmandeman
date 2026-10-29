@@ -53,6 +53,9 @@ final class StoreProductDraftRequest extends FormRequest
             'category_path.value' => ['nullable', 'array', 'min:1', 'max:5'],
             'category_path.value.*' => ['string', 'max:100'],
             'category_path.status' => ['nullable', 'string', self::STATUS],
+            // Photos of this batch, first is the main image (ADR-023). Checked against the batch in the Action.
+            'image_asset_ids' => ['sometimes', 'nullable', 'array', 'list', 'max:10'],
+            'image_asset_ids.*' => ['string', 'uuid', 'distinct:ignore_case'],
         ];
     }
 
