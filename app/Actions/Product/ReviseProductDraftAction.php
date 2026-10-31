@@ -14,13 +14,15 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
+use App\Services\ProductIntake\ProjectSnapshotSigner;
 use DomainException;
 use Illuminate\Support\Facades\Gate;
 
 /**
  * Manual correction (FR-033) as a new immutable revision. Earlier revisions,
  * including an approved one, stay unchanged (ADR-016). A batch past approval
- * must be reopened first (ADR-029).
+ * must be reopened first (ADR-029). Values the correction leaves unchanged keep
+ * their provenance, so a confirmed suggestion still cites its photos (ADR-034).
  */
 final readonly class ReviseProductDraftAction
 {
@@ -30,6 +32,7 @@ final readonly class ReviseProductDraftAction
         private ProductRepositoryInterface $products,
         private ProjectRepositoryInterface $projects,
         private ProductRevisionBuilder $builder,
+        private ProjectSnapshotSigner $signer,
     ) {}
 
     /**
@@ -65,7 +68,11 @@ final readonly class ReviseProductDraftAction
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
                 }
 
-                $revision = $this->products->addRevision($product, $user, $this->builder->build($workspace, $project, $draft));
+                $replaced = $this->products->revision($product, $expectedRevision)
+                    ?? throw new DomainException('PRODUCT_NOT_FOUND');
+                // Provenance is carried only from a payload that still matches its MAC.
+                $trusted = hash_equals((string) $replaced->payload_mac, $this->signer->payloadMac($workspace, $replaced));
+                $revision = $this->products->addRevision($product, $user, $this->builder->build($workspace, $project, $draft, previous: $trusted ? $replaced->payload : null));
                 $this->projects->bumpVersion($workspace, $product->project_id);
 
                 return $revision;

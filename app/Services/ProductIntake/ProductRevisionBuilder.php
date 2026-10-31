@@ -28,13 +28,17 @@ final readonly class ProductRevisionBuilder
      * @param  ?Project  $project  the product's batch, loaded under the workspace lock
      * @param  array<string, mixed>  $draft
      * @param  list<string>|null  $extractedFrom  batch photos of an n8n candidate (ADR-032); null for manual input
+     * @param  array<string, mixed>|null  $previous  payload of the revision a correction replaces; its unchanged values keep their provenance (ADR-034)
      */
-    public function build(Workspace $workspace, ?Project $project, array $draft, ?array $extractedFrom = null): ProductRevisionDraft
+    public function build(Workspace $workspace, ?Project $project, array $draft, ?array $extractedFrom = null, ?array $previous = null): ProductRevisionDraft
     {
         $this->images->check($project, $draft);
         $payload = $extractedFrom === null
             ? $this->normalizer->normalize($draft)
             : $this->normalizer->normalize($draft, ProductDraftNormalizer::SOURCE_AI, $extractedFrom);
+        if ($previous !== null && $extractedFrom === null) {
+            $payload = $this->normalizer->carryEvidence($payload, $previous);
+        }
         $sku = $payload['sku']['value'];
         $name = $payload['name']['value'];
         $nameKey = $name === null ? '' : $this->text->nameKey($name);

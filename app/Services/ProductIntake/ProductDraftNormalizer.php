@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\ProductIntake;
 
+use Illuminate\Support\Str;
 use LogicException;
 
 /**
  * Builds the stored product payload (record schema 1.0, ADR-016) from a
  * validated draft. Provenance is set here, never taken from the client: a
- * manual draft can only claim `manual_override` (FR-030, FR-033). Prices are
+ * manual draft can only claim `manual_override`, and a correction keeps only
+ * the stored provenance of values it left unchanged (FR-030, FR-033). Prices are
  * stored as integer rial; toman input is multiplied by exactly 10 (PRD E04).
  * Text is normalized; changed raw input is kept under `originals` (ADR-017).
  */
@@ -208,6 +210,61 @@ final readonly class ProductDraftNormalizer
         }
 
         return array_values(array_unique($fields));
+    }
+
+    /**
+     * Keeps the provenance of every value a new revision leaves unchanged
+     * (FR-030, ADR-034): confirming a suggested value, or correcting another
+     * field, keeps it cited to the photos it came from. Only a changed value
+     * becomes `manual_override`. Attributes are compared by position.
+     *
+     * @param  array<string, mixed>  $payload  normalized from a manual draft
+     * @param  array<string, mixed>  $previous  payload of the revision it replaces
+     * @return array<string, mixed>
+     */
+    public function carryEvidence(array $payload, array $previous): array
+    {
+        $before = [];
+        foreach ($previous['evidence'] ?? [] as $entry) {
+            // Rebuilt from known parts only: nothing else of a stored entry is carried.
+            $ids = $entry['source_asset_ids'] ?? [];
+            if (! is_string($entry['field'] ?? null) || ! in_array($entry['source'] ?? null, [self::SOURCE_MANUAL, self::SOURCE_AI], true)
+                || ! is_array($ids) || ! array_is_list($ids) || array_filter($ids, fn (mixed $id): bool => ! is_string($id) || ! Str::isUuid($id)) !== []) {
+                continue;
+            }
+            $before[$entry['field']] = $ids === []
+                ? ['field' => $entry['field'], 'source' => $entry['source']]
+                : ['field' => $entry['field'], 'source' => $entry['source'], 'source_asset_ids' => $ids];
+        }
+        foreach ($payload['evidence'] as $index => $entry) {
+            $field = $entry['field'];
+            if (isset($before[$field]) && $this->evidenceValue($payload, $field) === $this->evidenceValue($previous, $field)) {
+                $payload['evidence'][$index] = $before[$field];
+            }
+            if ($field === 'pricing.regular_price_irr') {
+                $payload['pricing']['source'] = $payload['evidence'][$index]['source'];
+            }
+        }
+
+        return $payload;
+    }
+
+    /** @param  array<string, mixed>  $payload */
+    private function evidenceValue(array $payload, string $field): mixed
+    {
+        if (str_starts_with($field, 'attributes.')) {
+            $attribute = $payload['attributes'][(int) substr($field, 11)] ?? null;
+
+            return $attribute === null ? null : [$attribute['name'], $attribute['values']];
+        }
+
+        return match ($field) {
+            // A changed display unit is a correction too, though the rial amount is the same.
+            'pricing.regular_price_irr' => [$payload['pricing']['regular_price_irr'] ?? null, $payload['pricing']['display_unit'] ?? null],
+            'category_path' => $payload['category_path']['value'] ?? null,
+            'image_asset_ids' => $payload['image_asset_ids'] ?? null,
+            default => $payload[$field]['value'] ?? null,
+        };
     }
 
     /**

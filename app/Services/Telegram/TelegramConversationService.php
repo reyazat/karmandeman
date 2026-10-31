@@ -12,6 +12,7 @@ use App\Actions\Privacy\FindContainedTelegramAccountAction;
 use App\Actions\Privacy\PrepareTelegramAccountDeletionAction;
 use App\Actions\Privacy\RequestAccountDeletionAction;
 use App\Actions\Product\ApproveTelegramProductAction;
+use App\Actions\Product\ConfirmTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Product\RejectTelegramProductAction;
 use App\Actions\Product\ReviseTelegramProductAction;
@@ -42,7 +43,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject)|project:(approve|reopen|json|cancel)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -55,6 +56,7 @@ final readonly class TelegramConversationService
         private QueueTelegramPhotoAction $queuePhoto,
         private CreateTelegramProductDraftAction $createProduct,
         private ApproveTelegramProductAction $approveProduct,
+        private ConfirmTelegramProductAction $confirmProduct,
         private RejectTelegramProductAction $rejectProduct,
         private ReviseTelegramProductAction $reviseProduct,
         private ReopenTelegramProjectAction $reopenProject,
@@ -264,7 +266,7 @@ final readonly class TelegramConversationService
         foreach ($replied['reply_markup']['inline_keyboard'] ?? [] as $row) {
             foreach (is_array($row) ? $row : [] as $button) {
                 $data = is_array($button) && is_string($button['callback_data'] ?? null) ? $button['callback_data'] : '';
-                if (preg_match('/^product:(?:approve|reject):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-9][0-9]{0,5})$/D', $data, $match) === 1) {
+                if (preg_match('/^product:(?:approve|reject|confirm|noprice):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([1-9][0-9]{0,5})$/D', $data, $match) === 1) {
                     return [$match[1], (int) $match[2]];
                 }
             }
@@ -355,6 +357,12 @@ final readonly class TelegramConversationService
             return;
         }
         $workspace = $this->workspaceFor($user);
+        if ($verb === 'confirm' || $verb === 'noprice') {
+            $reply = $this->confirmProduct->execute($workspace, $user, $callbackId, $product, (int) $revision, $verb === 'noprice');
+            $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
+
+            return;
+        }
         $this->bot->sendMessage($chat['id'], $verb === 'reject'
             ? $this->rejectProduct->execute($workspace, $user, $callbackId, $product, (int) $revision)
             : $this->approveProduct->execute($workspace, $user, $callbackId, $product, (int) $revision));

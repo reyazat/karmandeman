@@ -28,7 +28,7 @@ final readonly class ApproveTelegramProductAction
             $key = 'telegram-cb-'.substr(hash('sha256', $callbackId), 0, 48);
             [$approved] = $this->approve->execute($workspace, $user, $key, $productPublicId, $revision);
         } catch (ProductRequiresConfirmation) {
-            return 'این محصول هنوز بخشی تأییدنشده دارد و از ربات تأیید نمی‌شود.';
+            return 'این محصول هنوز مقدار پیشنهادیِ تأییدنشده یا نام خالی دارد؛ کارتش را با /done بگیر و اول مقدارها را تأیید کن.';
         } catch (AuthorizationException) {
             return 'محصول یافت نشد.';
         } catch (DomainException $e) {

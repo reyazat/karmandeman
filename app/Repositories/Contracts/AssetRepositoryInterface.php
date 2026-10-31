@@ -29,6 +29,15 @@ interface AssetRepositoryInterface
     public function publicIdsInProject(Project $project, array $publicIds): array;
 
     /**
+     * The 1-based upload position in the batch of each given photo, so the bot
+     * can name photos as the seller sent them (ADR-034). Unknown ids are left out.
+     *
+     * @param  list<string>  $publicIds
+     * @return array<string, int>
+     */
+    public function positionsInProject(Project $project, array $publicIds): array;
+
+    /**
      * Assets of this project with these public ids, in the given order; unknown ids are skipped.
      *
      * @param  list<string>  $publicIds

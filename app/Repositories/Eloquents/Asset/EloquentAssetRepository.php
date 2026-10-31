@@ -38,6 +38,24 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
             ->first();
     }
 
+    public function positionsInProject(Project $project, array $publicIds): array
+    {
+        $order = Asset::query()
+            ->where('workspace_id', $project->workspace_id)
+            ->where('project_id', $project->id)
+            ->orderBy('id')
+            ->pluck('public_id')
+            ->all();
+        $positions = [];
+        foreach ($order as $index => $publicId) {
+            if (in_array($publicId, $publicIds, true)) {
+                $positions[(string) $publicId] = $index + 1;
+            }
+        }
+
+        return $positions;
+    }
+
     public function publicIdsInProject(Project $project, array $publicIds): array
     {
         /** @var list<string> $ids */
