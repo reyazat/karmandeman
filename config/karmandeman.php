@@ -20,6 +20,23 @@ return [
         'uploads_per_minute' => (int) env('KM_ASSET_UPLOADS_PER_MINUTE', 20),
     ],
 
+    // n8n product extraction runs (Step 4, ADR-032). Off by default and always
+    // off in production until an AI provider is approved and Step 5 reserves
+    // credit before the run. The caps go to n8n with each run and are checked
+    // again against the usage it reports (PRD §11 cost control).
+    'ai' => [
+        'extraction_enabled' => (bool) env('KM_AI_EXTRACTION_ENABLED', false),
+        'workflow_version' => 'product-extraction.v1',
+        'run_timeout_minutes' => (int) env('KM_AI_RUN_TIMEOUT_MINUTES', 15),
+        'max_assets_per_run' => (int) env('KM_AI_MAX_ASSETS_PER_RUN', 20),
+        'max_candidates_per_run' => (int) env('KM_AI_MAX_CANDIDATES_PER_RUN', 30),
+        'max_model_requests' => (int) env('KM_AI_MAX_MODEL_REQUESTS', 40),
+        'max_input_tokens' => (int) env('KM_AI_MAX_INPUT_TOKENS', 400_000),
+        'max_output_tokens' => (int) env('KM_AI_MAX_OUTPUT_TOKENS', 60_000),
+        // Callback clock skew and replay window, in seconds.
+        'callback_tolerance_seconds' => 300,
+    ],
+
     // FR-087 / NFR-12 erasure timing (ADR-011, ADR-013, ADR-014). Completion is
     // only recorded when Ops has evidenced that both backup caps are enforced.
     'erasure' => [

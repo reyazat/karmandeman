@@ -16,3 +16,6 @@ Schedule::command('privacy:process-deletions')->everyFiveMinutes()->withoutOverl
 // tokens for one hour, matching the auth replay limit.
 Schedule::command('privacy:prune-retention')->hourly()->withoutOverlapping(30)->onOneServer();
 Schedule::command('sanctum:prune-expired', ['--hours' => 1])->hourly()->onOneServer();
+
+// Step 4 run deadlines (ADR-032): a run n8n never answers reopens its batch.
+Schedule::command('ai:expire-runs')->everyMinute()->withoutOverlapping(5)->onOneServer();

@@ -11,9 +11,12 @@ photos limited to their own batch, bot photo intake, a bot /product
 command, Gate A and reject from bot buttons, batch finish/approval with
 /done and an explicit current batch, product correction by replying to a
 bot card with mandatory reopen of an approved batch, and the approved batch
-as a JSON file from the bot, and batch cancel with /cancel (ADR-016 to ADR-031)
-with code and tests. These
-are partial foundations, not a completed MVP. AI product extraction,
+as a JSON file from the bot, batch cancel with /cancel, and the n8n
+extraction run contract (signed start and callback, strict output schema,
+cost caps, timeout; off by default and always off in production)
+(ADR-016 to ADR-032) with code and tests. These
+are partial foundations, not a completed MVP. A working AI provider and n8n
+workflow for product extraction,
 CSV/PDF/ZIP/catalogue exports, full wallet lifecycle and n8n workflows are
 still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

@@ -47,6 +47,8 @@ x-app-common: &app-common
     N8N_API_URL: ${N8N_API_URL:-http://n8n:5678}
     N8N_API_KEY: ${N8N_API_KEY:?N8N_API_KEY required}
     N8N_WORKFLOW_AUTH_TOKEN: ${N8N_WORKFLOW_AUTH_TOKEN:?N8N_WORKFLOW_AUTH_TOKEN required}
+    # Empty refuses every n8n callback; extraction is off in production (ADR-032).
+    N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET:-}
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN required}
     TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?TELEGRAM_WEBHOOK_SECRET required}
     FILESYSTEM_DISK: s3
@@ -86,6 +88,13 @@ services:
     command: ["php", "artisan", "queue:work", "telegram", "--queue=telegram", "--sleep=1", "--timeout=20", "--tries=5"]
     networks:
       - app_db
+  # Starts n8n extraction runs from the database outbox (ADR-032); idle while extraction is off.
+  ai_worker:
+    <<: *app-common
+    command: ["php", "artisan", "queue:work", "ai", "--queue=ai", "--sleep=3", "--timeout=30", "--tries=3"]
+    networks:
+      - app_db
+      - workflow
   scheduler:
     <<: *app-common
     command: ["php", "artisan", "schedule:work"]

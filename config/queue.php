@@ -40,6 +40,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Starts of n8n runs (ADR-032), inserted in the domain transaction like
+        // the Telegram outbox, so a run and its start commit together.
+        'ai' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'jobs',
+            'queue' => 'ai',
+            'retry_after' => 60,
+            'after_commit' => false,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

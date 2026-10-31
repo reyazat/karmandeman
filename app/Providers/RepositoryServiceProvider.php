@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Repositories\Contracts\AccountDeletionRepositoryInterface;
 use App\Repositories\Contracts\AccountErasureRepositoryInterface;
+use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\BrandRepositoryInterface;
@@ -28,6 +29,7 @@ use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Repositories\Eloquents\AccountDeletion\EloquentAccountDeletionRepository;
 use App\Repositories\Eloquents\AccountErasure\EloquentAccountErasureRepository;
+use App\Repositories\Eloquents\AiWorkflowRun\EloquentAiWorkflowRunRepository;
 use App\Repositories\Eloquents\ApiIdempotency\EloquentApiIdempotencyRepository;
 use App\Repositories\Eloquents\Asset\EloquentAssetRepository;
 use App\Repositories\Eloquents\Brand\EloquentBrandRepository;
@@ -71,6 +73,7 @@ final class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(ProjectSnapshotRepositoryInterface::class, EloquentProjectSnapshotRepository::class);
         $this->app->bind(AssetRepositoryInterface::class, EloquentAssetRepository::class);
         $this->app->bind(TelegramMediaIntakeRepositoryInterface::class, EloquentTelegramMediaIntakeRepository::class);
+        $this->app->bind(AiWorkflowRunRepositoryInterface::class, EloquentAiWorkflowRunRepository::class);
         $this->app->bind(RetentionRepositoryInterface::class, EloquentRetentionRepository::class);
         $this->app->bind(WalletRepositoryInterface::class, EloquentWalletRepository::class);
         $this->app->bind(ConversationEventRepositoryInterface::class, EloquentConversationEventRepository::class);

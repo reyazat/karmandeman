@@ -29,6 +29,14 @@ interface AssetRepositoryInterface
     public function publicIdsInProject(Project $project, array $publicIds): array;
 
     /**
+     * Assets of this project with these public ids, in the given order; unknown ids are skipped.
+     *
+     * @param  list<string>  $publicIds
+     * @return list<Asset>
+     */
+    public function inProjectByPublicIds(Project $project, array $publicIds): array;
+
+    /**
      * Photos of the batch no bot /product has claimed yet, oldest first (ADR-025).
      *
      * @return list<Asset>

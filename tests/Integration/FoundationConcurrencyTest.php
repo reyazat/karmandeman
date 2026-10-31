@@ -16,20 +16,27 @@ use App\Actions\Product\ApproveProductRevisionAction;
 use App\Actions\Product\CreateManualProductDraftAction;
 use App\Actions\Product\ReviseProductDraftAction;
 use App\Actions\Project\ApproveProjectProductsAction;
+use App\Actions\Project\AttachProjectAssetAction;
 use App\Actions\Project\CancelProjectAction;
+use App\Actions\Project\CompleteAIWorkflowRunAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Actions\Project\FinishProjectInputAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\AccountDeletionStatus;
 use App\Enums\CreditLedgerType;
+use App\Models\AiWorkflowRun;
+use App\Models\Project;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Telegram\TelegramReplyService;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\UsesApprovedPilotPolicy;
+use Tests\Fakes\ImageFixture;
 use Tests\TestCase;
 use Throwable;
 
@@ -319,6 +326,85 @@ final class FoundationConcurrencyTest extends TestCase
         $state = DB::table('projects')->value('state');
         $this->assertSame(reset($winners) === 'cancelled' ? 'cancelled' : 'product_approved', $state);
         $this->assertDatabaseCount('project_snapshots', $state === 'cancelled' ? 0 : 1);
+    }
+
+    /**
+     * A batch extracting two photos, and the signed body of its run result (ADR-032).
+     *
+     * @return array{User, Workspace, Project, AiWorkflowRun, string}
+     */
+    private function extractingBatch(int $telegramId): array
+    {
+        config(['karmandeman.ai.extraction_enabled' => true]);
+        Storage::fake('assets');
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData($telegramId));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, "run-batch-{$telegramId}", 'Batch')[0];
+        $photos = [];
+        foreach ([1, 2] as $seed) {
+            $photos[] = app(AttachProjectAssetAction::class)->execute($workspace, $user, "run-photo-{$telegramId}-{$seed}", $project->public_id, ImageFixture::make($telegramId + $seed))[0]->public_id;
+        }
+        app(FinishProjectInputAction::class)->execute($workspace, $user, "run-finish-{$telegramId}", $project->public_id, 3);
+        $run = AiWorkflowRun::query()->sole();
+        $candidate = fn (string $name, string $photo): array => [
+            'name' => $name, 'sku' => null, 'description_fa' => null, 'price' => null,
+            'attributes' => null, 'category_path' => null, 'source_asset_ids' => [$photo],
+        ];
+        $body = json_encode([
+            'schema_version' => 'product-extraction.output.v1', 'run_id' => $run->public_id, 'status' => 'succeeded', 'error_code' => null,
+            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1'],
+            'candidates' => [$candidate('Bag', $photos[0]), $candidate('Shoe', $photos[1])],
+        ], JSON_THROW_ON_ERROR);
+
+        return [$user, $workspace, $project->fresh(), $run, $body];
+    }
+
+    public function test_parallel_identical_run_callbacks_record_once(): void
+    {
+        [, , , $run, $body] = $this->extractingBatch(91301);
+
+        $outcomes = $this->concurrently(fn (): string => app(CompleteAIWorkflowRunAction::class)->execute($body, json_decode($body, true)));
+
+        $this->assertSame(1, count(array_keys($outcomes, CompleteAIWorkflowRunAction::RECORDED, true)));
+        $this->assertSame(5, count(array_keys($outcomes, CompleteAIWorkflowRunAction::ALREADY_RECORDED, true)));
+        $this->assertDatabaseCount('products', 2);
+        $this->assertDatabaseCount('product_revisions', 2);
+        $this->assertSame('succeeded', $run->fresh()->status->value);
+        $this->assertSame('review_required', DB::table('projects')->value('state'));
+    }
+
+    public function test_parallel_run_callback_and_cancel_commit_one_outcome(): void
+    {
+        [$user, $workspace, $project, $run, $body] = $this->extractingBatch(91302);
+
+        $results = $this->concurrently(function (int $i) use ($user, $workspace, $project, $body): string {
+            if ($i % 2 === 0) {
+                return app(CompleteAIWorkflowRunAction::class)->execute($body, json_decode($body, true));
+            }
+            try {
+                app(CancelProjectAction::class)->execute($workspace, $user, "run-cancel-{$i}", $project->public_id, $project->version);
+
+                return 'cancelled';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+
+        $state = DB::table('projects')->value('state');
+        if (in_array(CompleteAIWorkflowRunAction::RECORDED, $results, true)) {
+            // The result came first: every cancel saw a newer version.
+            $this->assertNotContains('cancelled', $results);
+            $this->assertSame('review_required', $state);
+            $this->assertDatabaseCount('products', 2);
+            $this->assertSame('succeeded', $run->fresh()->status->value);
+        } else {
+            // A cancel came first: the run closed and every callback was contained.
+            $this->assertSame(3, count(array_keys($results, CompleteAIWorkflowRunAction::DISCARDED, true)));
+            $this->assertSame('cancelled', $state);
+            $this->assertDatabaseCount('products', 0);
+            $this->assertSame('cancelled', $run->fresh()->status->value);
+        }
     }
 
     public function test_parallel_token_retries_issue_one_token(): void

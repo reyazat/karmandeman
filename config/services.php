@@ -34,7 +34,14 @@ return [
         'internal_url' => env('N8N_INTERNAL_URL'),
         'api_url' => env('N8N_API_URL'),
         'api_key' => env('N8N_API_KEY'),
+        // Signs requests to n8n workflow webhooks (ADR-032).
         'workflow_auth_token' => env('N8N_WORKFLOW_AUTH_TOKEN'),
+        'extraction_webhook_path' => env('N8N_EXTRACTION_WEBHOOK_PATH', '/webhook/km-product-extraction-v1'),
+        // A separate secret signs callbacks, so one leaked direction cannot forge the other.
+        // Empty refuses every callback (ADR-032).
+        'callback_secret' => env('N8N_CALLBACK_SECRET'),
+        // Where n8n posts results; defaults to this app's route.
+        'callback_url' => env('N8N_CALLBACK_URL'),
     ],
 
     // Per-workspace keys live in self-hosted OpenBao Transit, never in the app DB (ADR-013).

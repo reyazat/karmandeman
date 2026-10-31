@@ -348,13 +348,14 @@ class ProjectWorkflowTest extends TestCase
     public function test_cancel_is_allowed_only_before_irreversible_work(): void
     {
         Sanctum::actingAs($this->seller(808));
-        foreach (['new', 'collecting_input', 'needs_clarification', 'review_required', 'product_approved'] as $state) {
+        // Extraction holds no credit and its run is closed on cancel (ADR-032).
+        foreach (['new', 'collecting_input', 'extracting', 'needs_clarification', 'review_required', 'product_approved'] as $state) {
             $project = $this->project();
             DB::table('projects')->where('public_id', $project)->update(['state' => $state]);
             $this->transition($project, 'cancel', 1)->assertOk()->assertJsonPath('data.state', 'cancelled');
         }
 
-        foreach (['extracting', 'quoted', 'expired', 'credit_reserved', 'generating', 'retryable_failure',
+        foreach (['quoted', 'expired', 'credit_reserved', 'generating', 'retryable_failure',
             'output_review_required', 'completed', 'failed', 'cancelled'] as $state) {
             $project = $this->project();
             DB::table('projects')->where('public_id', $project)->update(['state' => $state]);

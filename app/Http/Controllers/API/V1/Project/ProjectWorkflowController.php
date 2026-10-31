@@ -9,6 +9,7 @@ use App\Actions\Project\CancelProjectAction;
 use App\Actions\Project\FinishProjectInputAction;
 use App\Actions\Project\ReadProjectSnapshotAction;
 use App\Actions\Project\ReopenProjectAction;
+use App\Enums\ProjectState;
 use App\Exceptions\ProductIntegrityFailed;
 use App\Exceptions\ProjectProductsNotApproved;
 use App\Exceptions\SnapshotIntegrityFailed;
@@ -37,7 +38,8 @@ final class ProjectWorkflowController extends Controller
                 $workspace, $request->user(), $request->validated('idempotency_key'), $project, $request->integer('version'),
             );
 
-            return [new ProjectResource($found), 200];
+            // Extraction runs asynchronously on n8n (ADR-032).
+            return [new ProjectResource($found), $found->state === ProjectState::Extracting ? 202 : 200];
         });
     }
 
@@ -108,6 +110,10 @@ final class ProjectWorkflowController extends Controller
                 'IDEMPOTENCY_KEY_CONFLICT', 'IDEMPOTENCY_KEY_EXPIRED', 'PROJECT_STATE_CONFLICT', 'PROJECT_VERSION_CONFLICT',
                 'PROJECT_HAS_NO_PRODUCTS', 'PROJECT_NOT_APPROVED' => ApiResponse::error(
                     $e->getMessage(), 'نسخه یا وضعیت پروژه با این درخواست سازگار نیست.', 409,
+                ),
+                'EXTRACTION_TOO_MANY_PHOTOS' => ApiResponse::error(
+                    'EXTRACTION_TOO_MANY_PHOTOS', 'تعداد عکس‌های این پروژه برای یک استخراج بیش از حد مجاز است.', 422,
+                    ['max_photos' => (int) config('karmandeman.ai.max_assets_per_run')],
                 ),
                 default => throw $e,
             };

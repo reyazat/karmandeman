@@ -51,6 +51,18 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
         return $ids;
     }
 
+    public function inProjectByPublicIds(Project $project, array $publicIds): array
+    {
+        $found = Asset::query()
+            ->where('workspace_id', $project->workspace_id)
+            ->where('project_id', $project->id)
+            ->whereIn('public_id', $publicIds)
+            ->get()
+            ->keyBy('public_id');
+
+        return array_values(array_filter(array_map(fn (string $id): ?Asset => $found->get($id), $publicIds)));
+    }
+
     public function unclaimedInProject(Project $project, int $limit): array
     {
         return Asset::query()

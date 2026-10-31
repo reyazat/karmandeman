@@ -19,24 +19,31 @@ final readonly class ProductDraftNormalizer
 
     public const SOURCE_MANUAL = 'manual_override';
 
+    /** Candidate of an n8n extraction run; every value is only suggested (ADR-032). */
+    public const SOURCE_AI = 'ai_extraction';
+
     private const TEXT_FIELDS = ['name', 'sku', 'description_fa'];
 
     public function __construct(private PersianTextNormalizer $text) {}
 
     /**
      * @param  array<string, mixed>  $draft  validated StoreProductDraftRequest input
+     * @param  list<string>  $sourceAssetIds  batch photos an extracted value came from (FR-030)
      * @return array<string, mixed>
      */
-    public function normalize(array $draft, string $source = self::SOURCE_MANUAL): array
+    public function normalize(array $draft, string $source = self::SOURCE_MANUAL, array $sourceAssetIds = []): array
     {
         $payload = ['schema_version' => self::SCHEMA_VERSION];
         $evidence = [];
         $originals = [];
+        $cite = fn (string $field): array => $sourceAssetIds === []
+            ? ['field' => $field, 'source' => $source]
+            : ['field' => $field, 'source' => $source, 'source_asset_ids' => $sourceAssetIds];
 
         foreach (self::TEXT_FIELDS as $field) {
             $payload[$field] = $this->field("{$field}.value", $draft[$field] ?? null, $originals);
             if ($payload[$field]['value'] !== null) {
-                $evidence[] = ['field' => $field, 'source' => $source];
+                $evidence[] = $cite($field);
             }
         }
 
@@ -58,7 +65,7 @@ final readonly class ProductDraftNormalizer
             'status' => $price === null ? 'unknown' : $this->status($pricing['status'] ?? null),
         ];
         if ($price !== null) {
-            $evidence[] = ['field' => 'pricing.regular_price_irr', 'source' => $source];
+            $evidence[] = $cite('pricing.regular_price_irr');
         }
 
         $payload['attributes'] = [];
@@ -70,7 +77,7 @@ final readonly class ProductDraftNormalizer
                 'status' => $values === null ? 'unknown' : $this->status($attribute['status'] ?? null),
             ];
             if ($values !== null) {
-                $evidence[] = ['field' => "attributes.{$index}", 'source' => $source];
+                $evidence[] = $cite("attributes.{$index}");
             }
         }
 
@@ -81,13 +88,13 @@ final readonly class ProductDraftNormalizer
             'status' => $path === null ? 'unknown' : $this->status($categories['status'] ?? null),
         ];
         if ($path !== null) {
-            $evidence[] = ['field' => 'category_path', 'source' => $source];
+            $evidence[] = $cite('category_path');
         }
 
         // Ids of private assets of the same batch, checked by ProductImageGuard (ADR-023).
         $payload['image_asset_ids'] = self::imageAssetIds($draft);
         if ($payload['image_asset_ids'] !== []) {
-            $evidence[] = ['field' => 'image_asset_ids', 'source' => $source];
+            $evidence[] = $cite('image_asset_ids');
         }
         $payload['evidence'] = $evidence;
         $payload['originals'] = $originals;

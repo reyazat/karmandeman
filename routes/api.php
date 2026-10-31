@@ -10,6 +10,7 @@ use App\Http\Controllers\API\V1\Project\ProjectController;
 use App\Http\Controllers\API\V1\Project\ProjectWorkflowController;
 use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
 use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
+use App\Http\Controllers\Webhooks\Internal\N8nRunCallbackController;
 use App\Http\Controllers\Webhooks\Telegram\TelegramWebhookController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Support\Facades\Route;
@@ -17,6 +18,10 @@ use Illuminate\Support\Facades\Route;
 // Channel webhooks: verified by their own middleware, outside the v1 API scope.
 Route::post('/webhooks/telegram', TelegramWebhookController::class)
     ->middleware('telegram.webhook');
+// n8n run results: HMAC of the raw body under the callback secret (ADR-032).
+Route::post('/webhooks/internal/n8n/runs', N8nRunCallbackController::class)
+    ->middleware(['n8n.callback', 'throttle:n8n-callback'])
+    ->name('webhooks.n8n.runs');
 
 // API v1: thin controllers -> FormRequest -> Action -> Repository contract.
 Route::prefix('v1')->group(function (): void {

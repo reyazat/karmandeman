@@ -33,13 +33,14 @@ enum ProjectState: string
     }
 
     /**
-     * No credit is reserved and no AI job runs (FR-063, ADR-019). Extraction,
-     * quotes and credit join this list when Steps 4 and 5 define their release.
+     * No credit is reserved (FR-063, ADR-019). Cancel during extraction closes
+     * the open run, so its late callback changes nothing (ADR-032). Quotes and
+     * credit join this list when Step 5 defines their release.
      */
     public function isCancellable(): bool
     {
         return match ($this) {
-            self::New, self::CollectingInput, self::NeedsClarification, self::ReviewRequired, self::ProductApproved => true,
+            self::New, self::CollectingInput, self::Extracting, self::NeedsClarification, self::ReviewRequired, self::ProductApproved => true,
             default => false,
         };
     }

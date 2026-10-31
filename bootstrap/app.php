@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AuthorizeCurrentWorkspace;
 use App\Http\Middleware\EnsureActiveUser;
+use App\Http\Middleware\VerifyN8nCallbackSignature;
 use App\Http\Middleware\VerifyTelegramWebhookSecret;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(fn (Request $request): ?string => $request->is('api/*') ? null : '/');
         $middleware->alias([
             'telegram.webhook' => VerifyTelegramWebhookSecret::class,
+            'n8n.callback' => VerifyN8nCallbackSignature::class,
             'active.user' => EnsureActiveUser::class,
             'workspace.authorized' => AuthorizeCurrentWorkspace::class,
         ]);

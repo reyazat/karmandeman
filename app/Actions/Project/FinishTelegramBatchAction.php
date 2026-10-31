@@ -43,6 +43,9 @@ final readonly class FinishTelegramBatchAction
         if ($project === null) {
             return [new BotReply('پروژه بازی نداری؛ با /new پروژه بساز.')];
         }
+        if ($project->state === ProjectState::Extracting) {
+            return [new BotReply("محصولات پروژه «{$project->name}» در حال استخراج از عکس‌هاست؛ پس از پایان خبر می‌دهم.")];
+        }
         if (! in_array($project->state, [ProjectState::CollectingInput, ProjectState::ReviewRequired], true)) {
             return [new BotReply("پروژه جاری «{$project->name}» بسته است؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.")];
         }
@@ -54,12 +57,18 @@ final readonly class FinishTelegramBatchAction
             } catch (DomainException $e) {
                 return [new BotReply(match ($e->getMessage()) {
                     'PROJECT_HAS_NO_PRODUCTS' => "پروژه «{$project->name}» هنوز محصولی ندارد؛ اول با /product محصول ثبت کن.",
+                    'EXTRACTION_TOO_MANY_PHOTOS' => 'عکس‌های این پروژه برای یک استخراج بیش از '.config('karmandeman.ai.max_assets_per_run').' تاست؛ پروژه تازه‌ای با /new بساز.',
                     'POLICY_CONSENT_REQUIRED' => 'پیش از ادامه، شرایط و سیاست داده را با /start بپذیر.',
                     // The workspace lock refused it: erasure started after the webhook's check (FR-086).
                     'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => 'حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.',
                     default => 'پایان ورودی انجام نشد؛ دوباره /done را بفرست.',
                 })];
             }
+        }
+
+        // The photos went to an n8n run (ADR-032); its callback sends the next message.
+        if ($project->state === ProjectState::Extracting) {
+            return [new BotReply("ورودی پروژه «{$project->name}» بسته شد و محصولات از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود.")];
         }
 
         $active = $this->products->activeForProject($workspace, $project);
