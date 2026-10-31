@@ -55,6 +55,8 @@ final readonly class FinishTelegramBatchAction
                 return [new BotReply(match ($e->getMessage()) {
                     'PROJECT_HAS_NO_PRODUCTS' => "پروژه «{$project->name}» هنوز محصولی ندارد؛ اول با /product محصول ثبت کن.",
                     'POLICY_CONSENT_REQUIRED' => 'پیش از ادامه، شرایط و سیاست داده را با /start بپذیر.',
+                    // The workspace lock refused it: erasure started after the webhook's check (FR-086).
+                    'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => 'حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.',
                     default => 'پایان ورودی انجام نشد؛ دوباره /done را بفرست.',
                 })];
             }

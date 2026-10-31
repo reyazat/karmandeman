@@ -71,7 +71,10 @@ final readonly class ReviseTelegramProductAction
             return new BotReply('محصول یافت نشد.');
         } catch (DomainException $e) {
             return match ($e->getMessage()) {
-                'PROJECT_REOPEN_REQUIRED' => $this->reopenOffer($workspace, $product->project_id),
+                // An outdated card can never apply, so it must not invalidate the approved batch.
+                'PROJECT_REOPEN_REQUIRED' => $revision !== $product->current_revision
+                    ? new BotReply('این محصول پس از این پیام تغییر کرده است؛ به کارت نسخه تازه پاسخ بده.')
+                    : $this->reopenOffer($workspace, $product->project_id),
                 'PRODUCT_NOT_FOUND' => new BotReply('محصول یافت نشد.'),
                 'PRODUCT_REVISION_CONFLICT' => new BotReply('این محصول پس از این پیام تغییر کرده است؛ به کارت نسخه تازه پاسخ بده.'),
                 'PRODUCT_ARCHIVED' => new BotReply('این محصول رد شده است و اصلاح نمی‌شود.'),

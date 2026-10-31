@@ -39,6 +39,8 @@ final readonly class ApproveTelegramProductAction
                 'PROJECT_CANCELLED' => 'پروژه این محصول لغو شده است.',
                 'POLICY_CONSENT_REQUIRED' => 'پیش از تأیید، شرایط و سیاست داده را با /start بپذیر.',
                 // Never thrown: a rollback would also drop the button's acknowledgement.
+                // The workspace lock refused it: erasure started after the webhook's check (FR-086).
+                'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => 'حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.',
                 default => 'تأیید انجام نشد؛ دوباره دکمه را بزن.',
             };
         }

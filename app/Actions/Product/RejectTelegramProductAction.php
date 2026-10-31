@@ -32,6 +32,8 @@ final readonly class RejectTelegramProductAction
                 'PRODUCT_REVISION_CONFLICT' => 'این محصول پس از این پیام تغییر کرده است؛ نسخه تازه را بررسی کن.',
                 'PROJECT_STATE_CONFLICT' => 'پروژه این محصول دیگر در حال بررسی نیست و محصول از ربات رد نمی‌شود.',
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ادامه، شرایط و سیاست داده را با /start بپذیر.',
+                // The workspace lock refused it: erasure started after the webhook's check (FR-086).
+                'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => 'حساب در حال حذف است و تغییر تازه‌ای پذیرفته نمی‌شود.',
                 default => 'رد محصول انجام نشد؛ دوباره دکمه را بزن.',
             };
         }
