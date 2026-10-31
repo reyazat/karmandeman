@@ -40,18 +40,39 @@ final readonly class TelegramProductCard
         return '«'.$this->shown($payload['name']['value'] ?? '—').'» با '.count($payload['image_asset_ids'] ?? []).' عکس و '.$this->price($payload);
     }
 
+    /**
+     * A grouped question row (ADR-035): the price first, then the name as a
+     * short label without quote marks, so no name can pose as a price.
+     */
+    public function priceLine(ProductRevision $revision): string
+    {
+        return $this->price($revision->payload).' — '.$this->priceLabel($revision);
+    }
+
+    /** The name a grouped question row is told apart by. */
+    public function priceLabel(ProductRevision $revision): string
+    {
+        return mb_strimwidth(str_replace(['«', '»'], '"', $this->shown((string) ($revision->payload['name']['value'] ?? '—'))), 0, 60, '…');
+    }
+
     public function reply(Product $product, ProductRevision $revision, string $text): BotReply
     {
         $id = "{$product->public_id}:{$revision->revision}";
         $reject = ['text' => 'رد محصول', 'callback_data' => "product:reject:{$id}"];
+        [$suggested, $kept] = $this->review($revision);
         if ($this->normalizer->fieldsRequiringConfirmation($revision->payload) === []) {
-            return new BotReply($text.self::REPLY_HINT, [[
-                ['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$id}"],
-                $reject,
-            ]]);
+            // Gate A also approves what the model chose without a status, so it is shown here too.
+            if ($kept === []) {
+                return new BotReply($text.self::REPLY_HINT, [[['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$id}"], $reject]]);
+            }
+            $block = implode("\n", $kept);
+            if (! $this->fits($block)) {
+                return new BotReply($text."\n\nجزئیات این محصول برای نمایش در ربات بیش از حد طولانی‌اند و از ربات تأیید نمی‌شود.".self::REPLY_HINT, [[$reject]]);
+            }
+
+            return new BotReply($text."\n\nهمراه این محصول:\n".$block.self::REPLY_HINT, [[['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$id}"], $reject]]);
         }
 
-        [$suggested, $kept] = $this->review($revision);
         $buttons = [];
         if ($suggested !== []) {
             $block = implode("\n", [...$suggested, ...$kept]);

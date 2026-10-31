@@ -14,9 +14,9 @@ bot card with mandatory reopen of an approved batch, and the approved batch
 as a JSON file from the bot, batch cancel with /cancel, and the n8n
 extraction run contract (signed start and callback, strict output schema,
 cost caps, timeout; off by default and always off in production) with
-run-scoped signed photo links that strip metadata, and bot confirmation of
-suggested values that keeps their photo provenance (ADR-016 to ADR-034)
-with code and tests. These
+run-scoped signed photo links that strip metadata, bot confirmation of
+suggested values that keeps their photo provenance, and a grouped bot
+question for suggested prices (ADR-016 to ADR-035) with code and tests. These
 are partial foundations, not a completed MVP. A working AI provider and n8n
 workflow for product extraction,
 CSV/PDF/ZIP/catalogue exports, full wallet lifecycle and n8n workflows are

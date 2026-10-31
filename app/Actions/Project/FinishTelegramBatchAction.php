@@ -5,32 +5,27 @@ declare(strict_types=1);
 namespace App\Actions\Project;
 
 use App\Data\Telegram\BotReply;
-use App\Enums\ProductStatus;
 use App\Enums\ProjectState;
-use App\Models\Product;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
-use App\Services\Telegram\TelegramProductCard;
+use App\Services\Telegram\TelegramBatchReview;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 
 /**
  * `/done` in the bot (ADR-027): closes the input of the bot's current batch
- * (ADR-028), or shows it again once in review, with one card and
- * approve button per product still waiting for Gate A and, when none is, the
- * batch approval button for the version shown. Refusals are answered.
+ * (ADR-028), or shows it again once in review (TelegramBatchReview): a
+ * grouped price question, one card per product still waiting for Gate A or,
+ * when none is, the batch approval button for the version shown. Refusals are
+ * answered.
  */
 final readonly class FinishTelegramBatchAction
 {
-    private const MAX_CARDS = 10;
-
     public function __construct(
         private ProjectRepositoryInterface $projects,
-        private ProductRepositoryInterface $products,
         private FinishProjectInputAction $finish,
-        private TelegramProductCard $card,
+        private TelegramBatchReview $review,
     ) {}
 
     /**
@@ -71,33 +66,6 @@ final readonly class FinishTelegramBatchAction
             return [new BotReply("ورودی پروژه «{$project->name}» بسته شد و محصولات از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود.")];
         }
 
-        $active = $this->products->activeForProject($workspace, $project);
-        // Approved means its current revision is the approved one, as batch approval checks.
-        $pending = $active->reject(fn (Product $product): bool => $product->status === ProductStatus::Approved
-            && $product->approved_revision === $product->current_revision)->values();
-        if ($active->isEmpty()) {
-            return [new BotReply("پروژه «{$project->name}» محصول فعالی ندارد و تأیید نمی‌شود.")];
-        }
-        if ($pending->isEmpty()) {
-            return [new BotReply(
-                "ورودی پروژه «{$project->name}» بسته است و هر {$active->count()} محصول تأیید شده‌اند. برای ثبت نسخه نهایی پروژه را تأیید کن.",
-                [[['text' => 'تأیید پروژه', 'callback_data' => "project:approve:{$project->public_id}:{$project->version}"]]],
-            )];
-        }
-
-        $replies = [new BotReply(
-            "ورودی پروژه «{$project->name}» بسته است. {$pending->count()} از {$active->count()} محصول هنوز تأیید نشده‌اند"
-            .($pending->count() > self::MAX_CARDS ? '؛ ۱۰ مورد اول در زیر آمده‌اند' : '')
-            .'. پس از تأیید همه، دوباره /done را بفرست.',
-        )];
-        // Each button travels with the exact revision it approves (ADR-026).
-        foreach ($pending->take(self::MAX_CARDS) as $product) {
-            $revision = $this->products->revision($product, $product->current_revision);
-            if ($revision !== null) {
-                $replies[] = $this->card->reply($product, $revision, 'در انتظار تأیید: '.$this->card->summary($revision));
-            }
-        }
-
-        return $replies;
+        return $this->review->replies($workspace, $project);
     }
 }

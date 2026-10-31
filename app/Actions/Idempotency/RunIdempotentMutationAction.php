@@ -54,7 +54,7 @@ final readonly class RunIdempotentMutationAction
                 }
 
                 $class = match ($operation) {
-                    'project.create', 'project.finish_input', 'project.reopen', 'project.cancel' => Project::class,
+                    'project.create', 'project.finish_input', 'project.reopen', 'project.cancel', 'project.resolve_prices' => Project::class,
                     'project.approve_products' => ProjectSnapshot::class,
                     'project.attach_asset' => Asset::class,
                     'brand.update' => Brand::class,

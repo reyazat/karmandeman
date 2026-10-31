@@ -16,6 +16,7 @@ use App\Actions\Product\ConfirmTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Product\RejectTelegramProductAction;
 use App\Actions\Product\ReviseTelegramProductAction;
+use App\Actions\Project\AnswerTelegramPriceQuestionAction;
 use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CancelTelegramProjectAction;
 use App\Actions\Project\CreateProjectAction;
@@ -43,7 +44,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -64,6 +65,7 @@ final readonly class TelegramConversationService
         private SelectTelegramProjectAction $selectProject,
         private FinishTelegramBatchAction $finishBatch,
         private ApproveTelegramBatchAction $approveBatch,
+        private AnswerTelegramPriceQuestionAction $priceQuestion,
         private PrepareTelegramProjectCancellationAction $prepareCancel,
         private CancelTelegramProjectAction $cancelProject,
         private TelegramSubjectKey $subjects,
@@ -376,6 +378,13 @@ final readonly class TelegramConversationService
             return;
         }
         $workspace = $this->workspaceFor($user);
+        if (in_array($parts[1], ['prices', 'noprices', 'cards'], true)) {
+            foreach ($this->priceQuestion->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3], $parts[1]) as $reply) {
+                $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
+            }
+
+            return;
+        }
         if ($parts[1] === 'reopen') {
             foreach ($this->reopenProject->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]) as $reply) {
                 $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
