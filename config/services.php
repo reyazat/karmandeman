@@ -40,7 +40,10 @@ return [
         // A separate secret signs callbacks, so one leaked direction cannot forge the other.
         // Empty refuses every callback (ADR-032).
         'callback_secret' => env('N8N_CALLBACK_SECRET'),
-        // Where n8n posts results; defaults to this app's route.
+        // Where n8n reaches this app (internal network address preferred); defaults to APP_URL.
+        // Run callbacks and photo links are built on it (ADR-032, ADR-033).
+        'app_url' => env('N8N_APP_URL'),
+        // Full override of the callback address, if it differs from app_url.
         'callback_url' => env('N8N_CALLBACK_URL'),
     ],
 

@@ -49,6 +49,8 @@ x-app-common: &app-common
     N8N_WORKFLOW_AUTH_TOKEN: ${N8N_WORKFLOW_AUTH_TOKEN:?N8N_WORKFLOW_AUTH_TOKEN required}
     # Empty refuses every n8n callback; extraction is off in production (ADR-032).
     N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET:-}
+    # Internal address n8n uses for callbacks and photo links; empty uses APP_URL (ADR-033).
+    N8N_APP_URL: ${N8N_APP_URL:-}
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN required}
     TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?TELEGRAM_WEBHOOK_SECRET required}
     FILESYSTEM_DISK: s3

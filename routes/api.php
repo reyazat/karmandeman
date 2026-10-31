@@ -10,6 +10,7 @@ use App\Http\Controllers\API\V1\Project\ProjectController;
 use App\Http\Controllers\API\V1\Project\ProjectWorkflowController;
 use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
 use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
+use App\Http\Controllers\Webhooks\Internal\N8nRunAssetController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunCallbackController;
 use App\Http\Controllers\Webhooks\Telegram\TelegramWebhookController;
 use App\Http\Responses\ApiResponse;
@@ -22,6 +23,11 @@ Route::post('/webhooks/telegram', TelegramWebhookController::class)
 Route::post('/webhooks/internal/n8n/runs', N8nRunCallbackController::class)
     ->middleware(['n8n.callback', 'throttle:n8n-callback'])
     ->name('webhooks.n8n.runs');
+// One photo of an open run for n8n: the run-scoped signed link is the only credential (ADR-033).
+Route::get('/webhooks/internal/n8n/runs/{run}/assets/{asset}', N8nRunAssetController::class)
+    ->whereUuid(['run', 'asset'])
+    ->middleware('throttle:n8n-run-asset')
+    ->name('webhooks.n8n.run-assets');
 
 // API v1: thin controllers -> FormRequest -> Action -> Repository contract.
 Route::prefix('v1')->group(function (): void {

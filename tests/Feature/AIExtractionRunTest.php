@@ -9,14 +9,18 @@ use App\Actions\Project\DispatchExtractionRunAction;
 use App\Jobs\AI\DispatchProductExtraction;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AiWorkflowRun;
+use App\Models\Asset;
 use App\Models\Product;
 use App\Models\ProductRevision;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\AI\AIWorkflowService;
 use App\Services\AI\ProductExtractionOutputValidator;
+use App\Services\AI\RunAssetUrlSigner;
 use App\Services\AI\WorkflowSignature;
+use App\Services\Storage\PrivateAssetStore;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -231,6 +235,7 @@ class AIExtractionRunTest extends TestCase
         $envelope = json_decode($request->body(), true);
         $schema = json_decode((string) file_get_contents(base_path('n8n/schemas/product-extraction.input.v1.json')), true);
         $this->assertEqualsCanonicalizing($schema['required'], array_keys($envelope));
+        $this->assertEqualsCanonicalizing($schema['properties']['assets']['items']['required'], array_keys($envelope['assets'][0]));
         $this->assertSame($run->public_id, $envelope['run_id']);
         $this->assertSame($project, $envelope['project_id']);
         $this->assertSame($photos, array_column($envelope['assets'], 'id'));
@@ -541,6 +546,91 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame('EXTRACTION_DISABLED', $run->fresh()->error_code);
         $this->assertSame('collecting_input', $this->state($project));
         Http::assertNotSent(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
+    }
+
+    /** @return list<array<string, mixed>> the assets of the envelope the run was started with */
+    private function startedAssets(AiWorkflowRun $run): array
+    {
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        $sent = Http::recorded(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
+
+        return json_decode($sent[count($sent) - 1][0]->body(), true)['assets'];
+    }
+
+    public function test_n8n_fetches_each_run_photo_without_metadata_through_its_signed_link(): void
+    {
+        [, $photos, $run] = $this->extracting(930);
+        $assets = $this->startedAssets($run);
+        $this->assertSame($photos, array_column($assets, 'id'));
+
+        $response = $this->get($assets[0]['download_url'])->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        $bytes = $response->getContent();
+        // The stored fixture carries a comment segment; the copy sent to n8n does not.
+        $this->assertStringNotContainsString('seed 930', (string) $bytes);
+        $this->assertSame([40, 30], array_slice((array) getimagesizefromstring((string) $bytes), 0, 2));
+        $this->get($assets[1]['download_url'])->assertOk();
+    }
+
+    public function test_a_photo_link_works_only_for_its_run_photo_and_until_the_run_ends(): void
+    {
+        [, $photos, $run] = $this->extracting(931);
+        [$first, $second] = $this->startedAssets($run);
+        $forbidden = fn (string $url) => $this->get($url)->assertStatus(403)->assertJsonPath('error.code', 'RUN_ASSET_FORBIDDEN');
+        parse_str((string) parse_url($first['download_url'], PHP_URL_QUERY), $query);
+
+        $forbidden(str_replace($query['signature'], str_repeat('0', 64), $first['download_url']));
+        $forbidden(str_replace($photos[0], $photos[1], $first['download_url']));
+        $forbidden(str_replace('expires='.$query['expires'], 'expires='.($query['expires'] + 3600), $first['download_url']));
+        $forbidden(strtok($first['download_url'], '?'));
+        $forbidden(str_replace('signature=', 'signature[]=', $first['download_url']));
+        $forbidden(str_replace('expires=', 'expires[]=', $first['download_url']));
+        // A link signed with the right key for a photo the run was not given.
+        $this->seller(932);
+        $foreign = $this->photo($this->project(), 77);
+        $forbidden(app(RunAssetUrlSigner::class)->url($run, $foreign));
+
+        // Once the run has its result, no photo is served any more.
+        $this->sendCallback($this->runResult($run, []))->assertOk();
+        $forbidden($first['download_url']);
+        $forbidden($second['download_url']);
+    }
+
+    public function test_photo_links_stop_at_the_deadline_and_on_erasure(): void
+    {
+        [, , $run] = $this->extracting(933);
+        [$asset] = $this->startedAssets($run);
+        DB::table('workspaces')->where('id', $run->workspace_id)->update(['status' => 'deletion_pending']);
+        $this->get($asset['download_url'])->assertStatus(403);
+        // With the key already gone mid-purge, the answer is still 403, without asking the key service.
+        $keys = DB::table('workspace_data_keys')->where('workspace_id', $run->workspace_id)->get()->map(fn ($row): array => (array) $row)->all();
+        DB::table('workspace_data_keys')->where('workspace_id', $run->workspace_id)->delete();
+        $this->get($asset['download_url'])->assertStatus(403)->assertJsonPath('error.code', 'RUN_ASSET_FORBIDDEN');
+        DB::table('workspace_data_keys')->insert($keys);
+        DB::table('workspaces')->where('id', $run->workspace_id)->update(['status' => 'active']);
+        $this->get($asset['download_url'])->assertOk();
+
+        $this->travel(16)->minutes();
+        $this->get($asset['download_url'])->assertStatus(403);
+    }
+
+    public function test_links_use_the_internal_app_address_and_unparseable_photos_are_not_sent(): void
+    {
+        config(['services.n8n.app_url' => 'http://app.internal:8080/']);
+        [, , $run] = $this->extracting(934);
+        [$asset] = $this->startedAssets($run);
+        $this->assertStringStartsWith("http://app.internal:8080/api/webhooks/internal/n8n/runs/{$run->public_id}/assets/{$asset['id']}?expires=", $asset['download_url']);
+        $envelope = json_decode(Http::recorded()->last()[0]->body(), true);
+        $this->assertSame('http://app.internal:8080/api/webhooks/internal/n8n/runs', $envelope['callback_url']);
+
+        // A stored object the stripper cannot parse is refused, never sent as it is.
+        $stored = Asset::query()->where('public_id', $asset['id'])->sole();
+        $key = app(PrivateAssetStore::class)->put(Workspace::query()->findOrFail($stored->workspace_id), $stored->public_id, "\xFF\xD8\x00not-a-jpeg");
+        DB::table('assets')->where('id', $stored->id)->update(['storage_key' => $key]);
+        $path = (string) parse_url($asset['download_url'], PHP_URL_PATH).'?'.parse_url($asset['download_url'], PHP_URL_QUERY);
+        $this->get($path)->assertStatus(422)->assertJsonPath('error.code', 'ASSET_METADATA_UNPARSEABLE');
     }
 
     public function test_the_output_schema_file_matches_the_validator(): void

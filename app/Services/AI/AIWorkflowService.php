@@ -11,13 +11,14 @@ use App\Models\Project;
 /**
  * The n8n side of a product extraction run (ADR-032): whether runs may
  * start, the versioned input envelope and the workflow call. Laravel keeps
- * all state; the envelope names the batch photos by public id only.
+ * all state; the envelope names the batch photos by public id and a signed
+ * link to each, never their bytes.
  */
 final readonly class AIWorkflowService
 {
     public const INPUT_SCHEMA_VERSION = 'product-extraction.input.v1';
 
-    public function __construct(private N8nWorkflowClient $client) {}
+    public function __construct(private N8nWorkflowClient $client, private RunAssetUrlSigner $urls) {}
 
     /**
      * Off unless configured, and always off in production: no AI provider is
@@ -47,6 +48,8 @@ final readonly class AIWorkflowService
                 'size_bytes' => $asset->size_bytes,
                 'width' => $asset->width,
                 'height' => $asset->height,
+                // Signed for this run only; the bytes come without metadata (ADR-033).
+                'download_url' => $this->urls->url($run, $asset->public_id),
             ], $assets),
             'limits' => [
                 'max_candidates' => (int) config('karmandeman.ai.max_candidates_per_run'),
@@ -55,7 +58,7 @@ final readonly class AIWorkflowService
                 'max_output_tokens' => (int) config('karmandeman.ai.max_output_tokens'),
             ],
             'deadline_at' => $run->deadline_at->toIso8601String(),
-            'callback_url' => (string) (config('services.n8n.callback_url') ?: route('webhooks.n8n.runs')),
+            'callback_url' => (string) (config('services.n8n.callback_url') ?: RunAssetUrlSigner::baseUrl().route('webhooks.n8n.runs', [], false)),
         ];
     }
 

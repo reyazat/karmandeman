@@ -41,6 +41,12 @@ class AppServiceProvider extends ServiceProvider
         // Each upload is held and encrypted in memory (ADR-022).
         // Signature runs first, so this bounds a misbehaving n8n, not anonymous traffic (ADR-032).
         RateLimiter::for('n8n-callback', fn (Request $request) => Limit::perMinute(120)->by('n8n'));
+        // Per run: a run has at most 20 photos, so this leaves room for retries only (ADR-033).
+        // The IP cap bounds anonymous guessing, which gets a 403 after one indexed lookup.
+        RateLimiter::for('n8n-run-asset', fn (Request $request) => [
+            Limit::perMinute(60)->by('n8n-run:'.strtolower((string) $request->route('run'))),
+            Limit::perMinute(600)->by('n8n-run-ip:'.$request->ip()),
+        ]);
         RateLimiter::for('asset-upload', fn (Request $request) => Limit::perMinute((int) config('karmandeman.assets.uploads_per_minute'))->by((string) $request->user()->id));
     }
 }
