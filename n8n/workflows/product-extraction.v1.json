@@ -1,0 +1,426 @@
+{
+  "name": "km-product-extraction-v1",
+  "nodes": [
+    {
+      "id": "9d77b193-d55e-5c3b-a401-478f6f2ad423",
+      "name": "Start run",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "69333fc1-1614-57f3-b7bb-53b0aec9ab28",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "km-product-extraction-v1",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      }
+    },
+    {
+      "id": "889a19ee-6bf2-5640-9207-2ba8008765fb",
+      "name": "Read request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The HMAC covers the exact bytes Laravel sent (ADR-032), so the raw body is read, not the parsed JSON.\nconst item = $input.first();\nconst headers = item.json.headers || {};\nlet raw = '';\nif (item.binary && item.binary.data) {\n  raw = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\n}\n\nreturn [{ json: {\n  raw,\n  timestamp: String(headers['x-km-timestamp'] || ''),\n  signature: String(headers['x-km-signature'] || ''),\n} }];\n"
+      }
+    },
+    {
+      "id": "b992a7ac-4e11-5dc9-9b99-01b398500e0a",
+      "name": "Sign request",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        640,
+        300
+      ],
+      "credentials": {
+        "crypto": {
+          "id": "kmN8nStartToken",
+          "name": "KM extraction start token"
+        }
+      },
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.timestamp + '.' + $json.raw }}",
+        "dataPropertyName": "expected",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "89e26a2e-52c2-58a2-95d0-3cb4ae4d88ed",
+      "name": "Check envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Accept only a start signed by Laravel within 300 s, in the exact input.v1 shape, with\n// enough time left, whose photo and callback links all point at the Laravel address below (ADR-036).\n// The reason stays in n8n; the caller only ever sees 401.\n// Set at import: the address n8n reaches Laravel at (N8N_APP_URL). Until then every start is refused.\nconst BASE = '__KM_APP_BASE_URL__';\nconst TOLERANCE = 300;\nconst MIN_REMAINING_MS = 120000;\nconst MAX_ASSETS = 20;\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;\nconst MIMES = ['image/jpeg', 'image/png', 'image/webp'];\nconst ROOT_KEYS = ['assets', 'attempt', 'callback_url', 'deadline_at', 'limits', 'locale', 'project_id', 'run_id', 'schema_version', 'workflow_version'];\nconst ASSET_KEYS = ['download_url', 'height', 'id', 'mime', 'size_bytes', 'width'];\nconst LIMIT_KEYS = ['max_candidates', 'max_input_tokens', 'max_model_requests', 'max_output_tokens'];\nconst reject = (reason) => [{ json: { valid: false, reason } }];\nconst isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);\nconst hasKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys);\nconst isId = (value) => typeof value === 'string' && UUID.test(value);\nconst isCount = (value) => Number.isInteger(value) && value >= 0;\n// Constant time for equal lengths; the crypto module is not available to Code nodes.\nconst sameText = (a, b) => {\n  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\n// https, or plain http only to a dotless internal host such as a Docker service name.\nif (!/^(https:\\/\\/[A-Za-z0-9.-]+(:\\d{1,5})?|http:\\/\\/[A-Za-z0-9_-]+(:\\d{1,5})?)$/.test(BASE)) {\n  return reject('NOT_CONFIGURED');\n}\nconst request = $('Read request').first().json;\nconst expected = String($input.first().json.expected || '');\nconst now = Math.floor(Date.now() / 1000);\nif (!/^\\d{1,12}$/.test(request.timestamp) || Math.abs(now - Number(request.timestamp)) > TOLERANCE) {\n  return reject('STALE_TIMESTAMP');\n}\nif (!/^[0-9a-f]{64}$/.test(expected) || !sameText(request.signature, 'v1=' + expected)) {\n  return reject('BAD_SIGNATURE');\n}\n\nlet e;\ntry {\n  e = JSON.parse(request.raw);\n} catch (error) {\n  return reject('BAD_JSON');\n}\nif (!hasKeys(e, ROOT_KEYS) || e.schema_version !== 'product-extraction.input.v1' || e.workflow_version !== 'product-extraction.v1'\n  || !isId(e.run_id) || !isId(e.project_id) || !Number.isInteger(e.attempt) || e.attempt < 1 || e.locale !== 'fa-IR') {\n  return reject('BAD_ENVELOPE');\n}\nif (!hasKeys(e.limits, LIMIT_KEYS) || !LIMIT_KEYS.every((key) => isCount(e.limits[key]))) {\n  return reject('BAD_LIMITS');\n}\nconst deadline = typeof e.deadline_at === 'string' ? Date.parse(e.deadline_at) : NaN;\nif (!Number.isFinite(deadline) || deadline - Date.now() < MIN_REMAINING_MS) {\n  return reject('PAST_DEADLINE');\n}\nif (e.callback_url !== `${BASE}/api/webhooks/internal/n8n/runs`) {\n  return reject('BAD_CALLBACK_URL');\n}\nif (!Array.isArray(e.assets) || e.assets.length < 1 || e.assets.length > MAX_ASSETS) {\n  return reject('BAD_ASSETS');\n}\nconst seen = new Set();\nfor (const asset of e.assets) {\n  if (!hasKeys(asset, ASSET_KEYS) || !isId(asset.id) || seen.has(asset.id) || !MIMES.includes(asset.mime)\n    || typeof asset.download_url !== 'string'\n    || !asset.download_url.startsWith(`${BASE}/api/webhooks/internal/n8n/runs/${e.run_id}/assets/${asset.id}?`)) {\n    return reject('BAD_ASSET');\n  }\n  seen.add(asset.id);\n}\n\nreturn [{ json: { valid: true, envelope: e } }];\n"
+      }
+    },
+    {
+      "id": "55543876-acea-5c86-b25d-2d8488618082",
+      "name": "Valid start?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ba86a5c6-44e8-5281-9e66-b29bd7ada871",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1d9ce060-d199-5c27-9481-de7d081823fc",
+      "name": "Accept",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"accepted\": true } }}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "80e1066c-4e18-533c-8206-e3181d6d5cb5",
+      "name": "Reject",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        420
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"accepted\": false } }}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "a3328ebb-5963-5992-9ee9-8eeb2e96e58e",
+      "name": "List photos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// One item per run photo, in the run's order.\nconst envelope = $('Check envelope').first().json.envelope;\n\nreturn envelope.assets.map((asset) => ({ json: { id: asset.id, mime: asset.mime, url: asset.download_url } }));\n"
+      }
+    },
+    {
+      "id": "4977a5d4-9252-5d27-b331-47822f0e652e",
+      "name": "Download photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "photo"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "d64b77ca-d607-5345-821b-680ce8e430dd",
+      "name": "Model step (fixture)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// MODEL STEP (fixture). No AI provider is approved, so this node calls no model and\n// sends no photo anywhere: it proposes one clearly labelled test product per photo (ADR-036).\n// Replace only this node when a provider is approved. Contract:\n//   input:  one item per run photo, in run order, binary `photo` (metadata already stripped\n//           by Laravel, ADR-033); a failed download carries `json.error` instead.\n//   output: one item { status, error_code, candidates, usage } as in product-extraction.output.v1,\n//           with at most limits.max_candidates candidates and usage within the limits.\nconst envelope = $('Check envelope').first().json.envelope;\nconst photos = $input.all();\nconst usage = { model_requests: 0, input_tokens: 0, output_tokens: 0, provider: 'fixture', model: 'fixture-1' };\nconst failed = (code) => [{ json: { status: 'failed', error_code: code, candidates: [], usage } }];\n// Work after the deadline is discarded by Laravel; stop before spending any.\nif (Date.now() >= Date.parse(envelope.deadline_at)) {\n  return failed('DEADLINE_PASSED');\n}\nif (photos.length !== envelope.assets.length) {\n  return failed('ASSET_FETCH_FAILED');\n}\nconst fetched = photos.every((photo, index) => !photo.json.error && photo.binary && photo.binary.photo\n  && String(photo.binary.photo.mimeType || '').split(';')[0].trim() === envelope.assets[index].mime);\nif (!fetched) {\n  return failed('ASSET_FETCH_FAILED');\n}\nconst candidates = envelope.assets.slice(0, envelope.limits.max_candidates).map((asset, index) => ({\n  name: `نمونه آزمایشی ${index + 1}`,\n  sku: null,\n  description_fa: null,\n  price: null,\n  attributes: [],\n  category_path: null,\n  source_asset_ids: [asset.id],\n}));\n\nreturn [{ json: { status: 'succeeded', error_code: null, candidates, usage } }];\n"
+      }
+    },
+    {
+      "id": "b19597bd-dccb-547d-94a8-b095c111fc7a",
+      "name": "Build callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The callback body as one string, so the signature covers exactly what is sent (ADR-032).\n// A malformed model step becomes a reported failure that still carries its token counts,\n// so Laravel records the cost; Laravel validates everything again and enforces the caps.\nconst envelope = $('Check envelope').first().json.envelope;\nconst step = $input.first().json || {};\nconst usage = step.usage || {};\nconst count = (value) => (Number.isFinite(value) && value >= 0 ? Math.ceil(value) : 0);\nconst countsOk = ['model_requests', 'input_tokens', 'output_tokens'].every((key) => Number.isInteger(usage[key]) && usage[key] >= 0);\n// The same patterns Laravel checks (product-extraction.output.v1).\nconst providerOk = typeof usage.provider === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(usage.provider);\nconst modelOk = typeof usage.model === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:\\/-]{0,63}$/.test(usage.model);\nconst failed = (code) => ({ status: 'failed', error_code: code, candidates: [] });\nlet outcome;\nif (!countsOk || !providerOk || !modelOk) {\n  outcome = failed('MODEL_OUTPUT_INVALID');\n} else if (step.status === 'failed') {\n  outcome = failed(typeof step.error_code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(step.error_code) ? step.error_code : 'MODEL_FAILED');\n} else if (step.status !== 'succeeded' || !Array.isArray(step.candidates) || step.candidates.length > envelope.limits.max_candidates) {\n  outcome = failed('MODEL_OUTPUT_INVALID');\n} else {\n  outcome = { status: 'succeeded', error_code: null, candidates: step.candidates };\n}\nconst result = {\n  schema_version: 'product-extraction.output.v1',\n  run_id: envelope.run_id,\n  status: outcome.status,\n  error_code: outcome.error_code,\n  usage: {\n    model_requests: count(usage.model_requests),\n    input_tokens: count(usage.input_tokens),\n    output_tokens: count(usage.output_tokens),\n    provider: providerOk ? usage.provider : 'unknown',\n    model: modelOk ? usage.model : 'unknown',\n  },\n  candidates: outcome.candidates,\n};\n\nreturn [{ json: { body: JSON.stringify(result), timestamp: String(Math.floor(Date.now() / 1000)), url: envelope.callback_url } }];\n"
+      }
+    },
+    {
+      "id": "f93f701d-ace1-57ba-86ff-87bdaba5df6f",
+      "name": "Sign callback",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        200
+      ],
+      "credentials": {
+        "crypto": {
+          "id": "kmN8nCallbackKey",
+          "name": "KM extraction callback secret"
+        }
+      },
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.timestamp + '.' + $json.body }}",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "e0f1fe08-2b5b-5f92-a661-f49a31f7c82b",
+      "name": "Send callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-KM-Timestamp",
+              "value": "={{ $json.timestamp }}"
+            },
+            {
+              "name": "X-KM-Signature",
+              "value": "={{ 'v1=' + $json.signature }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "Read request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read request": {
+      "main": [
+        [
+          {
+            "node": "Sign request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign request": {
+      "main": [
+        [
+          {
+            "node": "Check envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check envelope": {
+      "main": [
+        [
+          {
+            "node": "Valid start?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid start?": {
+      "main": [
+        [
+          {
+            "node": "Accept",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept": {
+      "main": [
+        [
+          {
+            "node": "List photos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List photos": {
+      "main": [
+        [
+          {
+            "node": "Download photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download photo": {
+      "main": [
+        [
+          {
+            "node": "Model step (fixture)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Model step (fixture)": {
+      "main": [
+        [
+          {
+            "node": "Build callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build callback": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign callback": {
+      "main": [
+        [
+          {
+            "node": "Send callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 840,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

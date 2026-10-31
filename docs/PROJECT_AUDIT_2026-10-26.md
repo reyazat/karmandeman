@@ -646,6 +646,21 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - Pint و PHPStan بدون خطا. این برش migration ندارد.
 - زمان پاسخ گروهی ۲۰ ردیفی روی سرور واقعی، ربات زنده، n8n واقعی و provider آزموده نشده‌اند.
 
+### برش پنجم گام ۴: workflow n8n با مدل fixture (۳۱ اکتبر ۲۰۲۶)
+
+[ADR-036](adr/ADR-036-n8n-extraction-workflow-fixture.md). به تصمیم مالک در ۳۱ اکتبر، workflow کامل با مرحله مدل خنثی ساخته شد، چون provider هنوز انتخاب نشده است. گره fixture هیچ مدلی صدا نمی‌زند و عکسی بیرون نمی‌فرستد. secretهای HMAC در credential رمزشده n8n هستند و workflow به env دسترسی ندارد.
+
+شواهد:
+- اجرای سرتاسری روی n8n 2.44.6 موقت محلی در شبکه داخلی بدون اینترنت: شروع درست ۲۰۲ با گرفتن هر دو عکس و callback امضاشده؛ timestamp کهنه، secret غلط و callback بیگانه ۴۰۱ بدون درخواست بیرونی؛ شکست دانلود callback `failed`. هر دو callback با `WorkflowSignature` و `ProductExtractionOutputValidator` خود Laravel پذیرفته شدند.
+- vitest `n8n/tests/product-extraction.workflow.spec.ts`: **۳۲ پاس** روی JavaScript همان گره‌ها.
+- PHPUnit `N8nExtractionWorkflowTest`: ۵ مورد ساختاری.
+- PostgreSQL موقت با OpenBao: **۳۲۱ تست / ۴۱۸۳ assertion**. SQLite: **۲۹۷ پاس / ۲۴ skip**. Pint و PHPStan بدون خطا.
+- import غیرفعال روی `ai.smartystudio.co.uk` (id `wORnzRbqwm2ITeVg`) با نشانی placeholder و بدون credential. پس تا تنظیم دستی هر شروع رد می‌شود.
+
+بازبین مستقل یک P1 (باز کردن env کل محیط n8n، شامل کلید رمزنگاری، را به همه workflowها می‌داد)، یک P2 (تست ساختاری جهش‌های خطرناک را نمی‌گرفت) و چند P3 یافت. همه جز چهار مورد ثبت‌شده در ADR-036 با آزمون اصلاح شدند.
+
+آزموده نشده: اجرا روی instance واقعی، Laravel واقعی، ربات زنده و provider.
+
 ### تعارض‌های سندی ثبت‌شده (۲۹ اکتبر ۲۰۲۶)
 
 این موارد تصمیم اجرایی نیستند و بی‌صدا اجرا نمی‌شوند:
