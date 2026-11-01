@@ -3,6 +3,12 @@ name: Foundation checks
 on:
   push:
   pull_request:
+  # composer/npm audit read a live advisory database, so an unchanged lockfile
+  # can start failing at any time. A weekly run surfaces new advisories before
+  # they block an unrelated feature push.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,7 +43,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ''
       TELEGRAM_WEBHOOK_SECRET: ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
@@ -60,8 +66,8 @@ jobs:
   frontend-foundation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
@@ -78,7 +84,7 @@ jobs:
     needs: [backend, frontend-foundation]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build --target web --file deploy/Dockerfile --tag karmandeman:ci-web .
       - run: docker build --target app --file deploy/Dockerfile --tag karmandeman:ci-app .
       - run: docker run --rm --network none --user www-data karmandeman:ci-app composer check-platform-reqs --no-dev
