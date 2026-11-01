@@ -72,6 +72,12 @@ The versioned runbook remains the release policy; the files here are examples.
 
 ## Local verification and staging gate
 
+Before any deploy, run `deploy/preflight-env.sh .env.production` against the
+real env file. Features keep adding required Compose keys; the script names
+missing keys, `REPLACE_` placeholders and n8n URLs that point at the bundled
+service while its profile is off. It never prints values. CI runs it against
+`.env.production.example` with `--allow-placeholders`.
+
 `docker compose --env-file .env.production.example -f
 compose.prod.reference.yaml config --quiet` checks the template syntax with
 placeholders; it does not start containers, verify credentials or validate the

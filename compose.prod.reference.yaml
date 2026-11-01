@@ -27,6 +27,8 @@ x-app-common: &app-common
     REDIS_PORT: "6379"
     REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     REDIS_CLIENT: phpredis
+    # Workflow webhook base (ADR-032). The default only resolves with the
+    # bundled-n8n profile; set it to the standalone instance otherwise.
     N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
     KM_GIFT_CREDITS: ${KM_GIFT_CREDITS:-0}
     # Workspace keys (ADR-013). One shared token for now: the scheduler purge needs
