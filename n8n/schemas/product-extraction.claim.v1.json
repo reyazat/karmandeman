@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://karmandeman.invalid/schemas/product-extraction.claim.v1.json",
+  "title": "Claim of a product extraction run by one n8n execution (ADR-038)",
+  "description": "Sent by n8n after it accepted a start and before it reads a photo or calls the model, signed like the callback. Laravel answers 200 only to the first execution (and again to the same one); n8n stops on any other answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "execution_id"],
+  "properties": {
+    "schema_version": { "const": "product-extraction.claim.v1" },
+    "run_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "execution_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }
+  }
+}

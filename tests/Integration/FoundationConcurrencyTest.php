@@ -18,6 +18,7 @@ use App\Actions\Product\ReviseProductDraftAction;
 use App\Actions\Project\ApproveProjectProductsAction;
 use App\Actions\Project\AttachProjectAssetAction;
 use App\Actions\Project\CancelProjectAction;
+use App\Actions\Project\ClaimAIWorkflowRunAction;
 use App\Actions\Project\CompleteAIWorkflowRunAction;
 use App\Actions\Project\CreateApiProjectAction;
 use App\Actions\Project\FinishProjectInputAction;
@@ -405,6 +406,28 @@ final class FoundationConcurrencyTest extends TestCase
             $this->assertDatabaseCount('products', 0);
             $this->assertSame('cancelled', $run->fresh()->status->value);
         }
+    }
+
+    public function test_parallel_claims_of_one_run_give_it_to_exactly_one_execution(): void
+    {
+        [, , , $run] = $this->extractingBatch(91303);
+
+        $results = $this->concurrently(function (int $i) use ($run): string {
+            try {
+                return app(ClaimAIWorkflowRunAction::class)->execute([
+                    'schema_version' => ClaimAIWorkflowRunAction::SCHEMA_VERSION, 'run_id' => $run->public_id, 'execution_id' => "exec-{$i}",
+                ]);
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+
+        // Only one execution reads the photos and pays for the model (ADR-038).
+        $this->assertSame(1, count(array_keys($results, ClaimAIWorkflowRunAction::CLAIMED, true)));
+        $this->assertSame(5, count(array_keys($results, ClaimAIWorkflowRunAction::RUN_ALREADY_CLAIMED, true)));
+        $winner = 'exec-'.array_search(ClaimAIWorkflowRunAction::CLAIMED, $results, true);
+        $this->assertSame($winner, $run->fresh()->claimed_by_execution);
+        $this->assertSame('dispatched', $run->fresh()->status->value);
     }
 
     public function test_parallel_token_retries_issue_one_token(): void

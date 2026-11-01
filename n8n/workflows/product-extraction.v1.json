@@ -70,7 +70,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Accept only a start signed by Laravel within 300 s, in the exact input.v1 shape, with\n// enough time left, whose photo and callback links all point at the Laravel address below (ADR-036).\n// The reason stays in n8n; the caller only ever sees 401.\n// Set at import: the address n8n reaches Laravel at (N8N_APP_URL). Until then every start is refused.\nconst BASE = '__KM_APP_BASE_URL__';\nconst TOLERANCE = 300;\nconst MIN_REMAINING_MS = 120000;\nconst MAX_ASSETS = 20;\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;\nconst MIMES = ['image/jpeg', 'image/png', 'image/webp'];\nconst ROOT_KEYS = ['assets', 'attempt', 'callback_url', 'deadline_at', 'limits', 'locale', 'project_id', 'run_id', 'schema_version', 'workflow_version'];\nconst ASSET_KEYS = ['download_url', 'height', 'id', 'mime', 'size_bytes', 'width'];\nconst LIMIT_KEYS = ['max_candidates', 'max_input_tokens', 'max_model_requests', 'max_output_tokens'];\nconst reject = (reason) => [{ json: { valid: false, reason } }];\nconst isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);\nconst hasKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys);\nconst isId = (value) => typeof value === 'string' && UUID.test(value);\nconst isCount = (value) => Number.isInteger(value) && value >= 0;\n// Constant time for equal lengths; the crypto module is not available to Code nodes.\nconst sameText = (a, b) => {\n  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\n// https, or plain http only to a dotless internal host such as a Docker service name.\nif (!/^(https:\\/\\/[A-Za-z0-9.-]+(:\\d{1,5})?|http:\\/\\/[A-Za-z0-9_-]+(:\\d{1,5})?)$/.test(BASE)) {\n  return reject('NOT_CONFIGURED');\n}\nconst request = $('Read request').first().json;\nconst expected = String($input.first().json.expected || '');\nconst now = Math.floor(Date.now() / 1000);\nif (!/^\\d{1,12}$/.test(request.timestamp) || Math.abs(now - Number(request.timestamp)) > TOLERANCE) {\n  return reject('STALE_TIMESTAMP');\n}\nif (!/^[0-9a-f]{64}$/.test(expected) || !sameText(request.signature, 'v1=' + expected)) {\n  return reject('BAD_SIGNATURE');\n}\n\nlet e;\ntry {\n  e = JSON.parse(request.raw);\n} catch (error) {\n  return reject('BAD_JSON');\n}\nif (!hasKeys(e, ROOT_KEYS) || e.schema_version !== 'product-extraction.input.v1' || e.workflow_version !== 'product-extraction.v1'\n  || !isId(e.run_id) || !isId(e.project_id) || !Number.isInteger(e.attempt) || e.attempt < 1 || e.locale !== 'fa-IR') {\n  return reject('BAD_ENVELOPE');\n}\nif (!hasKeys(e.limits, LIMIT_KEYS) || !LIMIT_KEYS.every((key) => isCount(e.limits[key]))) {\n  return reject('BAD_LIMITS');\n}\nconst deadline = typeof e.deadline_at === 'string' ? Date.parse(e.deadline_at) : NaN;\nif (!Number.isFinite(deadline) || deadline - Date.now() < MIN_REMAINING_MS) {\n  return reject('PAST_DEADLINE');\n}\nif (e.callback_url !== `${BASE}/api/webhooks/internal/n8n/runs`) {\n  return reject('BAD_CALLBACK_URL');\n}\nif (!Array.isArray(e.assets) || e.assets.length < 1 || e.assets.length > MAX_ASSETS) {\n  return reject('BAD_ASSETS');\n}\nconst seen = new Set();\nfor (const asset of e.assets) {\n  if (!hasKeys(asset, ASSET_KEYS) || !isId(asset.id) || seen.has(asset.id) || !MIMES.includes(asset.mime)\n    || typeof asset.download_url !== 'string'\n    || !asset.download_url.startsWith(`${BASE}/api/webhooks/internal/n8n/runs/${e.run_id}/assets/${asset.id}?`)) {\n    return reject('BAD_ASSET');\n  }\n  seen.add(asset.id);\n}\n\nreturn [{ json: { valid: true, envelope: e } }];\n"
+        "jsCode": "// Accept only a start signed by Laravel within 300 s, in the exact input.v1 shape, with\n// enough time left, whose photo and callback links all point at the Laravel address below (ADR-036).\n// The reason stays in n8n; the caller only ever sees 401.\n// Set at import: the address n8n reaches Laravel at (N8N_APP_URL). Until then every start is refused.\nconst BASE = '__KM_APP_BASE_URL__';\nconst TOLERANCE = 300;\nconst MIN_REMAINING_MS = 300000; // as the claim requires (ADR-038)\nconst MAX_ASSETS = 20;\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;\nconst MIMES = ['image/jpeg', 'image/png', 'image/webp'];\nconst ROOT_KEYS = ['assets', 'attempt', 'callback_url', 'deadline_at', 'limits', 'locale', 'project_id', 'run_id', 'schema_version', 'workflow_version'];\nconst ASSET_KEYS = ['download_url', 'height', 'id', 'mime', 'size_bytes', 'width'];\nconst LIMIT_KEYS = ['max_candidates', 'max_input_tokens', 'max_model_requests', 'max_output_tokens'];\nconst reject = (reason) => [{ json: { valid: false, reason } }];\nconst isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);\nconst hasKeys = (value, keys) => isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys);\nconst isId = (value) => typeof value === 'string' && UUID.test(value);\nconst isCount = (value) => Number.isInteger(value) && value >= 0;\n// Constant time for equal lengths; the crypto module is not available to Code nodes.\nconst sameText = (a, b) => {\n  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n};\n\n// https, or plain http only to a dotless internal host such as a Docker service name.\nif (!/^(https:\\/\\/[A-Za-z0-9.-]+(:\\d{1,5})?|http:\\/\\/[A-Za-z0-9_-]+(:\\d{1,5})?)$/.test(BASE)) {\n  return reject('NOT_CONFIGURED');\n}\nconst request = $('Read request').first().json;\nconst expected = String($input.first().json.expected || '');\nconst now = Math.floor(Date.now() / 1000);\nif (!/^\\d{1,12}$/.test(request.timestamp) || Math.abs(now - Number(request.timestamp)) > TOLERANCE) {\n  return reject('STALE_TIMESTAMP');\n}\nif (!/^[0-9a-f]{64}$/.test(expected) || !sameText(request.signature, 'v1=' + expected)) {\n  return reject('BAD_SIGNATURE');\n}\n\nlet e;\ntry {\n  e = JSON.parse(request.raw);\n} catch (error) {\n  return reject('BAD_JSON');\n}\nif (!hasKeys(e, ROOT_KEYS) || e.schema_version !== 'product-extraction.input.v1' || e.workflow_version !== 'product-extraction.v1'\n  || !isId(e.run_id) || !isId(e.project_id) || !Number.isInteger(e.attempt) || e.attempt < 1 || e.locale !== 'fa-IR') {\n  return reject('BAD_ENVELOPE');\n}\nif (!hasKeys(e.limits, LIMIT_KEYS) || !LIMIT_KEYS.every((key) => isCount(e.limits[key]))) {\n  return reject('BAD_LIMITS');\n}\nconst deadline = typeof e.deadline_at === 'string' ? Date.parse(e.deadline_at) : NaN;\nif (!Number.isFinite(deadline) || deadline - Date.now() < MIN_REMAINING_MS) {\n  return reject('PAST_DEADLINE');\n}\nif (e.callback_url !== `${BASE}/api/webhooks/internal/n8n/runs`) {\n  return reject('BAD_CALLBACK_URL');\n}\nif (!Array.isArray(e.assets) || e.assets.length < 1 || e.assets.length > MAX_ASSETS) {\n  return reject('BAD_ASSETS');\n}\nconst seen = new Set();\nfor (const asset of e.assets) {\n  if (!hasKeys(asset, ASSET_KEYS) || !isId(asset.id) || seen.has(asset.id) || !MIMES.includes(asset.mime)\n    || typeof asset.download_url !== 'string'\n    || !asset.download_url.startsWith(`${BASE}/api/webhooks/internal/n8n/runs/${e.run_id}/assets/${asset.id}?`)) {\n    return reject('BAD_ASSET');\n  }\n  seen.add(asset.id);\n}\n\nreturn [{ json: { valid: true, envelope: e } }];\n"
       }
     },
     {
@@ -142,12 +142,129 @@
       }
     },
     {
+      "id": "32331a52-f326-5897-ae15-37bb548c200b",
+      "name": "Build claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// CLAIM (ADR-038): before any photo is read or the model is called, Laravel gives the run to this\n// execution only. A repeated start of the same run, from a retried job or a lost answer, gets 409 and\n// stops at \"Claimed?\", so the model is paid for once. The claim goes next to the callback address\n// \"Check envelope\" already checked, signed with the callback secret.\nconst envelope = $('Check envelope').first().json.envelope;\nconst body = JSON.stringify({\n  schema_version: 'product-extraction.claim.v1',\n  run_id: envelope.run_id,\n  execution_id: String($execution.id),\n});\n\nreturn [{ json: { body, timestamp: String(Math.floor(Date.now() / 1000)), url: `${envelope.callback_url}/claim` } }];"
+      }
+    },
+    {
+      "id": "9377cebd-cfc1-5c56-9419-d5bc93c04c46",
+      "name": "Sign claim",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        200
+      ],
+      "credentials": {
+        "crypto": {
+          "id": "kmN8nCallbackKey",
+          "name": "KM extraction callback secret"
+        }
+      },
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.timestamp + '.' + $json.body }}",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "4a1e4bdd-b4ed-5889-a1c9-09f64b30e727",
+      "name": "Claim run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-KM-Timestamp",
+              "value": "={{ $json.timestamp }}"
+            },
+            {
+              "name": "X-KM-Signature",
+              "value": "={{ 'v1=' + $json.signature }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 15000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "1c55d23f-609e-50cf-8c07-08745c8fc0b6",
+      "name": "Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3ec16734-1e8f-57fb-a6d1-0df79a8b7cdb",
+              "leftValue": "={{ ($json.data || {}).claimed === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
       "id": "a3328ebb-5963-5992-9ee9-8eeb2e96e58e",
       "name": "List photos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1540,
+        2420,
         200
       ],
       "parameters": {
@@ -162,7 +279,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1760,
+        2640,
         200
       ],
       "onError": "continueRegularOutput",
@@ -190,7 +307,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1980,
+        2860,
         200
       ],
       "parameters": {
@@ -205,7 +322,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2200,
+        3080,
         200
       ],
       "parameters": {
@@ -239,7 +356,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2420,
+        3300,
         100
       ],
       "onError": "continueRegularOutput",
@@ -277,7 +394,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2640,
+        3520,
         100
       ],
       "parameters": {
@@ -292,7 +409,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2860,
+        3740,
         200
       ],
       "parameters": {
@@ -307,7 +424,7 @@
       "type": "n8n-nodes-base.crypto",
       "typeVersion": 2,
       "position": [
-        3080,
+        3960,
         200
       ],
       "credentials": {
@@ -330,7 +447,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3300,
+        4180,
         200
       ],
       "retryOnFail": true,
@@ -438,11 +555,56 @@
       "main": [
         [
           {
-            "node": "List photos",
+            "node": "Build claim",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Build claim": {
+      "main": [
+        [
+          {
+            "node": "Sign claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign claim": {
+      "main": [
+        [
+          {
+            "node": "Claim run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim run": {
+      "main": [
+        [
+          {
+            "node": "Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claimed?": {
+      "main": [
+        [
+          {
+            "node": "List photos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     },
     "List photos": {

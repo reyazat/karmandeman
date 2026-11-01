@@ -8,10 +8,11 @@ use Tests\TestCase;
 
 /**
  * The exported n8n workflow keeps the run contract (ADR-032 to ADR-036): it
- * listens where Laravel starts it, checks before it answers or works, keeps
- * its HMAC secrets in n8n credentials, talks only to the links Laravel
- * signed and Gemini, and keeps no execution history (ADR-037). Behaviour of
- * its Code nodes is tested with vitest.
+ * listens where Laravel starts it, checks before it answers or works, claims
+ * the run before it reads a photo (ADR-038), keeps its HMAC secrets in n8n
+ * credentials, talks only to the links Laravel signed and Gemini, and keeps
+ * no execution history (ADR-037). Behaviour of its Code nodes is tested with
+ * vitest.
  */
 class N8nExtractionWorkflowTest extends TestCase
 {
@@ -58,10 +59,12 @@ class N8nExtractionWorkflowTest extends TestCase
             }
         }
 
-        // No path reaches a photo, Gemini or the callback without the signature check and 202.
+        // No path reaches a photo, Gemini or the callback without the signature check, 202 and Laravel's claim.
+        // A refused claim (output 1 of "Claimed?") leads nowhere.
         $this->assertSame([
             'Start run#0->Read request', 'Read request#0->Sign request', 'Sign request#0->Check envelope',
-            'Check envelope#0->Valid start?', 'Valid start?#0->Accept', 'Valid start?#1->Reject', 'Accept#0->List photos',
+            'Check envelope#0->Valid start?', 'Valid start?#0->Accept', 'Valid start?#1->Reject', 'Accept#0->Build claim',
+            'Build claim#0->Sign claim', 'Sign claim#0->Claim run', 'Claim run#0->Claimed?', 'Claimed?#0->List photos',
             'List photos#0->Download photo', 'Download photo#0->Build Gemini request', 'Build Gemini request#0->Ready for model?',
             'Ready for model?#0->Call Gemini', 'Ready for model?#1->Build callback', 'Call Gemini#0->Read Gemini answer',
             'Read Gemini answer#0->Build callback', 'Build callback#0->Sign callback', 'Sign callback#0->Send callback',
@@ -77,14 +80,16 @@ class N8nExtractionWorkflowTest extends TestCase
         $this->assertStringNotContainsString('$env', $raw);
         $this->assertSame(['crypto' => ['id' => 'kmN8nStartToken', 'name' => 'KM extraction start token']], $nodes['Sign request']['credentials']);
         $this->assertSame(['crypto' => ['id' => 'kmN8nCallbackKey', 'name' => 'KM extraction callback secret']], $nodes['Sign callback']['credentials']);
+        $this->assertSame($nodes['Sign callback']['credentials'], $nodes['Sign claim']['credentials']);
         // The Gemini key travels in a header, never in the URL where an error message could carry it.
         $this->assertSame(['httpHeaderAuth' => ['id' => 'kmGeminiApiKey', 'name' => 'KM Gemini API key']], $nodes['Call Gemini']['credentials']);
         $this->assertSame(['genericCredentialType', 'httpHeaderAuth'], [$nodes['Call Gemini']['parameters']['authentication'], $nodes['Call Gemini']['parameters']['genericAuthType']]);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.raw }}", $nodes['Sign request']['parameters']['value']);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.body }}", $nodes['Sign callback']['parameters']['value']);
+        $this->assertSame($nodes['Sign callback']['parameters'], $nodes['Sign claim']['parameters']);
         foreach ($nodes as $node) {
             $this->assertContains($node['type'], self::NODE_TYPES, $node['name']);
-            if (! in_array($node['name'], ['Sign request', 'Sign callback', 'Call Gemini'], true)) {
+            if (! in_array($node['name'], ['Sign request', 'Sign claim', 'Sign callback', 'Call Gemini'], true)) {
                 $this->assertArrayNotHasKey('credentials', $node, $node['name']);
             }
         }
@@ -113,13 +118,20 @@ class N8nExtractionWorkflowTest extends TestCase
         $workflow = $this->workflow();
         $http = array_filter($workflow['nodes'], fn (array $node): bool => $node['type'] === 'n8n-nodes-base.httpRequest');
 
-        $this->assertSame(['Download photo', 'Call Gemini', 'Send callback'], array_values(array_column($http, 'name')));
+        $this->assertSame(['Claim run', 'Download photo', 'Call Gemini', 'Send callback'], array_values(array_column($http, 'name')));
         // Gemini is the one address not checked against Laravel's; it is fixed in the workflow.
         $this->assertStringContainsString("const GEMINI_HOST = 'https://generativelanguage.googleapis.com';", $this->nodes()['Build Gemini request']['parameters']['jsCode']);
         $this->assertStringContainsString('url: `${GEMINI_HOST}/v1beta/models/${MODEL}:generateContent`', $this->nodes()['Build Gemini request']['parameters']['jsCode']);
-        // Only the single Gemini request is retried; photos are not, the callback is.
-        $this->assertSame([false, true, true], array_values(array_map(fn (array $node): bool => $node['retryOnFail'] ?? false, $http)));
+        // The claim, the single Gemini request and the callback are retried; photos are not.
+        $this->assertSame([true, false, true, true], array_values(array_map(fn (array $node): bool => $node['retryOnFail'] ?? false, $http)));
         $send = $this->nodes()['Send callback']['parameters'];
+        // The claim is sent like the callback, and its answer is read even when it is a refusal.
+        $claim = $this->nodes()['Claim run'];
+        $this->assertSame($send, $claim['parameters']);
+        $this->assertSame('continueRegularOutput', $claim['onError']);
+        $this->assertSame('={{ ($json.data || {}).claimed === true }}', $this->nodes()['Claimed?']['parameters']['conditions']['conditions'][0]['leftValue']);
+        $this->assertStringContainsString('url: `${envelope.callback_url}/claim`', $this->nodes()['Build claim']['parameters']['jsCode']);
+        $this->assertSame(route('webhooks.n8n.runs', absolute: false).'/claim', route('webhooks.n8n.run-claims', absolute: false));
         // The body sent is the very string that was signed.
         $this->assertSame(['POST', 'raw', 'application/json', '={{ $json.body }}'], [$send['method'], $send['contentType'], $send['rawContentType'], $send['body']]);
         $this->assertSame([
@@ -128,7 +140,7 @@ class N8nExtractionWorkflowTest extends TestCase
             ['name' => 'Accept', 'value' => 'application/json'],
         ], $send['headerParameters']['parameters']);
         foreach ($http as $node) {
-            // Photo and callback URLs were checked against the Laravel address in "Check envelope"; no redirect leaves them.
+            // Claim, photo and callback URLs were checked against the Laravel address in "Check envelope"; no redirect leaves them.
             $this->assertSame('={{ $json.url }}', $node['parameters']['url']);
             $this->assertFalse($node['parameters']['options']['redirect']['redirect']['followRedirects']);
         }

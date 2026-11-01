@@ -33,7 +33,7 @@
    - **رضایت شامل provider است.** بسته سیاست می‌تواند `ai_processing.providers` داشته باشد (مثلاً `["google"]`). این فهرست جزء digest امضاشده است، پس افزودن provider پس از تصویب، تصویب تازه و پذیرش تازه فروشنده می‌خواهد. بسته بدون این کلید digest قبلی خود را نگه می‌دارد. مقدار نامعتبر blocker `AI_PROCESSING_INVALID` می‌دهد.
    - `extractionEnabled()` فقط وقتی روشن است که بسته مصوب جاری `karmandeman.ai.provider` (`google`) را نام ببرد. وگرنه `/done` و `finish-input` مسیر دستی را می‌روند و run صف‌شده با `EXTRACTION_DISABLED` بسته می‌شود.
    - **حجم پیش از run:** اگر جمع حجم عکس‌های run از `max_input_bytes_per_run` (پیش‌فرض و سقف ۱۴ مگابایت، هم‌اندازه حد workflow) بیشتر باشد، `finish-input` با `422 EXTRACTION_PHOTOS_TOO_LARGE` و ربات با پیام فارسی رد می‌کند. پس `/done` در حلقه run ناموفق `INPUT_TOO_LARGE` نمی‌افتد. حجم ذخیره‌شده با metadata است و از حجم ارسالی به n8n کمتر نیست.
-   - **شروع نامطمئن تکرار نمی‌شود.** اگر درخواست شروع فرستاده شد و پاسخ آن گم شد (cURL 28 «Operation timed out»، 52 یا 56)، `WorkflowStartUncertain` پرتاب می‌شود. run «dispatched» می‌شود و دوباره فرستاده نمی‌شود، چون n8n شاید مدل را صدا زده باشد. اگر n8n شروع نکرده باشد، run در مهلت با `ai:expire-runs` بسته و Batch باز می‌شود. خطای اتصال (cURL 7، یا 28 «Connection timed out») همچنان retry می‌شود.
+   - **شروع تکراری:** نسخه پیش از commit شروعی را که پاسخش گم شده بود تکرار نمی‌کرد. [ADR-038](ADR-038-n8n-run-claim.md) آن را با claim در Laravel جایگزین کرد: هر شروع ناموفق retry می‌شود و فقط اجرایی که run را claim کند کار می‌کند.
 
 ## شرط‌های فعال‌سازی
 
@@ -59,7 +59,7 @@
 - **PHPUnit** `N8nExtractionWorkflowTest`: نقشه دقیق اتصال‌ها، credential کلید در header، نشانی ثابت Gemini، retry فقط برای Gemini و callback.
 - **PHPUnit Laravel** (PostgreSQL موقت):
   - `PilotPolicyTest`: بسته بدون provider یا با provider دیگر اجازه نمی‌دهد. افزودن provider پس از تصویب `APPROVAL_DIGEST_MISMATCH` می‌دهد. نام نامعتبر `AI_PROCESSING_INVALID` می‌دهد.
-  - `AIExtractionRunTest`: بدون نام Google در سیاست، مسیر دستی و صفر run. حجم بیش از سقف در API (۴۲۲) و ربات رد می‌شود و حجم برابر سقف می‌پذیرد. شروع با پاسخ گم‌شده یک بار فرستاده می‌شود و در مهلت بسته می‌شود. شروعی که به n8n نرسید retry می‌شود.
+  - `AIExtractionRunTest`: بدون نام Google در سیاست، مسیر دستی و صفر run. حجم بیش از سقف در API (۴۲۲) و ربات رد می‌شود و حجم برابر سقف می‌پذیرد.
 
 ## پیامد و محدودیت
 
@@ -69,4 +69,4 @@
 - **retry در شمارش نیست.** اگر تلاش اول Gemini شکست بخورد و دومی موفق شود، usage یک درخواست را نشان می‌دهد. درخواست شکست‌خورده معمولاً هزینه token ندارد، ولی سقف `max_model_requests` آن را نمی‌بیند.
 - **۱۴ مگابایت برای همه عکس‌ها.** Laravel تا ۱۰ مگابایت برای هر عکس و ۲۰ عکس در هر run می‌پذیرد. Batch با عکس‌های بزرگ `INPUT_TOO_LARGE` می‌گیرد تا ارسال از راه Files API یا کوچک‌کردن عکس ساخته شود.
 - **fallback provider ندارد.** اگر Gemini در دسترس نباشد، run شکست می‌خورد و فروشنده می‌تواند محصول را دستی ثبت کند.
-- Laravel شروع با پاسخ گم‌شده را تکرار نمی‌کند، ولی n8n هنوز dedupe روی `run_id` ندارد و نبود هشدار از ADR-036 باقی است. شروع تکراری از هر مسیر دیگر (مثلاً اجرای دوباره job پس از مرگ worker) مدل را دوباره صدا می‌زند؛ dedupe پیش از فعال‌سازی لازم است.
+- شروع تکراری را [ADR-038](ADR-038-n8n-run-claim.md) با claim در Laravel می‌بندد. نبود هشدار از ADR-036 باقی است.

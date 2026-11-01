@@ -27,8 +27,9 @@ function source(name: string, base: string | null = BASE): string {
 async function run(name: string, input: Item[], nodes: Record<string, Item[]> = {}, context: object = {}, base: string | null = BASE): Promise<Item[]> {
     const $input = { first: () => input[0], all: () => input };
     const $ = (node: string) => ({ first: () => nodes[node][0], all: () => nodes[node] });
+    const $execution = { id: '4217' };
 
-    return new AsyncFunction('$input', '$', source(name, base)).call(context, $input, $);
+    return new AsyncFunction('$input', '$', '$execution', source(name, base)).call(context, $input, $, $execution);
 }
 
 function envelope(overrides: Record<string, any> = {}): Record<string, any> {
@@ -115,6 +116,19 @@ describe('Check envelope', () => {
         for (const raw of ['not json', '[]', 'null', '{"__proto__":{"valid":true}}']) {
             expect((await check(raw)).valid).toBe(false);
         }
+    });
+});
+
+describe('Build claim', () => {
+    it('claims the checked run for this execution next to the checked callback address', async () => {
+        const [result] = await run('Build claim', [{ json: { accepted: true } }], { 'Check envelope': [{ json: { valid: true, envelope: envelope() } }] });
+
+        expect(result.json.url).toBe(`${BASE}/api/webhooks/internal/n8n/runs/claim`);
+        expect(result.json.timestamp).toBe(String(Math.floor(NOW / 1000)));
+        // Exactly product-extraction.claim.v1: the run and this execution, nothing about photos or the seller.
+        expect(JSON.parse(result.json.body)).toEqual({ schema_version: 'product-extraction.claim.v1', run_id: RUN, execution_id: '4217' });
+        const schema = JSON.parse(readFileSync(new URL('../schemas/product-extraction.claim.v1.json', import.meta.url), 'utf8'));
+        expect(Object.keys(JSON.parse(result.json.body))).toEqual(schema.required);
     });
 });
 

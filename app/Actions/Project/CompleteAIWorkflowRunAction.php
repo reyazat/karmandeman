@@ -78,6 +78,12 @@ final readonly class CompleteAIWorkflowRunAction
             throw new DomainException(self::RUN_NOT_FOUND);
         }
 
+        // Claim and callback share the secret: a signed body of another kind (a replayed or
+        // misrouted claim) is refused here and never fails the run (ADR-038).
+        if (($body['schema_version'] ?? null) !== ProductExtractionOutputValidator::SCHEMA_VERSION) {
+            throw new WorkflowOutputRejected(['schema_version']);
+        }
+
         try {
             $result = $this->validator->validate($body, (int) config('karmandeman.ai.max_candidates_per_run'));
             $this->checkSources($run, $result);

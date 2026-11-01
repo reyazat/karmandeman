@@ -6,13 +6,11 @@ namespace App\Actions\Project;
 
 use App\Enums\AiRunStatus;
 use App\Enums\ProjectState;
-use App\Exceptions\WorkflowStartUncertain;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\AI\AIWorkflowService;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Starts a queued extraction run on n8n (ADR-032). Runs from the worker
@@ -54,13 +52,8 @@ final readonly class DispatchExtractionRunAction
         $this->runs->countAttempt($run);
         $run->refresh();
         $envelope = $this->ai->extractionEnvelope($run, $project, $this->assets->inProjectByPublicIds($project, $run->input_asset_ids));
-        try {
-            $this->ai->startExtraction($envelope);
-        } catch (WorkflowStartUncertain) {
-            // n8n may already pay for the model: never send it twice. If it never started,
-            // the run expires at its deadline and the batch reopens (ai:expire-runs).
-            Log::warning('ai.run_start_uncertain', ['run' => $run->public_id]);
-        }
+        // A retry after a lost answer is safe: only the execution that claims the run works on it (ADR-038).
+        $this->ai->startExtraction($envelope);
         $this->runs->markDispatched($run, CarbonImmutable::now());
     }
 }

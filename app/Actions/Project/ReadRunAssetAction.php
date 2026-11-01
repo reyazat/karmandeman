@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Log;
  * n8n fetches one photo of a run it was given (ADR-033). The signed link is
  * the only principal: it names one run and one of its input photos, and
  * stops working when the run closes, passes its deadline or the account is
- * being erased. Every refusal is the same answer, so nothing leaks which
+ * being erased. It works only after one execution claimed the run (ADR-038),
+ * so no workflow reaches a photo, or the model, without the claim. Every refusal is the same answer, so nothing leaks which
  * check failed. The photo leaves without metadata.
  */
 final readonly class ReadRunAssetAction
@@ -48,6 +49,7 @@ final readonly class ReadRunAssetAction
         // and the MAC must never reach the key service for a run that cannot serve.
         if ($run === null
             || ! $run->status->isOpen()
+            || $run->claimed_at === null
             || $run->workspace->status !== 'active'
             || ! in_array($assetPublicId, $run->input_asset_ids, true)
             || ! $this->signer->valid($run, $assetPublicId, $expires, $signature, CarbonImmutable::now()->getTimestamp())) {

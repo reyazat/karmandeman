@@ -671,11 +671,25 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 - `KM_AI_MAX_INPUT_BYTES_PER_RUN` می‌توانست از حد ۱۴ مگابایتی workflow بیشتر شود و `/done` را در حلقه run ناموفق بیندازد؛ اکنون به همان حد محدود است.
 - متن ADR می‌گفت کد هیچ شرط فعال‌سازی را اعمال نمی‌کند، در حالی که شرط سیاست اعمال می‌شود؛ اصلاح شد.
 
-شواهد پس از اصلاح:
+شواهد پس از اصلاح (commit ADR-037):
 - PostgreSQL موقت با OpenBao 2.4.1: **۳۲۶ تست / ۴۲۶۰ assertion**، بدون skip.
 - SQLite: **۳۰۲ پاس / ۲۴ skip**. Pint و PHPStan بدون خطا. vitest: **۵۱ پاس** (۴۴ workflow، ۷ PrivacyPage). این برش migration ندارد.
 
 آزموده نشده: API واقعی Gemini (کلید در دسترس نبود)، کیفیت روی عکس واقعی، دسترسی n8n به Google.
+
+### برش هفتم گام ۴: claim هر run توسط یک اجرای n8n (۱ نوامبر ۲۰۲۶)
+
+[ADR-038](adr/ADR-038-n8n-run-claim.md). n8n پس از ۲۰۲ و پیش از عکس و مدل، run را با درخواست امضاشده (callback secret) از Laravel claim می‌کند. Laravel زیر قفل Workspace و run فقط اولین اجرا را می‌پذیرد، run صف‌شده را `dispatched` می‌کند و run بسته یا استخراج خاموش را رد می‌کند. گره Remove Duplicates خود n8n بررسی و رد شد: کلیدها را بدون قفل در یک ردیف می‌خواند و می‌نویسد، و وقتی تاریخچه پر شود (پیش‌فرض ۱۰٬۰۰۰) هر اجرا را با خطا متوقف می‌کند.
+
+شواهد:
+- PostgreSQL موقت با OpenBao 2.4.1: **۳۳۰ تست / ۴۴۰۳ assertion**، بدون skip، شامل شش claim هم‌زمان که دقیقاً یکی پذیرفته شد.
+- SQLite: **۳۰۵ پاس / ۲۵ skip**. Pint و PHPStan بدون خطا. vitest: **۵۲ پاس** (۴۵ workflow، ۷ PrivacyPage).
+- rollback و اجرای دوباره migration `add_ai_workflow_run_claim` روی PostgreSQL موقت موفق.
+- اجرای سرتاسری روی n8n 2.44.6 موقت محلی در شبکه داخلی بدون اینترنت با stub امضاسنج به‌جای Laravel، دو بار (پیش و پس از اصلاحات بازبینی): یک شروع امضاشده دو بار؛ اجرای اول claim، عکس و callback امضاشده؛ اجرای دوم ۴۰۹ بدون عکس و callback.
+
+بازبین مستقل دو P2 و شش P3 یافت (فهرست در ADR-038). همه با آزمون اصلاح شدند. مهم‌ترین‌ها: claim امضاشده replayشده روی callback run را می‌بست، و claim فقط در workflow اجبار می‌شد؛ اکنون لینک عکس فقط پس از claim کار می‌کند. `WorkflowStartUncertain` پیش‌نویس ADR-037 حذف شد، چون با claim تکرار شروع هزینه ندارد.
+
+آزموده نشده: instance واقعی `ai.smartystudio.co.uk`، Laravel واقعی در برابر n8n، ربات زنده و Gemini.
 
 ### تعارض‌های سندی ثبت‌شده (۲۹ اکتبر ۲۰۲۶)
 

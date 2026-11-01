@@ -40,6 +40,12 @@ interface AiWorkflowRunRepositoryInterface
     public function countAttempt(AiWorkflowRun $run): void;
 
     /**
+     * Give a locked, open run to one n8n execution (ADR-038). A queued run
+     * becomes dispatched too, so a retried start job sends nothing more.
+     */
+    public function claim(AiWorkflowRun $run, string $execution, CarbonImmutable $at): void;
+
+    /**
      * @param  array<string, int|string>|null  $usage
      */
     public function close(AiWorkflowRun $run, AiRunStatus $status, CarbonImmutable $at, ?string $errorCode = null, ?string $resultMac = null, ?int $candidates = null, ?array $usage = null): void;

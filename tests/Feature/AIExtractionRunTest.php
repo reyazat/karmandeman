@@ -172,6 +172,13 @@ class AIExtractionRunTest extends TestCase
         return $this->signedPost('/api/webhooks/internal/n8n/runs', $body, $timestamp, $secret);
     }
 
+    private function sendClaim(AiWorkflowRun $run, string $execution, ?string $secret = self::CALLBACK_SECRET): TestResponse
+    {
+        return $this->signedPost('/api/webhooks/internal/n8n/runs/claim', [
+            'schema_version' => 'product-extraction.claim.v1', 'run_id' => $run->public_id, 'execution_id' => $execution,
+        ], secret: $secret);
+    }
+
     private function signedPost(string $uri, array|string $body, ?int $timestamp = null, ?string $secret = self::CALLBACK_SECRET): TestResponse
     {
         $raw = is_string($body) ? $body : json_encode($body, JSON_UNESCAPED_UNICODE);
@@ -268,42 +275,32 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame(0, AiWorkflowRun::query()->count());
     }
 
-    public function test_a_start_whose_answer_was_lost_is_never_sent_again(): void
+    public function test_a_start_that_failed_on_the_way_is_retried_and_only_one_execution_works(): void
     {
-        $this->n8nFailure = 'cURL error 28: Operation timed out after 10002 milliseconds with 0 bytes received';
-        [$project, , $run] = $this->extracting(908);
+        [, , $run] = $this->extracting(908);
 
-        // n8n may already run the model: the run waits for its callback or deadline, never a second start.
-        app(DispatchExtractionRunAction::class)->execute($run->id);
-        app(DispatchExtractionRunAction::class)->execute($run->id);
-
-        $this->assertSame(1, $this->n8nStarts);
-        $this->assertSame('dispatched', $run->fresh()->status->value);
-        $this->travel(16)->minutes();
-        $this->artisan('ai:expire-runs')->assertSuccessful();
-        $this->assertSame('timed_out', $run->fresh()->status->value);
-        $this->assertSame('collecting_input', $this->state($project));
-    }
-
-    public function test_a_start_that_never_reached_n8n_is_retried(): void
-    {
-        $this->n8nFailure = 'cURL error 28: Connection timed out after 5001 milliseconds';
-        [, , $run] = $this->extracting(909);
-
-        foreach (['cURL error 28: Connection timed out after 5001 milliseconds', 'cURL error 7: Failed to connect to n8n.test port 80'] as $failure) {
+        // Whether or not n8n got it, a failed start throws so the job retries (ADR-038 makes a repeat safe).
+        foreach ([
+            'cURL error 28: Operation timed out after 10002 milliseconds with 0 bytes received',
+            'cURL error 28: Connection timed out after 5001 milliseconds',
+            'cURL error 7: Failed to connect to n8n.test port 80',
+            'cURL error 56: Recv failure: Connection reset by peer',
+        ] as $failure) {
             $this->n8nFailure = $failure;
             try {
                 app(DispatchExtractionRunAction::class)->execute($run->id);
-                $this->fail('A start that never left must throw so the job retries.');
+                $this->fail('A failed start must throw so the job retries.');
             } catch (RuntimeException $e) {
                 $this->assertSame('n8n workflow endpoint is unreachable.', $e->getMessage());
             }
             $this->assertSame('queued', $run->fresh()->status->value);
         }
+        // The first start did reach n8n: its execution claims, a repeated start's execution is refused.
+        $this->sendClaim($run, '11')->assertOk();
         $this->n8nFailure = null;
         app(DispatchExtractionRunAction::class)->execute($run->id);
-        $this->assertSame(3, $this->n8nStarts);
-        $this->assertSame('dispatched', $run->fresh()->status->value);
+        $this->assertSame(4, $this->n8nStarts);
+        $this->sendClaim($run, '12')->assertStatus(409)->assertJsonPath('error.code', 'RUN_ALREADY_CLAIMED');
     }
 
     public function test_dispatch_sends_a_signed_envelope_with_public_ids_only_once(): void
@@ -450,7 +447,6 @@ class AIExtractionRunTest extends TestCase
             return $body;
         }];
         yield 'empty name after normalization' => [fn (array $body): array => array_replace_recursive($body, ['candidates' => [['name' => "\u{200C}\u{0640}"]]])];
-        yield 'wrong schema version' => [fn (array $body): array => ['schema_version' => 'product-extraction.output.v2'] + $body];
         yield 'failed with candidates' => [fn (array $body): array => ['status' => 'failed', 'error_code' => 'MODEL_ERROR'] + $body];
         yield 'negative usage' => [fn (array $body): array => array_replace_recursive($body, ['usage' => ['input_tokens' => -1]])];
     }
@@ -645,11 +641,129 @@ class AIExtractionRunTest extends TestCase
         Http::assertNotSent(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
     }
 
+    public function test_only_the_first_execution_to_claim_a_run_works_on_it(): void
+    {
+        [, , $run] = $this->extracting(924);
+
+        // n8n claimed before Laravel recorded the start: the run is dispatched and a retried job sends nothing (ADR-038).
+        $this->sendClaim($run, '501')->assertOk()->assertJsonPath('data.claimed', true);
+        $this->assertSame('dispatched', $run->fresh()->status->value);
+        $this->assertSame('501', $run->fresh()->claimed_by_execution);
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        $this->assertSame(0, $this->n8nStarts);
+
+        // The same execution may retry its claim; any other execution stops before reading a photo.
+        $this->sendClaim($run, '501')->assertOk();
+        $this->sendClaim($run, '502')->assertStatus(409)->assertJsonPath('error.code', 'RUN_ALREADY_CLAIMED');
+        $this->assertSame('501', $run->fresh()->claimed_by_execution);
+
+        // The claimed run still ends the usual way.
+        $this->sendCallback($this->runResult($run, []))->assertOk();
+        $this->sendClaim($run, '501')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+    }
+
+    public function test_forged_malformed_and_unknown_claims_are_refused(): void
+    {
+        [, , $run] = $this->extracting(925);
+        $claim = ['schema_version' => 'product-extraction.claim.v1', 'run_id' => $run->public_id, 'execution_id' => '7'];
+
+        $this->sendClaim($run, '7', 'another-secret')->assertUnauthorized();
+        $this->signedPost('/api/webhooks/internal/n8n/runs/claim', $claim, now()->getTimestamp() - 301)->assertUnauthorized();
+        // A signed claim replayed to the callback, or any body of another schema, is refused and never fails the run.
+        $this->signedPost('/api/webhooks/internal/n8n/runs', $claim)->assertStatus(422)->assertJsonPath('error.details.fields', ['schema_version']);
+        $this->sendCallback(['schema_version' => 'product-extraction.output.v2'] + $this->runResult($run, []))
+            ->assertStatus(422)->assertJsonPath('error.details.fields', ['schema_version']);
+        $this->assertSame('queued', $run->fresh()->status->value);
+        // The start token is not the callback secret.
+        $this->sendClaim($run, '7', self::WORKFLOW_TOKEN)->assertUnauthorized();
+        foreach ([
+            'not json',
+            '[]',
+            json_encode([...$claim, 'extra' => 1]),
+            json_encode([...$claim, 'execution_id' => 'a b']),
+            json_encode([...$claim, 'execution_id' => 7]),
+            json_encode([...$claim, 'run_id' => strtoupper($run->public_id)]),
+            json_encode([...$claim, 'schema_version' => 'product-extraction.claim.v2']),
+        ] as $body) {
+            $this->signedPost('/api/webhooks/internal/n8n/runs/claim', $body)->assertStatus(422)->assertJsonPath('error.code', 'CLAIM_INVALID');
+        }
+        $this->signedPost('/api/webhooks/internal/n8n/runs/claim', [...$claim, 'run_id' => '01a1950c-d595-72bc-91dd-a95ee64d4495'])
+            ->assertNotFound()->assertJsonPath('error.code', 'RUN_NOT_FOUND');
+        $this->assertNull($run->fresh()->claimed_by_execution);
+    }
+
+    public function test_a_run_that_can_no_longer_change_its_batch_is_never_claimed(): void
+    {
+        [$project, , $cancelled] = $this->extracting(926);
+        $this->postJson("/api/v1/projects/{$project}/cancel", ['version' => $this->version($project)], ['Idempotency-Key' => 'cancel-claim'])->assertOk();
+        $this->sendClaim($cancelled, '1')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+
+        [, , $late] = $this->extracting(927);
+        // Four minutes left is too little for the model: refused, and the run expires as usual.
+        $this->travel(11)->minutes();
+        $this->sendClaim($late, '2')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->assertSame('queued', $late->fresh()->status->value);
+        $this->travel(5)->minutes();
+        $this->sendClaim($late, '2')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->travelBack();
+
+        [$second, , $erased] = $this->extracting(928);
+        $workspace = $erased->workspace_id;
+        DB::table('workspaces')->where('id', $workspace)->update(['status' => 'deletion_pending']);
+        $this->sendClaim($erased, '3')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        DB::table('workspaces')->where('id', $workspace)->update(['status' => 'active']);
+
+        // Switched off after the start: the run closes now and the batch reopens before any model call.
+        config(['karmandeman.ai.extraction_enabled' => false]);
+        $this->sendClaim($erased, '4')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->assertSame('failed', $erased->fresh()->status->value);
+        $this->assertSame('EXTRACTION_DISABLED', $erased->fresh()->error_code);
+        $this->assertSame('collecting_input', $this->state($second));
+        foreach ([$cancelled, $late, $erased] as $run) {
+            $this->assertNull($run->fresh()->claimed_by_execution);
+        }
+    }
+
+    public function test_every_claim_checks_the_policy_and_consent_the_photos_leave_under(): void
+    {
+        [$first, , $claimed] = $this->extracting(929);
+        $this->sendClaim($claimed, '1')->assertOk();
+        // A new bundle that still names Google, which the seller has not accepted: even the
+        // execution holding the claim stops before reading a photo.
+        $this->useApprovedPilotPolicy('test-policy-v2', aiProviders: ['google']);
+        $this->sendClaim($claimed, '1')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->assertSame('POLICY_CONSENT_REQUIRED', $claimed->fresh()->error_code);
+        $this->assertSame('collecting_input', $this->state($first));
+
+        [$second, , $dropped] = $this->extracting(931);
+        // The policy in force no longer names Google.
+        $this->useApprovedPilotPolicy('test-policy-v3');
+        $this->sendClaim($dropped, '2')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->assertSame('EXTRACTION_DISABLED', $dropped->fresh()->error_code);
+        $this->assertSame('collecting_input', $this->state($second));
+        $this->assertNull($dropped->fresh()->claimed_by_execution);
+    }
+
+    public function test_a_photo_link_works_only_after_the_run_is_claimed(): void
+    {
+        [, $photos, $run] = $this->extracting(932);
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        $sent = Http::recorded(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
+        $url = json_decode($sent[0][0]->body(), true)['assets'][0]['download_url'];
+
+        // A workflow that skips the claim gets no photo, so it has nothing to send to the model.
+        $this->get($url)->assertForbidden();
+        $this->sendClaim($run, '9')->assertOk();
+        $this->get($url)->assertOk();
+        $this->assertSame($photos[0], json_decode($sent[0][0]->body(), true)['assets'][0]['id']);
+    }
+
     /** @return list<array<string, mixed>> the assets of the envelope the run was started with */
     private function startedAssets(AiWorkflowRun $run): array
     {
         app(DispatchExtractionRunAction::class)->execute($run->id);
         $sent = Http::recorded(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
+        $this->sendClaim($run, 'exec-'.$run->id)->assertOk();
 
         return json_decode($sent[count($sent) - 1][0]->body(), true)['assets'];
     }

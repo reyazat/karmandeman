@@ -25,6 +25,8 @@ use Illuminate\Support\Carbon;
  * @property int $dispatch_attempts
  * @property Carbon $deadline_at
  * @property Carbon|null $dispatched_at
+ * @property Carbon|null $claimed_at
+ * @property string|null $claimed_by_execution
  * @property Carbon|null $completed_at
  * @property string|null $error_code
  * @property string|null $result_mac
@@ -70,6 +72,7 @@ class AiWorkflowRun extends Model
             'candidate_count' => 'integer',
             'deadline_at' => 'datetime',
             'dispatched_at' => 'datetime',
+            'claimed_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }

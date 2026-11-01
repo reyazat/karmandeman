@@ -12,6 +12,7 @@ use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
 use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunAssetController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunCallbackController;
+use App\Http\Controllers\Webhooks\Internal\N8nRunClaimController;
 use App\Http\Controllers\Webhooks\Telegram\TelegramWebhookController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Support\Facades\Route;
@@ -23,6 +24,10 @@ Route::post('/webhooks/telegram', TelegramWebhookController::class)
 Route::post('/webhooks/internal/n8n/runs', N8nRunCallbackController::class)
     ->middleware(['n8n.callback', 'throttle:n8n-callback'])
     ->name('webhooks.n8n.runs');
+// The one n8n execution allowed to work on a run, signed like the result (ADR-038).
+Route::post('/webhooks/internal/n8n/runs/claim', N8nRunClaimController::class)
+    ->middleware(['n8n.callback', 'throttle:n8n-claim'])
+    ->name('webhooks.n8n.run-claims');
 // One photo of an open run for n8n: the run-scoped signed link is the only credential (ADR-033).
 Route::get('/webhooks/internal/n8n/runs/{run}/assets/{asset}', N8nRunAssetController::class)
     ->whereUuid(['run', 'asset'])

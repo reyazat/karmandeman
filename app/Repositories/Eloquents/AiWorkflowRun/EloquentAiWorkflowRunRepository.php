@@ -77,6 +77,15 @@ final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryIn
         AiWorkflowRun::query()->whereKey($run->id)->increment('dispatch_attempts');
     }
 
+    public function claim(AiWorkflowRun $run, string $execution, CarbonImmutable $at): void
+    {
+        $run->forceFill(['claimed_at' => $at, 'claimed_by_execution' => $execution]);
+        if ($run->status === AiRunStatus::Queued) {
+            $run->forceFill(['status' => AiRunStatus::Dispatched, 'dispatched_at' => $at]);
+        }
+        $run->save();
+    }
+
     public function close(AiWorkflowRun $run, AiRunStatus $status, CarbonImmutable $at, ?string $errorCode = null, ?string $resultMac = null, ?int $candidates = null, ?array $usage = null): void
     {
         $run->forceFill([
