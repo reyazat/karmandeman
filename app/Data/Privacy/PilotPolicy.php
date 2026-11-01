@@ -6,7 +6,10 @@ namespace App\Data\Privacy;
 
 final readonly class PilotPolicy
 {
-    /** @param list<string> $blockers */
+    /**
+     * @param  list<string>  $blockers
+     * @param  list<string>  $aiProviders  AI providers the bundle names as processors of seller photos (ADR-037)
+     */
     public function __construct(
         public string $version,
         public string $digest,
@@ -14,7 +17,14 @@ final readonly class PilotPolicy
         public string $privacy,
         public string $retention,
         public array $blockers,
+        public array $aiProviders = [],
     ) {}
+
+    /** Whether a seller who accepted this bundle was told photos go to this AI provider. */
+    public function allowsAiProvider(string $provider): bool
+    {
+        return $this->isApproved() && in_array($provider, $this->aiProviders, true);
+    }
 
     public function isApproved(): bool
     {

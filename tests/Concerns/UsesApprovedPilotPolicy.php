@@ -13,7 +13,8 @@ use Illuminate\Support\Str;
 
 trait UsesApprovedPilotPolicy
 {
-    private function useApprovedPilotPolicy(string $version = 'test-policy-v1'): void
+    /** @param  list<string>  $aiProviders  AI providers the bundle names as photo processors (ADR-037) */
+    private function useApprovedPilotPolicy(string $version = 'test-policy-v1', array $aiProviders = []): void
     {
         $path = storage_path('framework/testing/policy-'.Str::uuid());
         $files = new Filesystem;
@@ -31,6 +32,9 @@ trait UsesApprovedPilotPolicy
             'approved_at' => '2026-10-01T00:00:00Z',
             'bundle_sha256' => null,
         ];
+        if ($aiProviders !== []) {
+            $manifest['ai_processing'] = ['providers' => $aiProviders];
+        }
         foreach ($manifest['release_evidence'] as $key => $_) {
             $manifest['release_evidence'][$key] = 'Synthetic fixture; no production approval';
         }

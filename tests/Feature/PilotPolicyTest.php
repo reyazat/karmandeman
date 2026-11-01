@@ -95,6 +95,35 @@ final class PilotPolicyTest extends TestCase
         $this->assertContains('APPROVAL_DIGEST_MISMATCH', $policy->blockers);
     }
 
+    public function test_only_an_approved_bundle_naming_the_provider_allows_sending_photos_to_it(): void
+    {
+        // A bundle without ai_processing keeps the digest it had before ADR-037, so earlier consents stay valid.
+        config(['pilot_policy.directory' => resource_path('policies/pilot-2026-10-27-v3')]);
+        $this->assertSame('cce1616f5da81767a1abae338a0a29b7d526dc34d3b06685f3b7348ba90a37da', app(PilotPolicyService::class)->current()->digest);
+
+        $this->useApprovedPilotPolicy();
+        $this->assertTrue(app(PilotPolicyService::class)->current()->isApproved());
+        $this->assertFalse(app(PilotPolicyService::class)->current()->allowsAiProvider('google'));
+
+        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->assertTrue(app(PilotPolicyService::class)->current()->allowsAiProvider('google'));
+        $this->assertFalse(app(PilotPolicyService::class)->current()->allowsAiProvider('openai'));
+
+        // The provider list is signed: adding one after approval needs a fresh approval (ADR-037).
+        $manifest = $this->manifest();
+        $manifest['ai_processing']['providers'][] = 'openai';
+        $this->writeManifest($manifest);
+        $policy = app(PilotPolicyService::class)->current();
+        $this->assertContains('APPROVAL_DIGEST_MISMATCH', $policy->blockers);
+        $this->assertFalse($policy->allowsAiProvider('google'));
+
+        $manifest['ai_processing']['providers'] = ['Google Gemini'];
+        $this->writeManifest($manifest);
+        $policy = app(PilotPolicyService::class)->current();
+        $this->assertContains('AI_PROCESSING_INVALID', $policy->blockers);
+        $this->assertSame([], $policy->aiProviders);
+    }
+
     public function test_future_approval_and_invalid_bundle_fail_closed(): void
     {
         $this->useApprovedPilotPolicy();

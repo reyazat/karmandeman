@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
 use App\Models\Project;
+use App\Services\Privacy\PilotPolicyService;
 
 /**
  * The n8n side of a product extraction run (ADR-032): whether runs may
@@ -18,15 +19,22 @@ final readonly class AIWorkflowService
 {
     public const INPUT_SCHEMA_VERSION = 'product-extraction.input.v1';
 
-    public function __construct(private N8nWorkflowClient $client, private RunAssetUrlSigner $urls) {}
+    public function __construct(
+        private N8nWorkflowClient $client,
+        private RunAssetUrlSigner $urls,
+        private PilotPolicyService $policies,
+    ) {}
 
     /**
-     * Off unless configured, and always off in production: no AI provider is
-     * approved and Step 5 does not yet reserve credit before a run.
+     * Off unless configured, and always off in production: Step 5 does not yet
+     * reserve credit before a run. Also off unless the approved policy bundle
+     * names the provider, so the consent every run checks covers sending the
+     * seller's photos there (ADR-037).
      */
     public function extractionEnabled(): bool
     {
-        return (bool) config('karmandeman.ai.extraction_enabled') && ! app()->isProduction();
+        return (bool) config('karmandeman.ai.extraction_enabled') && ! app()->isProduction()
+            && $this->policies->current()->allowsAiProvider((string) config('karmandeman.ai.provider'));
     }
 
     /**

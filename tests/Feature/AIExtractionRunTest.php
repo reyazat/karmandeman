@@ -50,10 +50,15 @@ class AIExtractionRunTest extends TestCase
 
     private int $n8nStatus = 200;
 
+    /** cURL error the n8n start fails with, or null to answer with $n8nStatus. */
+    private ?string $n8nFailure = null;
+
+    private int $n8nStarts = 0;
+
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy();
+        $this->useApprovedPilotPolicy(aiProviders: ['google']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => '123:test-token',
@@ -64,7 +69,13 @@ class AIExtractionRunTest extends TestCase
         ]);
         Http::fake([
             'api.telegram.org/*' => Http::response(['ok' => true]),
-            'n8n.test/*' => fn () => Http::response(['accepted' => $this->n8nStatus === 200], $this->n8nStatus),
+            'n8n.test/*' => function (HttpRequest $request) {
+                $this->n8nStarts++;
+
+                return $this->n8nFailure === null
+                    ? Http::response(['accepted' => $this->n8nStatus === 200], $this->n8nStatus)
+                    : Http::failedConnection($this->n8nFailure)($request);
+            },
         ]);
         Storage::fake('assets');
         Queue::fake([DispatchProductExtraction::class, SendTelegramMessage::class]);
@@ -158,6 +169,11 @@ class AIExtractionRunTest extends TestCase
 
     private function sendCallback(array|string $body, ?int $timestamp = null, ?string $secret = self::CALLBACK_SECRET): TestResponse
     {
+        return $this->signedPost('/api/webhooks/internal/n8n/runs', $body, $timestamp, $secret);
+    }
+
+    private function signedPost(string $uri, array|string $body, ?int $timestamp = null, ?string $secret = self::CALLBACK_SECRET): TestResponse
+    {
         $raw = is_string($body) ? $body : json_encode($body, JSON_UNESCAPED_UNICODE);
         $timestamp ??= now()->getTimestamp();
         $headers = [
@@ -167,7 +183,7 @@ class AIExtractionRunTest extends TestCase
             'Accept' => 'application/json',
         ];
 
-        return $this->call('POST', '/api/webhooks/internal/n8n/runs', [], [], [], $this->transformHeadersToServerVars($headers), $raw);
+        return $this->call('POST', $uri, [], [], [], $this->transformHeadersToServerVars($headers), $raw);
     }
 
     public function test_finish_input_starts_one_run_for_the_unclaimed_photos(): void
@@ -217,6 +233,77 @@ class AIExtractionRunTest extends TestCase
         $this->finish($project)->assertStatus(422)->assertJsonPath('error.code', 'EXTRACTION_TOO_MANY_PHOTOS');
         $this->assertSame('collecting_input', $this->state($project));
         $this->assertSame(0, AiWorkflowRun::query()->count());
+    }
+
+    public function test_photos_too_large_for_one_model_request_are_refused_before_any_run(): void
+    {
+        $this->onboardedSeller(906);
+        $project = $this->project();
+        $this->photo($project, 1);
+        $this->photo($project, 2);
+        $sizes = (int) Asset::query()->sum('size_bytes');
+        config(['karmandeman.ai.max_input_bytes_per_run' => $sizes - 1]);
+
+        $this->finish($project)->assertStatus(422)->assertJsonPath('error.code', 'EXTRACTION_PHOTOS_TOO_LARGE')
+            ->assertJsonPath('error.details.max_bytes', $sizes - 1);
+        $this->sendDone(906);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'حجم عکس‌های این پروژه'));
+        $this->assertSame('collecting_input', $this->state($project));
+        $this->assertSame(0, AiWorkflowRun::query()->count());
+
+        config(['karmandeman.ai.max_input_bytes_per_run' => $sizes]);
+        $this->finish($project)->assertStatus(202);
+    }
+
+    public function test_without_a_policy_naming_the_provider_finish_input_stays_manual(): void
+    {
+        $this->useApprovedPilotPolicy(aiProviders: ['another-provider']);
+        $this->seller(907);
+        $project = $this->project();
+        $this->photo($project, 1);
+
+        // The seller never accepted sending photos to Google: no run, the manual path stays (ADR-037).
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->finish($project)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_HAS_NO_PRODUCTS');
+        $this->assertSame(0, AiWorkflowRun::query()->count());
+    }
+
+    public function test_a_start_whose_answer_was_lost_is_never_sent_again(): void
+    {
+        $this->n8nFailure = 'cURL error 28: Operation timed out after 10002 milliseconds with 0 bytes received';
+        [$project, , $run] = $this->extracting(908);
+
+        // n8n may already run the model: the run waits for its callback or deadline, never a second start.
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+
+        $this->assertSame(1, $this->n8nStarts);
+        $this->assertSame('dispatched', $run->fresh()->status->value);
+        $this->travel(16)->minutes();
+        $this->artisan('ai:expire-runs')->assertSuccessful();
+        $this->assertSame('timed_out', $run->fresh()->status->value);
+        $this->assertSame('collecting_input', $this->state($project));
+    }
+
+    public function test_a_start_that_never_reached_n8n_is_retried(): void
+    {
+        $this->n8nFailure = 'cURL error 28: Connection timed out after 5001 milliseconds';
+        [, , $run] = $this->extracting(909);
+
+        foreach (['cURL error 28: Connection timed out after 5001 milliseconds', 'cURL error 7: Failed to connect to n8n.test port 80'] as $failure) {
+            $this->n8nFailure = $failure;
+            try {
+                app(DispatchExtractionRunAction::class)->execute($run->id);
+                $this->fail('A start that never left must throw so the job retries.');
+            } catch (RuntimeException $e) {
+                $this->assertSame('n8n workflow endpoint is unreachable.', $e->getMessage());
+            }
+            $this->assertSame('queued', $run->fresh()->status->value);
+        }
+        $this->n8nFailure = null;
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        $this->assertSame(3, $this->n8nStarts);
+        $this->assertSame('dispatched', $run->fresh()->status->value);
     }
 
     public function test_dispatch_sends_a_signed_envelope_with_public_ids_only_once(): void
@@ -463,29 +550,39 @@ class AIExtractionRunTest extends TestCase
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'محصولی پیدا نشد'));
     }
 
-    public function test_the_bot_done_starts_extraction_and_waits(): void
+    /** A seller who finished bot onboarding, so /done reaches the batch. */
+    private function onboardedSeller(int $telegramId): void
     {
-        $user = $this->seller(917);
+        $user = $this->seller($telegramId);
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
         $onboarding = app(AdvanceTelegramOnboardingAction::class);
         $onboarding->execute($workspace, $user, 'accept', $this->policyConsentToken());
         foreach ([['input', 'Brand'], ['unit', 'toman'], ['skip'], ['skip'], ['confirm']] as $step) {
             $onboarding->execute($workspace, $user, ...$step);
         }
-        $project = $this->project();
-        $this->photo($project, 8);
-        $done = fn () => $this->postJson('/api/webhooks/telegram', [
+    }
+
+    private function sendDone(int $telegramId): void
+    {
+        $this->postJson('/api/webhooks/telegram', [
             'update_id' => random_int(1, 10_000_000),
             'message' => [
                 'message_id' => random_int(2, 10_000_000), 'date' => time(), 'text' => '/done',
-                'from' => ['id' => 917, 'first_name' => 'U'], 'chat' => ['id' => 917, 'type' => 'private'],
+                'from' => ['id' => $telegramId, 'first_name' => 'U'], 'chat' => ['id' => $telegramId, 'type' => 'private'],
             ],
         ], ['X-Telegram-Bot-Api-Secret-Token' => self::SECRET])->assertOk();
+    }
 
-        $done();
+    public function test_the_bot_done_starts_extraction_and_waits(): void
+    {
+        $this->onboardedSeller(917);
+        $project = $this->project();
+        $this->photo($project, 8);
+
+        $this->sendDone(917);
         $this->assertSame('extracting', $this->state($project));
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'استخراج می‌شوند'));
-        $done();
+        $this->sendDone(917);
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'در حال استخراج'));
         $this->assertSame(1, AiWorkflowRun::query()->count());
     }

@@ -23,7 +23,8 @@ final class PilotPolicyService
                 throw new \RuntimeException('Malformed policy bundle.');
             }
 
-            $digest = hash('sha256', json_encode([
+            $blockers = [];
+            $signed = [
                 'version' => $manifest['version'] ?? null,
                 'scope' => $manifest['scope'] ?? null,
                 'operator' => $manifest['operator'] ?? null,
@@ -31,8 +32,19 @@ final class PilotPolicyService
                 'terms' => $terms,
                 'privacy' => $privacy,
                 'retention' => $retentionText,
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-            $blockers = [];
+            ];
+            // AI processors are part of what the seller consents to (ADR-037). Only bundles that
+            // declare them sign them, so the digest and consent of earlier bundles stay valid.
+            if (array_key_exists('ai_processing', $manifest)) {
+                $signed['ai_processing'] = $manifest['ai_processing'];
+            }
+            $digest = hash('sha256', json_encode($signed, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $providers = $manifest['ai_processing']['providers'] ?? [];
+            if (! is_array($providers) || ! array_is_list($providers)
+                || array_filter($providers, fn (mixed $provider): bool => ! is_string($provider) || preg_match('/^[a-z0-9-]{1,32}$/D', $provider) !== 1) !== []) {
+                $blockers[] = 'AI_PROCESSING_INVALID';
+                $providers = [];
+            }
             $version = $manifest['version'] ?? '';
             if (! is_string($version) || ! preg_match('/^[a-zA-Z0-9_-]{1,64}$/D', $version)) {
                 $blockers[] = 'POLICY_VERSION_INVALID';
@@ -87,7 +99,7 @@ final class PilotPolicyService
                 $blockers[] = 'RETENTION_SCHEDULE_EMPTY';
             }
 
-            return new PilotPolicy($version, $digest, $terms, $privacy, implode("\n\n", $rows), $blockers);
+            return new PilotPolicy($version, $digest, $terms, $privacy, implode("\n\n", $rows), $blockers, $providers);
         } catch (Throwable) {
             return new PilotPolicy('unavailable', '', '', '', '', ['POLICY_BUNDLE_INVALID']);
         }

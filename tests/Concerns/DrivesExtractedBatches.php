@@ -39,7 +39,7 @@ trait DrivesExtractedBatches
     /** Telegram, n8n and storage fakes for a seller whose batch an n8n run extracted. */
     private function setUpExtractedBatches(): void
     {
-        $this->useApprovedPilotPolicy();
+        $this->useApprovedPilotPolicy(aiProviders: ['google']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => '123:test-token',

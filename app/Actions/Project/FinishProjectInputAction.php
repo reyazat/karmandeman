@@ -68,6 +68,10 @@ final readonly class FinishProjectInputAction
                     if (count($photos) > $max) {
                         throw new DomainException('EXTRACTION_TOO_MANY_PHOTOS');
                     }
+                    // Refused here, not by n8n, so /done never loops on a run that cannot fit.
+                    if (array_sum(array_map(fn (Asset $asset): int => (int) $asset->size_bytes, $photos)) > (int) config('karmandeman.ai.max_input_bytes_per_run')) {
+                        throw new DomainException('EXTRACTION_PHOTOS_TOO_LARGE');
+                    }
                     if ($photos !== []) {
                         return $this->startExtraction($project, $user, $photos);
                     }

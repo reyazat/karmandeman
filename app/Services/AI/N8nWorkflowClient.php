@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI;
 
+use App\Exceptions\WorkflowStartUncertain;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use RuntimeException;
@@ -11,7 +12,8 @@ use RuntimeException;
 /**
  * Starts an n8n workflow through its internal webhook with a signed JSON
  * body (ADR-032). n8n answers at once; the result comes back on the callback.
- * Errors name only the HTTP status, never the URL, body or secret.
+ * Errors name only the HTTP status, never the URL, body or secret. A start
+ * whose answer was lost after sending is reported apart, as never retried.
  */
 final readonly class N8nWorkflowClient
 {
@@ -38,7 +40,12 @@ final readonly class N8nWorkflowClient
                 ])
                 ->withBody($body, 'application/json')
                 ->post($base.'/'.ltrim($path, '/'));
-        } catch (ConnectionException) {
+        } catch (ConnectionException $e) {
+            // The request was sent and the answer timed out or broke off: n8n may be running it (ADR-037).
+            if (preg_match('/cURL error (28: Operation timed out|52|56)\b/', $e->getMessage()) === 1) {
+                throw new WorkflowStartUncertain('n8n workflow start answer was lost.');
+            }
+
             throw new RuntimeException('n8n workflow endpoint is unreachable.');
         }
         if (! $response->successful()) {

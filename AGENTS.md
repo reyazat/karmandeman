@@ -16,11 +16,13 @@ extraction run contract (signed start and callback, strict output schema,
 cost caps, timeout; off by default and always off in production) with
 run-scoped signed photo links that strip metadata, bot confirmation of
 suggested values that keeps their photo provenance, and a grouped bot
-question for suggested prices, and the n8n extraction workflow export with
-a fixture model step that calls no provider (ADR-016 to ADR-036) with code
-and tests. These
-are partial foundations, not a completed MVP. A working AI provider for
-product extraction,
+question for suggested prices, the n8n extraction workflow export with a
+Gemini model step (owner-chosen provider; runs start only while the approved
+policy the seller accepted names Google, which the current bundle does not)
+(ADR-016 to ADR-037) with code and tests. These
+are partial foundations, not a completed MVP. A Gemini call against the real
+API, an approved policy naming the provider, n8n start dedupe, voice and
+CSV intake,
 CSV/PDF/ZIP/catalogue exports, full wallet lifecycle and n8n workflows are
 still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

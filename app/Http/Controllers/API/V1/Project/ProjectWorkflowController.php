@@ -115,6 +115,10 @@ final class ProjectWorkflowController extends Controller
                     'EXTRACTION_TOO_MANY_PHOTOS', 'تعداد عکس‌های این پروژه برای یک استخراج بیش از حد مجاز است.', 422,
                     ['max_photos' => (int) config('karmandeman.ai.max_assets_per_run')],
                 ),
+                'EXTRACTION_PHOTOS_TOO_LARGE' => ApiResponse::error(
+                    'EXTRACTION_PHOTOS_TOO_LARGE', 'حجم عکس‌های این پروژه برای یک استخراج بیش از حد مجاز است.', 422,
+                    ['max_bytes' => (int) config('karmandeman.ai.max_input_bytes_per_run')],
+                ),
                 default => throw $e,
             };
         }

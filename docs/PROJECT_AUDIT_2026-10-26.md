@@ -661,6 +661,22 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 آزموده نشده: اجرا روی instance واقعی، Laravel واقعی، ربات زنده و provider.
 
+### برش ششم گام ۴: Gemini به‌جای مدل fixture (۳۱ اکتبر تا ۱ نوامبر ۲۰۲۶)
+
+[ADR-037](adr/ADR-037-gemini-extraction-provider.md). مالک Google Gemini را انتخاب کرد. گره fixture با یک درخواست `generateContent` جایگزین شد؛ کلید فقط در header و در credential رمزشده n8n است. Laravel فقط وقتی run می‌سازد که بسته سیاست مصوب `ai_processing.providers` شامل `google` داشته باشد؛ این فهرست جزء digest امضاشده است. بسته فعلی آن را ندارد، پس هیچ عکسی به Google نمی‌رود.
+
+وریفای ۱ نوامبر پیش از commit چهار نقص یافت و اصلاح کرد:
+- PHPStan روی `PilotPolicyService` خطا می‌داد (`array_values` روی list)، پس CI می‌شکست.
+- رفتارهای تازه Laravel تست نداشتند: سیاست بدون provider، provider نامعتبر یا افزوده‌شده پس از تصویب، حجم بیش از سقف در API و ربات، شروع با پاسخ گم‌شده و شروعی که به n8n نرسید. همه با آزمون پوشش داده شدند. digest بسته واقعی v3 پیش و پس از تغییر یکسان است و در آزمون ثابت شد.
+- `KM_AI_MAX_INPUT_BYTES_PER_RUN` می‌توانست از حد ۱۴ مگابایتی workflow بیشتر شود و `/done` را در حلقه run ناموفق بیندازد؛ اکنون به همان حد محدود است.
+- متن ADR می‌گفت کد هیچ شرط فعال‌سازی را اعمال نمی‌کند، در حالی که شرط سیاست اعمال می‌شود؛ اصلاح شد.
+
+شواهد پس از اصلاح:
+- PostgreSQL موقت با OpenBao 2.4.1: **۳۲۶ تست / ۴۲۶۰ assertion**، بدون skip.
+- SQLite: **۳۰۲ پاس / ۲۴ skip**. Pint و PHPStan بدون خطا. vitest: **۵۱ پاس** (۴۴ workflow، ۷ PrivacyPage). این برش migration ندارد.
+
+آزموده نشده: API واقعی Gemini (کلید در دسترس نبود)، کیفیت روی عکس واقعی، دسترسی n8n به Google.
+
 ### تعارض‌های سندی ثبت‌شده (۲۹ اکتبر ۲۰۲۶)
 
 این موارد تصمیم اجرایی نیستند و بی‌صدا اجرا نمی‌شوند:

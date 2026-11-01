@@ -47,7 +47,7 @@ final class FoundationConcurrencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy();
+        $this->useApprovedPilotPolicy(aiProviders: ['google']);
     }
 
     protected function connectionsToTransact(): array

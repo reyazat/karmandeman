@@ -29,6 +29,12 @@ return [
         'workflow_version' => 'product-extraction.v1',
         'run_timeout_minutes' => (int) env('KM_AI_RUN_TIMEOUT_MINUTES', 15),
         'max_assets_per_run' => (int) env('KM_AI_MAX_ASSETS_PER_RUN', 20),
+        // All photos of a run travel inline in one Gemini request, limited to 20 MB with base64 (ADR-037).
+        // The workflow refuses more than 14 MB, so a higher value would only send runs that fail.
+        'max_input_bytes_per_run' => min((int) env('KM_AI_MAX_INPUT_BYTES_PER_RUN', 14 * 1024 * 1024), 14 * 1024 * 1024),
+        // The provider n8n sends photos to (ADR-037). Runs start only while the approved
+        // policy the seller accepted names it as a processor.
+        'provider' => 'google',
         'max_candidates_per_run' => (int) env('KM_AI_MAX_CANDIDATES_PER_RUN', 30),
         'max_model_requests' => (int) env('KM_AI_MAX_MODEL_REQUESTS', 40),
         'max_input_tokens' => (int) env('KM_AI_MAX_INPUT_TOKENS', 400_000),
