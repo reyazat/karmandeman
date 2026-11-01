@@ -32,6 +32,17 @@ class PersianTextNormalizerTest extends TestCase
         $this->assertSame('', $this->text->line("\u{200C}\u{0640} "));
     }
 
+    public function test_invisible_controls_are_dropped_but_zwnj_zwj_and_content_format_characters_stay(): void
+    {
+        // A card shows text without these (ADR-034); the stored text must be the shown text.
+        $this->assertSame('کیف ۰۰۰,۰۲۱', $this->text->line("کیف\u{202E}\u{200F} ۰۰۰,۰۲۱\u{202C}\u{2066}\u{2069}"));
+        $this->assertSame('کیف', $this->text->line("\u{FEFF}کی\u{200B}ف\u{200E}"));
+        $this->assertSame("می\u{200C}روم \u{200D}", $this->text->line("می\u{200C}روم \u{200D}"));
+        $this->assertSame('', $this->text->line("\u{202E}\u{180E}\u{0085}"));
+        // Other format characters are content: a soft hyphen or an Arabic number sign stays.
+        $this->assertSame("کیف\u{00AD}دستی \u{0600}۱۲", $this->text->line("کیف\u{00AD}دستی \u{0600}۱۲"));
+    }
+
     public function test_whitespace_is_collapsed_and_lines_follow_the_field(): void
     {
         $this->assertSame('کیف مدل آوا', $this->text->line("  کیف\t\u{00A0} مدل\nآوا  "));

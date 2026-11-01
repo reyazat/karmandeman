@@ -12,6 +12,7 @@ use App\Repositories\Contracts\WalletRepositoryInterface;
 use DomainException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 final class EloquentWalletRepository implements WalletRepositoryInterface
 {
@@ -75,6 +76,52 @@ final class EloquentWalletRepository implements WalletRepositoryInterface
 
             return $entry;
         });
+    }
+
+    public function findEntryById(int $id): ?CreditLedgerEntry
+    {
+        return CreditLedgerEntry::query()->find($id);
+    }
+
+    public function lockForWorkspace(Workspace $workspace): ?Wallet
+    {
+        return Wallet::query()->where('workspace_id', $workspace->id)->lockForUpdate()->first();
+    }
+
+    public function lock(int $walletId): Wallet
+    {
+        return Wallet::query()->whereKey($walletId)->lockForUpdate()->firstOrFail();
+    }
+
+    public function record(
+        Wallet $locked,
+        CreditLedgerType $type,
+        int $amount,
+        int $heldAmount,
+        string $idempotencyKey,
+        string $relatedType,
+        int $relatedId,
+        string $reason,
+    ): CreditLedgerEntry {
+        if (DB::transactionLevel() === 0) {
+            throw new LogicException('Ledger entries are recorded inside the caller\'s transaction.');
+        }
+        $entry = CreditLedgerEntry::create([
+            'wallet_id' => $locked->id,
+            'type' => $type->value,
+            'amount' => $amount,
+            'held_amount' => $heldAmount,
+            'related_type' => $relatedType,
+            'related_id' => $relatedId,
+            'idempotency_key' => $idempotencyKey,
+            'reason' => $reason,
+        ]);
+        $locked->forceFill([
+            'balance_cached' => $locked->balance_cached + $amount,
+            'reserved_cached' => $locked->reserved_cached + $heldAmount,
+        ])->save();
+
+        return $entry;
     }
 
     public function entries(Wallet $wallet, int $limit = 50): Collection

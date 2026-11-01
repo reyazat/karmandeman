@@ -233,6 +233,14 @@ describe('Read Gemini answer', () => {
         expect(result.candidates[1]).toMatchObject({ price: null, description_fa: null });
     });
 
+    it('treats a value of only format controls or NEL as empty, as Laravel does', async () => {
+        const result = await read(answer([
+            product({ name: '\u202E\u200F', description_fa: '\u0085\u180E', attributes: [{ name: '\uFEFF', values: ['x'] }, { name: 'رنگ', values: ['\u2066\u2069', 'مشکی'] }] }),
+        ]));
+
+        expect(result.candidates[0]).toMatchObject({ name: null, description_fa: null, attributes: [{ name: 'رنگ', values: ['مشکی'] }] });
+    });
+
     it('keeps at most the run limit of candidates', async () => {
         const result = await read(answer(new Array(35).fill(product())));
 

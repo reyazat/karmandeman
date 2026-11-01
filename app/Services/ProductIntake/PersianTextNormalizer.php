@@ -9,8 +9,11 @@ use Normalizer;
 
 /**
  * Canonical Persian text for product fields (PRD E04, ADR-017): Arabic letter
- * forms, Arabic-Indic digits, ZWNJ and whitespace. The raw input is kept by
- * the caller; this class only computes the stored form.
+ * forms, Arabic-Indic digits, ZWNJ and whitespace. Invisible controls (bidi
+ * marks, overrides and isolates, zero-width space, BOM) are dropped, so the
+ * stored text reads as a card shows it; ZWNJ, ZWJ and other format
+ * characters (soft hyphen, emoji tags, Arabic number signs) stay. The raw
+ * input is kept by the caller; this class only computes the stored form.
  */
 final class PersianTextNormalizer
 {
@@ -22,6 +25,9 @@ final class PersianTextNormalizer
         "\u{0643}" => "\u{06A9}", // Arabic kaf
         "\u{0640}" => '',         // tatweel
     ];
+
+    /** Bidi marks, embeddings, overrides and isolates, zero-width space, word joiners and BOM. */
+    private const INVISIBLE_CONTROLS = '\x{061C}\x{180E}\x{200B}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}';
 
     private const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
 
@@ -89,6 +95,7 @@ final class PersianTextNormalizer
     {
         $value = strtr($this->unicode($value, Normalizer::FORM_C), self::LETTERS);
         $value = str_replace(self::ARABIC_DIGITS, self::PERSIAN_DIGITS, $value);
+        $value = $this->replace('/['.self::INVISIBLE_CONTROLS.']/u', '', $value);
         // Every vertical break (CR, VT, FF, NEL, U+2028/9) is a newline first.
         $value = $this->replace('/\r\n|\v/u', "\n", $value);
         if (! $multiline) {

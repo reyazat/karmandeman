@@ -33,6 +33,9 @@ final class WalletLedgerResource extends JsonResource
     {
         return [
             'balance' => $this->balance_cached,
+            // Held for accepted quotes until their work ends (ADR-039).
+            'reserved' => $this->reserved_cached,
+            'available' => $this->available(),
             'entries' => WalletLedgerEntryResource::collection($this->entries ?? collect()),
         ];
     }

@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  * @property int $workspace_id
  * @property int $project_id
  * @property int $requested_by
+ * @property int|null $quote_id
+ * @property int|null $reservation_entry_id
  * @property string $workflow
  * @property string $workflow_version
  * @property AiRunStatus $status

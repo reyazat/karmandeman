@@ -7,6 +7,7 @@ namespace App\Actions\Idempotency;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Models\Asset;
 use App\Models\Brand;
+use App\Models\CreditQuote;
 use App\Models\ProductRevision;
 use App\Models\Project;
 use App\Models\ProjectSnapshot;
@@ -57,6 +58,7 @@ final readonly class RunIdempotentMutationAction
                     'project.create', 'project.finish_input', 'project.reopen', 'project.cancel', 'project.resolve_prices' => Project::class,
                     'project.approve_products' => ProjectSnapshot::class,
                     'project.attach_asset' => Asset::class,
+                    'project.extraction_quote' => CreditQuote::class,
                     'brand.update' => Brand::class,
                     'product.create', 'product.revise', 'product.approve', 'product.archive' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),

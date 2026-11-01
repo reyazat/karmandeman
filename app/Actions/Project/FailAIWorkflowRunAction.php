@@ -12,7 +12,6 @@ use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Services\Telegram\TelegramReplyService;
-use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  * Ends an open extraction run without a result (ADR-032): its start failed,
  * its deadline passed or n8n reported failure. The batch goes back to
  * collecting input, so the seller can send /done again or add products by
- * hand. Nothing was stored from the run, and no credit was reserved.
+ * hand. Nothing was stored from the run, and its held credit is released.
  */
 final readonly class FailAIWorkflowRunAction
 {
@@ -28,6 +27,7 @@ final readonly class FailAIWorkflowRunAction
 
     public function __construct(
         private AiWorkflowRunRepositoryInterface $runs,
+        private CloseAIWorkflowRunAction $closeRun,
         private ProjectRepositoryInterface $projects,
         private UserRepositoryInterface $users,
         private LockActiveWorkspaceAction $lockActive,
@@ -64,7 +64,8 @@ final readonly class FailAIWorkflowRunAction
      */
     public function closeLocked(AiWorkflowRun $run, string $errorCode, ?array $usage = null): void
     {
-        $this->runs->close($run, $errorCode === self::TIMED_OUT ? AiRunStatus::TimedOut : AiRunStatus::Failed, CarbonImmutable::now(), $errorCode, usage: $usage);
+        $this->closeRun->execute($run, $errorCode === self::TIMED_OUT ? AiRunStatus::TimedOut : AiRunStatus::Failed, $errorCode, usage: $usage);
+        $released = $run->reservation_entry_id === null ? '' : ' اعتبار رزروشده برگشت و چیزی کسر نشد.';
 
         $project = $this->projects->findForWorkspace($run->workspace, $run->project_id);
         if ($project === null || $project->state !== ProjectState::Extracting) {
@@ -75,8 +76,8 @@ final readonly class FailAIWorkflowRunAction
         $chatId = $requester === null ? null : $this->users->telegramChatId($requester);
         if ($chatId !== null) {
             $this->replies->sendMessage($chatId, $errorCode === self::TIMED_OUT
-                ? "استخراج محصولات پروژه «{$project->name}» بیش از حد طول کشید و متوقف شد. پروژه دوباره باز است؛ /done را دوباره بفرست یا محصول‌ها را با /product ثبت کن."
-                : "استخراج محصولات پروژه «{$project->name}» انجام نشد. پروژه دوباره باز است؛ /done را دوباره بفرست یا محصول‌ها را با /product ثبت کن.");
+                ? "استخراج محصولات پروژه «{$project->name}» بیش از حد طول کشید و متوقف شد.{$released} پروژه دوباره باز است؛ /done را دوباره بفرست یا محصول‌ها را با /product ثبت کن."
+                : "استخراج محصولات پروژه «{$project->name}» انجام نشد.{$released} پروژه دوباره باز است؛ /done را دوباره بفرست یا محصول‌ها را با /product ثبت کن.");
         }
     }
 }

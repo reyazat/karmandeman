@@ -92,6 +92,7 @@ final class ProjectAssetController extends Controller
             'ASSET_NOT_FOUND' => ApiResponse::error('ASSET_NOT_FOUND', 'فایل یافت نشد.', 404),
             'ASSET_UNSUPPORTED' => ApiResponse::error('ASSET_UNSUPPORTED', 'فقط عکس JPEG، PNG یا WebP پذیرفته می‌شود.', 422),
             'ASSET_TOO_LARGE' => ApiResponse::error('ASSET_TOO_LARGE', 'ابعاد این عکس بیش از حد مجاز است.', 422),
+            'ASSET_DAMAGED' => ApiResponse::error('ASSET_DAMAGED', 'این عکس خراب است یا کامل نرسیده است؛ دوباره بفرست.', 422),
             'ASSET_INTEGRITY_FAILED' => ApiResponse::error('ASSET_INTEGRITY_FAILED', 'این فایل قابل اعتماد نیست و ارسال نمی‌شود.', 500),
             'IDEMPOTENCY_KEY_CONFLICT', 'IDEMPOTENCY_KEY_EXPIRED', 'PROJECT_NOT_ACCEPTING_INPUT' => ApiResponse::error(
                 $e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409,

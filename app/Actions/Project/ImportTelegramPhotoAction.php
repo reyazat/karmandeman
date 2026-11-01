@@ -88,6 +88,7 @@ final readonly class ImportTelegramPhotoAction
             $this->finish($intake, match ($e->getMessage()) {
                 'ASSET_UNSUPPORTED' => 'فقط عکس JPEG، PNG یا WebP پذیرفته می‌شود.',
                 'ASSET_TOO_LARGE' => 'ابعاد این عکس بیش از حد مجاز است.',
+                'ASSET_DAMAGED' => 'این عکس خراب است یا کامل نرسیده است؛ دوباره بفرست.',
                 'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.",
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.',
                 // Erasure or suspension: the account gets no new message.

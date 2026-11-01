@@ -6,6 +6,8 @@ namespace App\Repositories\Eloquents\AiWorkflowRun;
 
 use App\Enums\AiRunStatus;
 use App\Models\AiWorkflowRun;
+use App\Models\CreditLedgerEntry;
+use App\Models\CreditQuote;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
@@ -28,6 +30,11 @@ final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryIn
             'input_asset_ids' => $inputAssetIds,
             'deadline_at' => $deadline,
         ]);
+    }
+
+    public function attachCredit(AiWorkflowRun $run, CreditQuote $quote, CreditLedgerEntry $hold): void
+    {
+        $run->forceFill(['quote_id' => $quote->id, 'reservation_entry_id' => $hold->id])->save();
     }
 
     public function find(int $id): ?AiWorkflowRun

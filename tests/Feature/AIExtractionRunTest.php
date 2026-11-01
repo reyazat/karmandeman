@@ -10,6 +10,7 @@ use App\Jobs\AI\DispatchProductExtraction;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
+use App\Models\CreditQuote;
 use App\Models\Product;
 use App\Models\ProductRevision;
 use App\Models\User;
@@ -66,6 +67,7 @@ class AIExtractionRunTest extends TestCase
             'services.n8n.workflow_auth_token' => self::WORKFLOW_TOKEN,
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
             'karmandeman.ai.extraction_enabled' => true,
+            'karmandeman.gift_credits' => 100,
         ]);
         Http::fake([
             'api.telegram.org/*' => Http::response(['ok' => true]),
@@ -116,9 +118,14 @@ class AIExtractionRunTest extends TestCase
         return (int) $this->getJson("/api/v1/projects/{$project}")->assertOk()->json('data.version');
     }
 
+    /** finish-input with the accepted quote of the run it starts, if it starts one (ADR-039). */
     private function finish(string $project, ?string $key = null): TestResponse
     {
-        return $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => $this->version($project)], ['Idempotency-Key' => $key ?? 'finish-'.++$this->keys]);
+        $version = $this->version($project);
+        $quote = $this->postJson("/api/v1/projects/{$project}/extraction-quotes", ['version' => $version], ['Idempotency-Key' => 'quote-key-'.++$this->keys]);
+        $body = ['version' => $version] + ($quote->status() === 201 ? ['quote_id' => $quote->json('data.id')] : []);
+
+        return $this->postJson("/api/v1/projects/{$project}/finish-input", $body, ['Idempotency-Key' => $key ?? 'finish-'.++$this->keys]);
     }
 
     private function state(string $project): string
@@ -200,7 +207,8 @@ class AIExtractionRunTest extends TestCase
         $photos = [$this->photo($project, 1), $this->photo($project, 2)];
 
         $this->finish($project, 'finish-once')->assertStatus(202)->assertJsonPath('data.state', 'extracting');
-        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => 3], ['Idempotency-Key' => 'finish-once'])->assertStatus(202);
+        $quote = CreditQuote::query()->sole()->public_id;
+        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => 3, 'quote_id' => $quote], ['Idempotency-Key' => 'finish-once'])->assertStatus(202);
 
         $run = AiWorkflowRun::query()->sole();
         $this->assertSame('queued', $run->status->value);
@@ -536,6 +544,39 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame(2, Product::query()->count());
     }
 
+    public function test_a_callback_past_the_deadline_is_late_before_the_sweep(): void
+    {
+        [$project, $photos, $run] = $this->extracting(940);
+        $this->travel(16)->minutes();
+
+        $this->sendCallback($this->runResult($run, [$this->candidate('کیف', [$photos[0]])]))->assertOk()->assertJsonPath('data.outcome', 'discarded');
+
+        $this->assertSame('timed_out', $run->fresh()->status->value);
+        $this->assertSame('collecting_input', $this->state($project));
+        $this->assertSame(0, Product::query()->count());
+    }
+
+    public function test_a_later_run_claims_its_own_photos_not_older_unclaimed_ones(): void
+    {
+        $this->seller(941);
+        $project = $this->project();
+        $this->photo($project, 41);
+        $this->finish($project)->assertStatus(202);
+        $first = AiWorkflowRun::query()->sole();
+        // The first run finds nothing: its photo stays unclaimed and is not read again.
+        $this->sendCallback($this->runResult($first, []))->assertOk();
+
+        $later = [$this->photo($project, 42), $this->photo($project, 43)];
+        $this->finish($project)->assertStatus(202);
+        $second = AiWorkflowRun::query()->latest('id')->firstOrFail();
+        $this->assertSame($later, $second->input_asset_ids);
+        $this->sendCallback($this->runResult($second, [$this->candidate('کیف', $later)]))->assertOk();
+
+        $product = Product::query()->sole();
+        $claims = DB::table('assets')->orderBy('id')->pluck('claimed_by_product_id')->all();
+        $this->assertSame([null, $product->id, $product->id], $claims);
+    }
+
     public function test_no_candidate_reopens_the_batch(): void
     {
         [$project, , $run] = $this->extracting(916);
@@ -576,6 +617,18 @@ class AIExtractionRunTest extends TestCase
         $this->photo($project, 8);
 
         $this->sendDone(917);
+        // The run is paid: /done prices it and waits for the seller (ADR-039).
+        $this->assertSame('collecting_input', $this->state($project));
+        $quote = CreditQuote::query()->sole();
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '1 اعتبار لازم است')
+            && $job->buttons[0][0]['callback_data'] === "quote:accept:{$quote->public_id}");
+        $this->postJson('/api/webhooks/telegram', [
+            'update_id' => random_int(1, 10_000_000),
+            'callback_query' => [
+                'id' => 'cb-accept', 'data' => "quote:accept:{$quote->public_id}", 'from' => ['id' => 917, 'first_name' => 'U'],
+                'message' => ['message_id' => 1, 'chat' => ['id' => 917, 'type' => 'private']],
+            ],
+        ], ['X-Telegram-Bot-Api-Secret-Token' => self::SECRET])->assertOk();
         $this->assertSame('extracting', $this->state($project));
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'استخراج می‌شوند'));
         $this->sendDone(917);

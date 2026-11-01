@@ -26,10 +26,11 @@ final readonly class AIWorkflowService
     ) {}
 
     /**
-     * Off unless configured, and always off in production: Step 5 does not yet
-     * reserve credit before a run. Also off unless the approved policy bundle
-     * names the provider, so the consent every run checks covers sending the
-     * seller's photos there (ADR-037).
+     * Off unless configured, and always off in production until an ADR turns it
+     * on: every run now starts from an accepted quote with its credit held
+     * (ADR-039), but the provider's paid tier and quality are unverified. Also
+     * off unless the approved policy bundle names the provider, so the consent
+     * every run checks covers sending the seller's photos there (ADR-037).
      */
     public function extractionEnabled(): bool
     {

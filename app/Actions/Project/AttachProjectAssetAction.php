@@ -7,11 +7,13 @@ namespace App\Actions\Project;
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Enums\ProjectState;
+use App\Exceptions\ImageMetadataUnparseable;
 use App\Models\Asset;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Services\Storage\ImageMetadataStripper;
 use App\Services\Storage\PrivateAssetStore;
 use DomainException;
 use Illuminate\Support\Facades\Gate;
@@ -21,7 +23,8 @@ use Throwable;
 /**
  * A product photo into an open batch (FR-025, ADR-022), from the API or
  * from the bot (ADR-024). The file is checked
- * to be a real image, encrypted under the workspace key and stored privately.
+ * to be a real image whose structure the run photo link can strip (ADR-033),
+ * encrypted under the workspace key and stored privately.
  * The same bytes twice in one batch return the first asset.
  */
 final readonly class AttachProjectAssetAction
@@ -42,6 +45,7 @@ final readonly class AttachProjectAssetAction
         private ProjectRepositoryInterface $projects,
         private AssetRepositoryInterface $assets,
         private PrivateAssetStore $store,
+        private ImageMetadataStripper $stripper,
     ) {}
 
     /**
@@ -114,6 +118,12 @@ final readonly class AttachProjectAssetAction
         }
         if ((int) config('karmandeman.assets.max_pixels') < $info[0] * $info[1]) {
             throw new DomainException('ASSET_TOO_LARGE');
+        }
+        // A photo n8n could never fetch (a cut-off JPEG, say) would fail every run of the batch.
+        try {
+            $this->stripper->strip($mime, $bytes);
+        } catch (ImageMetadataUnparseable) {
+            throw new DomainException('ASSET_DAMAGED');
         }
 
         return ['mime' => $mime, 'width' => $info[0], 'height' => $info[1]];

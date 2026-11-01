@@ -159,6 +159,9 @@ class AssetApiTest extends TestCase
         $this->post("/api/v1/projects/{$project}/assets", [], ['Idempotency-Key' => 'asset-nofile', 'Accept' => 'application/json'])->assertUnprocessable();
         $this->post("/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('x.jpg', $this->image(6))], ['Accept' => 'application/json'])->assertUnprocessable();
 
+        // A JPEG cut off before its end passes the header check but could never be sent to a run.
+        $this->upload($project, substr($this->image(9), 0, -2))->assertUnprocessable()->assertJsonPath('error.code', 'ASSET_DAMAGED');
+
         config(['karmandeman.assets.max_pixels' => 1000]);
         $this->upload($project, $this->image(7, width: 50, height: 30))->assertUnprocessable()->assertJsonPath('error.code', 'ASSET_TOO_LARGE');
         config(['karmandeman.assets.max_pixels' => 40_000_000, 'karmandeman.assets.max_kilobytes' => 1]);

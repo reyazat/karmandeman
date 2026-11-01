@@ -20,7 +20,6 @@ use App\Services\AI\AIWorkflowService;
 use App\Services\AI\ProductExtractionOutputValidator;
 use App\Services\Crypto\WorkspaceFieldCipher;
 use App\Services\Telegram\TelegramReplyService;
-use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -55,6 +54,7 @@ final readonly class CompleteAIWorkflowRunAction
         private ProductExtractionOutputValidator $validator,
         private RecordProductCandidatesAction $record,
         private FailAIWorkflowRunAction $fail,
+        private CloseAIWorkflowRunAction $closeRun,
         private LockActiveWorkspaceAction $lockActive,
         private EnsurePolicyConsentAction $consent,
         private WorkspaceFieldCipher $cipher,
@@ -113,6 +113,12 @@ final readonly class CompleteAIWorkflowRunAction
                 throw new DomainException(self::RUN_ALREADY_COMPLETED);
             }
 
+            // A callback past the deadline is late even before the sweep closes the run.
+            if ($run->deadline_at->isPast()) {
+                $this->fail->closeLocked($run, FailAIWorkflowRunAction::TIMED_OUT, $result->usage);
+
+                return self::DISCARDED;
+            }
             if (! $result->succeeded) {
                 $this->fail->closeLocked($run, (string) $result->errorCode, $result->usage);
 
@@ -127,7 +133,7 @@ final readonly class CompleteAIWorkflowRunAction
 
             $project = $this->projects->findForWorkspace($run->workspace, $run->project_id);
             if ($project === null || $project->state !== ProjectState::Extracting) {
-                $this->runs->close($run, AiRunStatus::Cancelled, CarbonImmutable::now(), 'PROJECT_NOT_EXTRACTING', usage: $result->usage);
+                $this->closeRun->execute($run, AiRunStatus::Cancelled, 'PROJECT_NOT_EXTRACTING', usage: $result->usage);
 
                 return self::DISCARDED;
             }
@@ -148,13 +154,14 @@ final readonly class CompleteAIWorkflowRunAction
             $created = $this->record->execute($run->workspace, $project, $requester, $result->candidates, $run->input_asset_ids);
             $hasProducts = $this->products->activeForProject($run->workspace, $project)->isNotEmpty();
             $project = $this->projects->advance($project, $hasProducts ? ProjectState::ReviewRequired : ProjectState::CollectingInput);
-            $this->runs->close($run, AiRunStatus::Succeeded, CarbonImmutable::now(), null, $mac, $created, $result->usage);
+            $spent = $this->closeRun->execute($run, AiRunStatus::Succeeded, null, $mac, $created, $result->usage);
+            $charge = $spent === null ? '' : " {$spent} اعتبار از موجودی کسر شد.";
 
             $chatId = $this->users->telegramChatId($requester);
             if ($chatId !== null) {
                 $this->replies->sendMessage($chatId, $hasProducts
-                    ? "استخراج پروژه «{$project->name}» تمام شد: {$created} محصول پیشنهاد شد. همه مقدارها «پیشنهادی» هستند و پیش از تأیید باید بررسی شوند. برای دیدن کارت‌ها /done را بفرست."
-                    : "در عکس‌های پروژه «{$project->name}» محصولی پیدا نشد. پروژه دوباره باز است؛ عکس دیگری بفرست یا محصول را با /product ثبت کن.");
+                    ? "استخراج پروژه «{$project->name}» تمام شد: {$created} محصول پیشنهاد شد.{$charge} همه مقدارها «پیشنهادی» هستند و پیش از تأیید باید بررسی شوند. برای دیدن کارت‌ها /done را بفرست."
+                    : "در عکس‌های پروژه «{$project->name}» محصولی پیدا نشد.{$charge} پروژه دوباره باز است؛ عکس دیگری بفرست یا محصول را با /product ثبت کن.");
             }
 
             return self::RECORDED;

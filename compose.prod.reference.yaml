@@ -31,6 +31,9 @@ x-app-common: &app-common
     # bundled-n8n profile; set it to the standalone instance otherwise.
     N8N_INTERNAL_URL: ${N8N_INTERNAL_URL:-http://n8n:5678}
     KM_GIFT_CREDITS: ${KM_GIFT_CREDITS:-0}
+    # Extraction tariff and quote lifetime (ADR-039).
+    KM_CREDITS_EXTRACTION_PER_PHOTO: ${KM_CREDITS_EXTRACTION_PER_PHOTO:-1}
+    KM_CREDIT_QUOTE_TTL_MINUTES: ${KM_CREDIT_QUOTE_TTL_MINUTES:-15}
     # Workspace keys (ADR-013). One shared token for now: the scheduler purge needs
     # delete/config rights that app/worker should not have; split per service before release.
     OPENBAO_ADDR: ${OPENBAO_ADDR:?OPENBAO_ADDR required}

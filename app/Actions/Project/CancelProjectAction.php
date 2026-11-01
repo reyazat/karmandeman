@@ -13,7 +13,6 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
-use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Support\Facades\Gate;
 
@@ -28,6 +27,7 @@ final readonly class CancelProjectAction
         private EnsurePolicyConsentAction $consent,
         private ProjectRepositoryInterface $projects,
         private AiWorkflowRunRepositoryInterface $runs,
+        private CloseAIWorkflowRunAction $closeRun,
     ) {}
 
     /**
@@ -53,7 +53,8 @@ final readonly class CancelProjectAction
                 // A run still open would otherwise write products into the cancelled batch (ADR-032).
                 $run = $this->runs->openForProject($project);
                 if ($run !== null) {
-                    $this->runs->close($this->runs->lock($run), AiRunStatus::Cancelled, CarbonImmutable::now(), 'PROJECT_CANCELLED');
+                    // Its held credit is released with it (FR-063).
+                    $this->closeRun->execute($this->runs->lock($run), AiRunStatus::Cancelled, 'PROJECT_CANCELLED');
                 }
 
                 return $this->projects->advance($project, ProjectState::Cancelled);

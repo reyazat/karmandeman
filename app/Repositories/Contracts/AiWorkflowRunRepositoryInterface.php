@@ -6,6 +6,8 @@ namespace App\Repositories\Contracts;
 
 use App\Enums\AiRunStatus;
 use App\Models\AiWorkflowRun;
+use App\Models\CreditLedgerEntry;
+use App\Models\CreditQuote;
 use App\Models\Project;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -16,6 +18,9 @@ interface AiWorkflowRunRepositoryInterface
      * @param  list<string>  $inputAssetIds
      */
     public function create(Project $project, User $requester, string $workflow, string $workflowVersion, array $inputAssetIds, CarbonImmutable $deadline): AiWorkflowRun;
+
+    /** Link a new run to the quote it was started from and the credit held for it (ADR-039). */
+    public function attachCredit(AiWorkflowRun $run, CreditQuote $quote, CreditLedgerEntry $hold): void;
 
     public function find(int $id): ?AiWorkflowRun;
 

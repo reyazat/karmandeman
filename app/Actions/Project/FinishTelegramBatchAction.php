@@ -6,6 +6,7 @@ namespace App\Actions\Project;
 
 use App\Data\Telegram\BotReply;
 use App\Enums\ProjectState;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
@@ -15,7 +16,8 @@ use Illuminate\Auth\Access\AuthorizationException;
 
 /**
  * `/done` in the bot (ADR-027): closes the input of the bot's current batch
- * (ADR-028), or shows it again once in review (TelegramBatchReview): a
+ * (ADR-028), or quotes the paid extraction run its new photos need first
+ * (ADR-039), or shows it again once in review (TelegramBatchReview): a
  * grouped price question, one card per product still waiting for Gate A or,
  * when none is, the batch approval button for the version shown. Refusals are
  * answered.
@@ -25,6 +27,7 @@ final readonly class FinishTelegramBatchAction
     public function __construct(
         private ProjectRepositoryInterface $projects,
         private FinishProjectInputAction $finish,
+        private CreateExtractionQuoteAction $quote,
         private TelegramBatchReview $review,
     ) {}
 
@@ -50,6 +53,10 @@ final readonly class FinishTelegramBatchAction
             } catch (AuthorizationException) {
                 return [new BotReply('پروژه یافت نشد.')];
             } catch (DomainException $e) {
+                if ($e->getMessage() === 'EXTRACTION_QUOTE_REQUIRED') {
+                    return [$this->quoteReply($workspace, $user, $messageKey, $project)];
+                }
+
                 return [new BotReply(match ($e->getMessage()) {
                     'PROJECT_HAS_NO_PRODUCTS' => "پروژه «{$project->name}» هنوز محصولی ندارد؛ اول با /product محصول ثبت کن.",
                     'EXTRACTION_PHOTOS_TOO_LARGE' => 'حجم عکس‌های این پروژه برای یک استخراج بیش از حد است؛ عکس‌های کم‌حجم‌تر را در پروژه تازه‌ای با /new بفرست یا محصول را با /product ثبت کن.',
@@ -68,5 +75,32 @@ final readonly class FinishTelegramBatchAction
         }
 
         return $this->review->replies($workspace, $project);
+    }
+
+    /**
+     * The new photos go to a paid run: the price first, with an accept button
+     * only when the credit is there (FR-072, ADR-039).
+     */
+    private function quoteReply(Workspace $workspace, User $user, string $messageKey, Project $project): BotReply
+    {
+        try {
+            [$quote, , $available] = $this->quote->execute($workspace, $user, 'telegram-q-'.substr($messageKey, 0, 48), $project->public_id, $project->version);
+        } catch (AuthorizationException|DomainException) {
+            return new BotReply('پیش‌فاکتور استخراج ساخته نشد؛ دوباره /done را بفرست.');
+        }
+        if ($quote->accepted_at !== null) {
+            return new BotReply('این پیش‌فاکتور قبلاً تأیید شده است.');
+        }
+        $photos = count($quote->input_asset_ids);
+        $minutes = (int) ceil(max(0, $quote->expires_at->getTimestamp() - time()) / 60);
+        $text = "برای استخراج محصولات از {$photos} عکس تازه پروژه «{$project->name}» {$quote->credits_total} اعتبار لازم است. موجودی قابل استفاده تو {$available} اعتبار است.";
+        if ($available < $quote->credits_total) {
+            return new BotReply($text.' اعتبار کافی نیست و چیزی رزرو نشد؛ می‌توانی محصول‌ها را بدون استخراج با /product ثبت کنی.');
+        }
+
+        return new BotReply(
+            $text." با تأیید تو این مقدار رزرو می‌شود، فقط پس از استخراج موفق کسر می‌شود و در صورت شکست، توقف یا لغو برمی‌گردد. این پیش‌فاکتور {$minutes} دقیقه معتبر است.",
+            [[['text' => "تأیید و شروع استخراج ({$quote->credits_total} اعتبار)", 'callback_data' => "quote:accept:{$quote->public_id}"]]],
+        );
     }
 }

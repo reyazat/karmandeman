@@ -16,6 +16,7 @@ use App\Actions\Product\ConfirmTelegramProductAction;
 use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Product\RejectTelegramProductAction;
 use App\Actions\Product\ReviseTelegramProductAction;
+use App\Actions\Project\AcceptTelegramExtractionQuoteAction;
 use App\Actions\Project\AnswerTelegramPriceQuestionAction;
 use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CancelTelegramProjectAction;
@@ -44,7 +45,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|project:select:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -68,6 +69,7 @@ final readonly class TelegramConversationService
         private AnswerTelegramPriceQuestionAction $priceQuestion,
         private PrepareTelegramProjectCancellationAction $prepareCancel,
         private CancelTelegramProjectAction $cancelProject,
+        private AcceptTelegramExtractionQuoteAction $acceptQuote,
         private TelegramSubjectKey $subjects,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
@@ -186,8 +188,12 @@ final readonly class TelegramConversationService
         $user = $this->resolveUser($message);
         $wallet = $this->wallets->forWorkspace($this->workspaceFor($user));
         $balance = $wallet === null ? 0 : $wallet->balance_cached;
+        $reserved = $wallet === null ? 0 : $wallet->reserved_cached;
 
-        $this->bot->sendMessage($chatId, "موجودی اعتبار تو: {$balance} اعتبار.");
+        // Held credit is still the seller's until its run succeeds (ADR-039).
+        $this->bot->sendMessage($chatId, $reserved > 0
+            ? "موجودی اعتبار تو: {$balance} اعتبار، که {$reserved} اعتبار آن برای استخراج در حال اجرا رزرو شده است."
+            : "موجودی اعتبار تو: {$balance} اعتبار.");
     }
 
     private function handleNew(array $message, int|string $chatId, string $text): void
@@ -346,6 +352,8 @@ final readonly class TelegramConversationService
             $this->handleProductCallback($from, $chat, (string) $callback['id'], $data);
         } elseif (str_starts_with($data, 'project:')) {
             $this->handleBatchCallback($from, $chat, (string) $callback['id'], $data);
+        } elseif (str_starts_with($data, 'quote:')) {
+            $this->handleQuoteCallback($from, $chat, (string) $callback['id'], $data);
         } else {
             $this->handleOnboardingCallback($from, $chat, $data);
         }
@@ -403,6 +411,16 @@ final readonly class TelegramConversationService
             'cancel' => $this->cancelProject->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]),
             default => $this->requestSnapshot->execute($workspace, $user, $parts[2], (int) $parts[3]),
         });
+    }
+
+    private function handleQuoteCallback(array $from, array $chat, string $callbackId, string $callbackData): void
+    {
+        $user = $this->resolveUser(['from' => $from]);
+        if (! $this->readyForProject($user, $chat['id'])) {
+            return;
+        }
+        $reply = $this->acceptQuote->execute($this->workspaceFor($user), $user, $callbackId, explode(':', $callbackData)[2]);
+        $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
     }
 
     private function handleCancel(array $message, int|string $chatId): void

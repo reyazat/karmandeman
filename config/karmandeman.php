@@ -43,6 +43,14 @@ return [
         'callback_tolerance_seconds' => 300,
     ],
 
+    // Credit for paid work (PRD E08, ADR-039). The tariff is not final (PRD
+    // §20); a quote keeps the price and tariff version it was made with.
+    'credits' => [
+        'tariff_version' => 'extraction-v1',
+        'extraction_per_photo' => max(1, (int) env('KM_CREDITS_EXTRACTION_PER_PHOTO', 1)),
+        'quote_ttl_minutes' => max(1, (int) env('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
+    ],
+
     // FR-087 / NFR-12 erasure timing (ADR-011, ADR-013, ADR-014). Completion is
     // only recorded when Ops has evidenced that both backup caps are enforced.
     'erasure' => [

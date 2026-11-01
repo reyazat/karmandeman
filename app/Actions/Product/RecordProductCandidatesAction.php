@@ -41,9 +41,13 @@ final readonly class RecordProductCandidatesAction
         if (DB::transactionLevel() === 0) {
             throw new LogicException('RecordProductCandidatesAction requires an open transaction.');
         }
+        // This run's own photos, not the batch's oldest unclaimed ones: an earlier run that
+        // found nothing leaves its photos unclaimed ahead of this run's inputs.
         $unclaimed = [];
-        foreach ($this->assets->unclaimedInProject($project, count($inputAssetIds)) as $asset) {
-            $unclaimed[$asset->public_id] = $asset;
+        foreach ($this->assets->inProjectByPublicIds($project, $inputAssetIds) as $asset) {
+            if ($asset->claimed_by_product_id === null) {
+                $unclaimed[$asset->public_id] = $asset;
+            }
         }
 
         $created = 0;

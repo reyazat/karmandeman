@@ -21,6 +21,7 @@ use App\Actions\Project\CancelProjectAction;
 use App\Actions\Project\ClaimAIWorkflowRunAction;
 use App\Actions\Project\CompleteAIWorkflowRunAction;
 use App\Actions\Project\CreateApiProjectAction;
+use App\Actions\Project\CreateExtractionQuoteAction;
 use App\Actions\Project\FinishProjectInputAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Enums\AccountDeletionStatus;
@@ -336,7 +337,7 @@ final class FoundationConcurrencyTest extends TestCase
      */
     private function extractingBatch(int $telegramId): array
     {
-        config(['karmandeman.ai.extraction_enabled' => true]);
+        config(['karmandeman.ai.extraction_enabled' => true, 'karmandeman.gift_credits' => 100]);
         Storage::fake('assets');
         $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData($telegramId));
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
@@ -346,7 +347,8 @@ final class FoundationConcurrencyTest extends TestCase
         foreach ([1, 2] as $seed) {
             $photos[] = app(AttachProjectAssetAction::class)->execute($workspace, $user, "run-photo-{$telegramId}-{$seed}", $project->public_id, ImageFixture::make($telegramId + $seed))[0]->public_id;
         }
-        app(FinishProjectInputAction::class)->execute($workspace, $user, "run-finish-{$telegramId}", $project->public_id, 3);
+        [$quote] = app(CreateExtractionQuoteAction::class)->execute($workspace, $user, "run-quote-{$telegramId}", $project->public_id, 3);
+        app(FinishProjectInputAction::class)->execute($workspace, $user, "run-finish-{$telegramId}", $project->public_id, 3, $quote->public_id);
         $run = AiWorkflowRun::query()->sole();
         $candidate = fn (string $name, string $photo): array => [
             'name' => $name, 'sku' => null, 'description_fa' => null, 'price' => null,
@@ -406,6 +408,42 @@ final class FoundationConcurrencyTest extends TestCase
             $this->assertDatabaseCount('products', 0);
             $this->assertSame('cancelled', $run->fresh()->status->value);
         }
+    }
+
+    public function test_parallel_quote_accepts_hold_only_the_credit_there_is(): void
+    {
+        // Credit for one of two quoted runs (FR-070, ADR-039).
+        config(['karmandeman.ai.extraction_enabled' => true, 'karmandeman.gift_credits' => 3, 'karmandeman.credits.extraction_per_photo' => 3]);
+        Storage::fake('assets');
+        $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91304));
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);
+        $this->grantPilotConsent($user);
+        $offers = [];
+        foreach ([1, 2] as $batch) {
+            $project = app(CreateApiProjectAction::class)->execute($workspace, $user->id, "credit-batch-{$batch}", 'Batch')[0];
+            app(AttachProjectAssetAction::class)->execute($workspace, $user, "credit-photo-{$batch}", $project->public_id, ImageFixture::make(91304 + $batch));
+            [$quote] = app(CreateExtractionQuoteAction::class)->execute($workspace, $user, "credit-quote-{$batch}", $project->public_id, 2);
+            $offers[] = [$project->public_id, $quote->public_id];
+        }
+
+        $results = $this->concurrently(function (int $i) use ($user, $offers): string {
+            [$project, $quote] = $offers[$i % 2];
+            try {
+                $workspace = app(WorkspaceRepositoryInterface::class)->currentFor(User::query()->findOrFail($user->id));
+                app(FinishProjectInputAction::class)->execute($workspace, User::query()->findOrFail($user->id), "credit-accept-{$i}", $project, 2, $quote);
+
+                return 'started';
+            } catch (\DomainException $e) {
+                return $e->getMessage();
+            }
+        });
+
+        $this->assertSame(1, AiWorkflowRun::query()->count());
+        $this->assertSame(1, count(array_filter($results, fn (string $result): bool => $result === 'started')));
+        $this->assertSame([], array_diff($results, ['started', 'INSUFFICIENT_CREDITS', 'QUOTE_ALREADY_USED', 'PROJECT_STATE_CONFLICT']));
+        $wallet = DB::table('wallets')->sole();
+        $this->assertSame([3, 3], [(int) $wallet->balance_cached, (int) $wallet->reserved_cached]);
+        $this->assertSame(1, DB::table('credit_ledger')->where('type', 'reserve')->count());
     }
 
     public function test_parallel_claims_of_one_run_give_it_to_exactly_one_execution(): void

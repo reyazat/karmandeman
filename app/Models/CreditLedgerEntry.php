@@ -11,7 +11,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property int $id
+ * @property int $wallet_id
  * @property CreditLedgerType $type
+ * @property int $amount
+ * @property int $held_amount
+ * @property string|null $related_type
+ * @property int|null $related_id
+ * @property string $idempotency_key
+ * @property string|null $reason
  * @property string $public_id
  * @property Carbon|null $created_at
  */
@@ -27,6 +35,7 @@ class CreditLedgerEntry extends Model
         'wallet_id',
         'type',
         'amount',
+        'held_amount',
         'related_type',
         'related_id',
         'idempotency_key',
@@ -47,6 +56,7 @@ class CreditLedgerEntry extends Model
         return [
             'type' => CreditLedgerType::class,
             'amount' => 'integer',
+            'held_amount' => 'integer',
             'created_at' => 'datetime',
         ];
     }

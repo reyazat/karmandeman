@@ -20,6 +20,7 @@ final class WalletLedgerEntryResource extends JsonResource
             'id' => $this->public_id,
             'type' => $this->type->value,
             'amount' => $this->amount,
+            'held_amount' => $this->held_amount,
             'reason' => $this->reason,
             'created_at' => $this->created_at?->toIso8601String(),
         ];

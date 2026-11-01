@@ -47,6 +47,7 @@ trait DrivesExtractedBatches
             'services.n8n.workflow_auth_token' => 'test-workflow-token',
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
             'karmandeman.ai.extraction_enabled' => true,
+            'karmandeman.gift_credits' => 100,
         ]);
         Http::fake(['*' => Http::response(['ok' => true])]);
         Storage::fake('assets');
@@ -108,7 +109,9 @@ trait DrivesExtractedBatches
             'file' => UploadedFile::fake()->createWithContent('photo.jpg', ImageFixture::make($telegramId)),
         ], ['Idempotency-Key' => "asset-key-{$telegramId}", 'Accept' => 'application/json'])->assertCreated()->json('data.id');
         $version = (int) $this->getJson("/api/v1/projects/{$project}")->json('data.version');
-        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => $version], ['Idempotency-Key' => "finish-{$telegramId}"])
+        $quote = $this->postJson("/api/v1/projects/{$project}/extraction-quotes", ['version' => $version], ['Idempotency-Key' => "quote-{$telegramId}"])
+            ->assertCreated()->json('data.id');
+        $this->postJson("/api/v1/projects/{$project}/finish-input", ['version' => $version, 'quote_id' => $quote], ['Idempotency-Key' => "finish-{$telegramId}"])
             ->assertStatus(202);
         $run = AiWorkflowRun::query()->latest('id')->firstOrFail();
 

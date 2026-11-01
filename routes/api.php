@@ -54,6 +54,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/assets/{asset}/download', [ProjectAssetController::class, 'download'])->whereUuid('asset');
             Route::post('/projects/{project}/products', [ProductController::class, 'store'])->whereUuid('project');
             Route::get('/projects/{project}/products/summary', [ProductController::class, 'summary'])->whereUuid('project');
+            Route::post('/projects/{project}/extraction-quotes', [ProjectWorkflowController::class, 'extractionQuote'])->whereUuid('project');
             Route::post('/projects/{project}/finish-input', [ProjectWorkflowController::class, 'finishInput'])->whereUuid('project');
             Route::post('/projects/{project}/approve-products', [ProjectWorkflowController::class, 'approveProducts'])->whereUuid('project');
             Route::post('/projects/{project}/reopen', [ProjectWorkflowController::class, 'reopen'])->whereUuid('project');
