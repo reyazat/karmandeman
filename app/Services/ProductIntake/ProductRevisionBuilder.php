@@ -29,13 +29,16 @@ final readonly class ProductRevisionBuilder
      * @param  array<string, mixed>  $draft
      * @param  list<string>|null  $extractedFrom  batch photos of an n8n candidate (ADR-032); null for manual input
      * @param  array<string, mixed>|null  $previous  payload of the revision a correction replaces; its unchanged values keep their provenance (ADR-034)
+     * @param  array{table_id: string, line: int}|null  $tableRow  the seller's CSV row it was imported from (ADR-040)
      */
-    public function build(Workspace $workspace, ?Project $project, array $draft, ?array $extractedFrom = null, ?array $previous = null): ProductRevisionDraft
+    public function build(Workspace $workspace, ?Project $project, array $draft, ?array $extractedFrom = null, ?array $previous = null, ?array $tableRow = null): ProductRevisionDraft
     {
         $this->images->check($project, $draft);
-        $payload = $extractedFrom === null
-            ? $this->normalizer->normalize($draft)
-            : $this->normalizer->normalize($draft, ProductDraftNormalizer::SOURCE_AI, $extractedFrom);
+        $payload = match (true) {
+            $extractedFrom !== null => $this->normalizer->normalize($draft, ProductDraftNormalizer::SOURCE_AI, $extractedFrom),
+            $tableRow !== null => $this->normalizer->normalize($draft, ProductDraftNormalizer::SOURCE_TABLE, [], $tableRow),
+            default => $this->normalizer->normalize($draft),
+        };
         if ($previous !== null && $extractedFrom === null) {
             $payload = $this->normalizer->carryEvidence($payload, $previous);
         }

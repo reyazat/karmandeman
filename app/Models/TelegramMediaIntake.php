@@ -9,12 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One photo sent to the bot, pending download (ADR-024).
+ * One photo or product table sent to the bot, pending download (ADR-024, ADR-040).
  *
  * @property int $id
  * @property int $workspace_id
  * @property int $project_id
  * @property int $user_id
+ * @property string $kind
  * @property string $file_ref
  * @property int|null $declared_size
  * @property string $message_key
@@ -22,9 +23,13 @@ use Illuminate\Support\Carbon;
  */
 class TelegramMediaIntake extends Model
 {
+    public const KIND_PHOTO = 'photo';
+
+    public const KIND_TABLE = 'table';
+
     public $timestamps = false;
 
-    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'file_ref', 'declared_size', 'message_key', 'created_at'];
+    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'file_ref', 'declared_size', 'message_key', 'created_at'];
 
     protected $hidden = ['file_ref'];
 

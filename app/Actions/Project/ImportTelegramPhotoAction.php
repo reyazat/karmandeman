@@ -5,22 +5,26 @@ declare(strict_types=1);
 namespace App\Actions\Project;
 
 use App\Actions\Workspace\LockActiveWorkspaceAction;
+use App\Data\Telegram\BotReply;
 use App\Enums\ProjectState;
 use App\Exceptions\TelegramFileTooLarge;
 use App\Models\Asset;
+use App\Models\ProductTable;
+use App\Models\Project;
 use App\Models\TelegramMediaIntake;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
 use App\Services\Telegram\TelegramBotService;
+use App\Services\Telegram\TelegramProductTablePreview;
 use App\Services\Telegram\TelegramReplyService;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Downloads one queued bot photo on the server and stores it through the same
- * encrypted path as an API upload (ADR-022, ADR-024). Every ending deletes the
+ * Downloads one queued bot photo or product CSV on the server and stores it
+ * through the same encrypted path as an API upload (ADR-022, ADR-024, ADR-040). Every ending deletes the
  * intake row; transport errors are thrown so the job retries.
  */
 final readonly class ImportTelegramPhotoAction
@@ -29,6 +33,8 @@ final readonly class ImportTelegramPhotoAction
         private TelegramMediaIntakeRepositoryInterface $intakes,
         private ProjectRepositoryInterface $projects,
         private AttachProjectAssetAction $attach,
+        private AttachProductTableAction $attachTable,
+        private TelegramProductTablePreview $tablePreview,
         private WorkspaceFieldCipher $cipher,
         private TelegramBotService $bot,
         private TelegramReplyService $replies,
@@ -55,14 +61,15 @@ final readonly class ImportTelegramPhotoAction
             return;
         }
 
-        // Only the batch still collecting input takes photos, as when the photo was queued.
+        $table = $intake->kind === TelegramMediaIntake::KIND_TABLE;
+        // Only the batch still collecting input takes files, as when the file was queued.
         if ($project->state !== ProjectState::CollectingInput) {
-            $this->finish($intake, "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.");
+            $this->finish($intake, $table ? "پروژه «{$project->name}» دیگر فایل نمی‌پذیرد." : "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.");
 
             return;
         }
 
-        $cap = (int) config('karmandeman.assets.max_kilobytes') * 1024;
+        $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : 'karmandeman.assets.max_kilobytes') * 1024;
         try {
             $file = $this->bot->getFile($this->cipher->decrypt($workspace, 'telegram_media_intakes.file_ref', $intake->file_ref));
             if ($file['size'] !== null && $file['size'] > $cap) {
@@ -70,7 +77,12 @@ final readonly class ImportTelegramPhotoAction
             }
             $bytes = $this->bot->downloadFile($file['path'], $cap);
         } catch (TelegramFileTooLarge) {
-            $this->finish($intake, 'حجم این عکس بیش از ۱۰ مگابایت است.');
+            $this->finish($intake, $table ? 'حجم فایل CSV بیش از '.intdiv($cap, 1024).' کیلوبایت است.' : 'حجم این عکس بیش از ۱۰ مگابایت است.');
+
+            return;
+        }
+        if ($table) {
+            $this->finish($intake, $this->attachTable($intake, $project, $bytes));
 
             return;
         }
@@ -103,16 +115,51 @@ final readonly class ImportTelegramPhotoAction
             : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.");
     }
 
+    /** The CSV through the API's path; the reply is its mapping for the seller to confirm (ADR-040). */
+    private function attachTable(TelegramMediaIntake $intake, Project $project, #[\SensitiveParameter] string $bytes): BotReply|string|null
+    {
+        try {
+            [$table, $parsed] = $this->attachTable->execute(
+                $intake->workspace, $intake->user, 'telegram-'.substr($intake->message_key, 0, 48), $project->public_id, $bytes,
+                ProductTable::SOURCE_TELEGRAM, $intake->message_key,
+            );
+        } catch (AuthorizationException) {
+            return null;
+        } catch (DomainException $e) {
+            return match ($e->getMessage()) {
+                'TABLE_UNREADABLE' => 'این فایل خوانده نشد؛ آن را به‌صورت «CSV UTF-8» ذخیره کن و دوباره بفرست.',
+                'TABLE_TOO_LARGE' => 'حجم فایل CSV بیش از حد مجاز است.',
+                'TABLE_TOO_MANY_ROWS' => 'فایل بیش از '.config('karmandeman.tables.max_rows').' ردیف دارد؛ آن را چند فایل کن.',
+                'TABLE_TOO_MANY_COLUMNS' => 'فایل بیش از '.config('karmandeman.tables.max_columns').' ستون دارد.',
+                'TABLE_EMPTY' => 'فایل سطر عنوان و دست‌کم یک ردیف محصول ندارد.',
+                'TABLE_NO_NAME_COLUMN' => 'ستون نام محصول پیدا نشد؛ عنوان آن ستون را «نام» بگذار و دوباره بفرست.',
+                'TABLE_AMBIGUOUS_COLUMNS' => 'دو ستون برای یک مشخصه (مثلاً دو ستون قیمت) هست؛ یکی را حذف کن و دوباره بفرست.',
+                'TABLE_MIXED_PRICE_UNITS' => 'قیمت‌های فایل هم تومان و هم ریال‌اند؛ همه را یک واحد کن و دوباره بفرست.',
+                'TABLE_NOT_FOUND' => 'این فایل پیش‌تر کنار گذاشته شده بود؛ اگر لازم است دوباره بفرست.',
+                'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر فایل نمی‌پذیرد.",
+                'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال فایل، شرایط و سیاست داده را با /start بپذیر.',
+                // Erasure or suspension: the account gets no new message.
+                default => null,
+            };
+        }
+
+        return $table->status === ProductTable::STATUS_PENDING
+            ? $this->tablePreview->reply($table, $parsed, $project)
+            : "این فایل قبلاً در پروژه «{$project->name}» ثبت شده بود.";
+    }
+
     /** Called once the job has run out of retries. */
     public function fail(int $intakeId): void
     {
         $intake = $this->intakes->find($intakeId);
         if ($intake !== null) {
-            $this->finish($intake, $intake->workspace->status === 'active' ? 'دریافت عکس از تلگرام ناموفق بود؛ دوباره بفرست.' : null);
+            $this->finish($intake, $intake->workspace->status === 'active'
+                ? ($intake->kind === TelegramMediaIntake::KIND_TABLE ? 'دریافت فایل از تلگرام ناموفق بود؛ دوباره بفرست.' : 'دریافت عکس از تلگرام ناموفق بود؛ دوباره بفرست.')
+                : null);
         }
     }
 
-    private function finish(TelegramMediaIntake $intake, ?string $reply): void
+    private function finish(TelegramMediaIntake $intake, BotReply|string|null $reply): void
     {
         DB::transaction(function () use ($intake, $reply): void {
             // Workspace lock first, in the purge's order. Erasure that started meanwhile
@@ -125,7 +172,8 @@ final readonly class ImportTelegramPhotoAction
             $this->intakes->delete($intake);
             $chatId = $reply === null ? null : $intake->user->identities()->where('provider', 'telegram')->value('external_id');
             if ($chatId !== null) {
-                $this->replies->sendMessage($chatId, (string) $reply);
+                $reply = is_string($reply) ? new BotReply($reply) : $reply;
+                $this->replies->sendMessage($chatId, $reply->text, $reply->buttons);
             }
         });
     }

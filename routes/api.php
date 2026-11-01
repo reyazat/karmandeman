@@ -5,6 +5,7 @@ use App\Http\Controllers\API\V1\Identity\MeController;
 use App\Http\Controllers\API\V1\Identity\TelegramAuthController;
 use App\Http\Controllers\API\V1\Privacy\AccountDeletionController;
 use App\Http\Controllers\API\V1\Product\ProductController;
+use App\Http\Controllers\API\V1\Project\ProductTableController;
 use App\Http\Controllers\API\V1\Project\ProjectAssetController;
 use App\Http\Controllers\API\V1\Project\ProjectController;
 use App\Http\Controllers\API\V1\Project\ProjectWorkflowController;
@@ -51,6 +52,10 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/projects/{project}/products', [ProductController::class, 'index'])->whereUuid('project');
             Route::get('/projects/{project}/assets', [ProjectAssetController::class, 'index'])->whereUuid('project');
             Route::post('/projects/{project}/assets', [ProjectAssetController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
+            Route::post('/projects/{project}/tables', [ProductTableController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
+            Route::get('/tables/{table}', [ProductTableController::class, 'show'])->whereUuid('table');
+            Route::post('/tables/{table}/import', [ProductTableController::class, 'import'])->whereUuid('table');
+            Route::delete('/tables/{table}', [ProductTableController::class, 'destroy'])->whereUuid('table');
             Route::get('/assets/{asset}/download', [ProjectAssetController::class, 'download'])->whereUuid('asset');
             Route::post('/projects/{project}/products', [ProductController::class, 'store'])->whereUuid('project');
             Route::get('/projects/{project}/products/summary', [ProductController::class, 'summary'])->whereUuid('project');

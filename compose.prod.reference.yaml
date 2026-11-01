@@ -34,6 +34,9 @@ x-app-common: &app-common
     # Extraction tariff and quote lifetime (ADR-039).
     KM_CREDITS_EXTRACTION_PER_PHOTO: ${KM_CREDITS_EXTRACTION_PER_PHOTO:-1}
     KM_CREDIT_QUOTE_TTL_MINUTES: ${KM_CREDIT_QUOTE_TTL_MINUTES:-15}
+    # Seller CSV of products (ADR-040).
+    KM_TABLE_MAX_ROWS: ${KM_TABLE_MAX_ROWS:-200}
+    KM_TABLE_MAX_KILOBYTES: ${KM_TABLE_MAX_KILOBYTES:-1024}
     # Workspace keys (ADR-013). One shared token for now: the scheduler purge needs
     # delete/config rights that app/worker should not have; split per service before release.
     OPENBAO_ADDR: ${OPENBAO_ADDR:?OPENBAO_ADDR required}

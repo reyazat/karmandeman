@@ -22,6 +22,7 @@ use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CancelTelegramProjectAction;
 use App\Actions\Project\CreateProjectAction;
 use App\Actions\Project\FinishTelegramBatchAction;
+use App\Actions\Project\ImportTelegramProductTableAction;
 use App\Actions\Project\PrepareTelegramProjectCancellationAction;
 use App\Actions\Project\QueueTelegramPhotoAction;
 use App\Actions\Project\ReopenTelegramProjectAction;
@@ -45,7 +46,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -70,6 +71,7 @@ final readonly class TelegramConversationService
         private PrepareTelegramProjectCancellationAction $prepareCancel,
         private CancelTelegramProjectAction $cancelProject,
         private AcceptTelegramExtractionQuoteAction $acceptQuote,
+        private ImportTelegramProductTableAction $importTable,
         private TelegramSubjectKey $subjects,
         private RecordServiceRequestAction $serviceRequests,
         private TelegramReplyService $bot,
@@ -112,7 +114,7 @@ final readonly class TelegramConversationService
             return;
         }
 
-        // A caption is ignored: the photo is batch input, not a command (ADR-024).
+        // A caption is ignored: the photo or CSV is batch input, not a command (ADR-024, ADR-040).
         if (isset($message['photo']) || isset($message['document'])) {
             $this->handlePhoto($message, $chatId);
 
@@ -213,7 +215,7 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage(
             $chatId,
             "پروژه «{$project->name}» ساخته شد.\n".
-            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). پردازش خودکار هنوز فعال نیست.'
+            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. پردازش خودکار هنوز فعال نیست.'
         );
     }
 
@@ -354,6 +356,8 @@ final readonly class TelegramConversationService
             $this->handleBatchCallback($from, $chat, (string) $callback['id'], $data);
         } elseif (str_starts_with($data, 'quote:')) {
             $this->handleQuoteCallback($from, $chat, (string) $callback['id'], $data);
+        } elseif (str_starts_with($data, 'table:')) {
+            $this->handleTableCallback($from, $chat, (string) $callback['id'], $data);
         } else {
             $this->handleOnboardingCallback($from, $chat, $data);
         }
@@ -421,6 +425,17 @@ final readonly class TelegramConversationService
         }
         $reply = $this->acceptQuote->execute($this->workspaceFor($user), $user, $callbackId, explode(':', $callbackData)[2]);
         $this->bot->sendMessage($chat['id'], $reply->text, $reply->buttons);
+    }
+
+    private function handleTableCallback(array $from, array $chat, string $callbackId, string $callbackData): void
+    {
+        [, $verb, $table] = explode(':', $callbackData);
+        $user = $this->resolveUser(['from' => $from]);
+        if (! $this->readyForProject($user, $chat['id'])) {
+            return;
+        }
+        /** @var 'go'|'irt'|'irr'|'drop' $verb */
+        $this->bot->sendMessage($chat['id'], $this->importTable->execute($this->workspaceFor($user), $user, $callbackId, $verb, $table));
     }
 
     private function handleCancel(array $message, int|string $chatId): void

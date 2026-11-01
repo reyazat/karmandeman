@@ -21,13 +21,21 @@ use RuntimeException;
  */
 final readonly class PrivateAssetStore
 {
+    public const KIND_PHOTO = 'photo';
+
+    public const KIND_TABLE = 'table';
+
     public function __construct(private WorkspaceFieldCipher $cipher) {}
 
-    /** Writes the encrypted object and returns its storage key. */
-    public function put(Workspace $workspace, string $assetPublicId, #[\SensitiveParameter] string $bytes): string
+    /**
+     * Writes the encrypted object and returns its storage key. A product
+     * table (ADR-040) is bound to its own context, so it never decrypts as a
+     * photo or the other way round.
+     */
+    public function put(Workspace $workspace, string $assetPublicId, #[\SensitiveParameter] string $bytes, string $kind = self::KIND_PHOTO): string
     {
         $key = $this->prefix($workspace).Str::uuid()->toString();
-        if (! $this->disk()->put($key, $this->cipher->encryptBytes($workspace, $this->context($assetPublicId), $bytes))) {
+        if (! $this->disk()->put($key, $this->cipher->encryptBytes($workspace, $this->context($assetPublicId, $kind), $bytes))) {
             throw new RuntimeException('Asset object could not be written.');
         }
 
@@ -40,15 +48,21 @@ final readonly class PrivateAssetStore
      */
     public function read(Workspace $workspace, Asset $asset): string
     {
+        return $this->readObject($workspace, $asset->storage_key, $asset->public_id, self::KIND_PHOTO);
+    }
+
+    /** Plain bytes of any object of the workspace, checked against its id and kind. */
+    public function readObject(Workspace $workspace, string $storageKey, string $publicId, string $kind): string
+    {
         $disk = $this->disk();
-        if (! str_starts_with($asset->storage_key, $this->prefix($workspace)) || ! $disk->exists($asset->storage_key)) {
+        if (! str_starts_with($storageKey, $this->prefix($workspace)) || ! $disk->exists($storageKey)) {
             throw new UndecryptableValue('Asset object is missing.');
         }
 
         // A disk without 'throw' answers null on failure: an outage, not tampering.
-        $stored = $disk->get($asset->storage_key) ?? throw new RuntimeException('Asset object could not be read.');
+        $stored = $disk->get($storageKey) ?? throw new RuntimeException('Asset object could not be read.');
 
-        return $this->cipher->decryptBytes($workspace, $this->context($asset->public_id), $stored);
+        return $this->cipher->decryptBytes($workspace, $this->context($publicId, $kind), $stored);
     }
 
     public function delete(string $storageKey): void
@@ -64,9 +78,9 @@ final readonly class PrivateAssetStore
         }
     }
 
-    public function contentMac(Workspace $workspace, #[\SensitiveParameter] string $bytes): string
+    public function contentMac(Workspace $workspace, #[\SensitiveParameter] string $bytes, string $kind = self::KIND_PHOTO): string
     {
-        return $this->cipher->mac($workspace, 'assets.content', hash('sha256', $bytes, true));
+        return $this->cipher->mac($workspace, $kind === self::KIND_PHOTO ? 'assets.content' : 'product_tables.content', hash('sha256', $bytes, true));
     }
 
     private function prefix(Workspace $workspace): string
@@ -74,9 +88,9 @@ final readonly class PrivateAssetStore
         return "ws/{$workspace->public_id}/";
     }
 
-    private function context(string $assetPublicId): string
+    private function context(string $publicId, string $kind): string
     {
-        return "assets.original:{$assetPublicId}";
+        return $kind === self::KIND_PHOTO ? "assets.original:{$publicId}" : "product_tables.original:{$publicId}";
     }
 
     /** Production fails closed unless the files go to the private S3-compatible bucket. */

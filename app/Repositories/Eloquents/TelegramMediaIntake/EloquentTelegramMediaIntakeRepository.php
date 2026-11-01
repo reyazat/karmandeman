@@ -13,12 +13,13 @@ use Carbon\CarbonImmutable;
 
 final class EloquentTelegramMediaIntakeRepository implements TelegramMediaIntakeRepositoryInterface
 {
-    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey): ?TelegramMediaIntake
+    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey, string $kind = TelegramMediaIntake::KIND_PHOTO): ?TelegramMediaIntake
     {
         $created = TelegramMediaIntake::query()->insertOrIgnore([
             'workspace_id' => $workspace->id,
             'project_id' => $project->id,
             'user_id' => $user->id,
+            'kind' => $kind,
             'file_ref' => $fileRef,
             'declared_size' => $declaredSize,
             'message_key' => $messageKey,

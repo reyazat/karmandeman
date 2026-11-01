@@ -46,6 +46,8 @@ final class TelegramWebhookRequest extends FormRequest
             'message.document' => ['sometimes', 'array'],
             'message.document.file_id' => ['required_with:message.document', 'string', 'max:255'],
             'message.document.mime_type' => ['sometimes', 'string', 'max:100'],
+            // Only its extension is read, to tell a product CSV (ADR-040); the name is never stored.
+            'message.document.file_name' => ['sometimes', 'string', 'max:1024'],
             'message.document.file_size' => ['sometimes', 'integer', 'min:0'],
             // A reply to a product card (ADR-029): only who sent the card and its buttons are kept.
             // No size or type limits: a reply to any other message must not be rejected, or

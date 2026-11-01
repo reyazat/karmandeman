@@ -9,6 +9,7 @@ use App\Models\Asset;
 use App\Models\Brand;
 use App\Models\CreditQuote;
 use App\Models\ProductRevision;
+use App\Models\ProductTable;
 use App\Models\Project;
 use App\Models\ProjectSnapshot;
 use App\Models\Workspace;
@@ -59,6 +60,7 @@ final readonly class RunIdempotentMutationAction
                     'project.approve_products' => ProjectSnapshot::class,
                     'project.attach_asset' => Asset::class,
                     'project.extraction_quote' => CreditQuote::class,
+                    'project.attach_table', 'project.import_table' => ProductTable::class,
                     'brand.update' => Brand::class,
                     'product.create', 'product.revise', 'product.approve', 'product.archive' => ProductRevision::class,
                     default => throw new DomainException('UNKNOWN_MUTATION'),

@@ -43,6 +43,13 @@ return [
         'callback_tolerance_seconds' => 300,
     ],
 
+    // A seller's CSV of simple products (ADR-040, FR-023); larger files are refused with a reason.
+    'tables' => [
+        'max_kilobytes' => (int) env('KM_TABLE_MAX_KILOBYTES', 1024),
+        'max_rows' => (int) env('KM_TABLE_MAX_ROWS', 200),
+        'max_columns' => 30,
+    ],
+
     // Credit for paid work (PRD E08, ADR-039). The tariff is not final (PRD
     // §20); a quote keeps the price and tariff version it was made with.
     'credits' => [

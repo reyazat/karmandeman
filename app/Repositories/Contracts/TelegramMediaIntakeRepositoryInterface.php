@@ -13,7 +13,7 @@ use Carbon\CarbonImmutable;
 interface TelegramMediaIntakeRepositoryInterface
 {
     /** Null when this message was already queued. */
-    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey): ?TelegramMediaIntake;
+    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey, string $kind = TelegramMediaIntake::KIND_PHOTO): ?TelegramMediaIntake;
 
     public function find(int $id): ?TelegramMediaIntake;
 

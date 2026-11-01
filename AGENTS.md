@@ -21,10 +21,11 @@ Gemini model step (owner-chosen provider; runs start only while the approved
 policy the seller accepted names Google, which the current bundle does not),
 a Laravel-owned run claim so only one n8n execution pays for the model,
 and a seller-accepted extraction quote whose credit is held before the run
-and spent only on success, released on failure, timeout or cancel
-(ADR-016 to ADR-039) with code and tests. These
+and spent only on success, released on failure, timeout or cancel,
+and a simple seller CSV intake mapped once and imported as cited drafts
+(ADR-016 to ADR-040) with code and tests. These
 are partial foundations, not a completed MVP. A Gemini call against the real
-API, an approved policy naming the provider, voice and CSV intake,
+API, an approved policy naming the provider, voice and XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments
 and ledger reconciliation are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

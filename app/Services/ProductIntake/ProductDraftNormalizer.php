@@ -24,6 +24,11 @@ final readonly class ProductDraftNormalizer
     /** Candidate of an n8n extraction run; every value is only suggested (ADR-032). */
     public const SOURCE_AI = 'ai_extraction';
 
+    /** A row of the seller's CSV, mapped with the seller's confirmation (ADR-040). */
+    public const SOURCE_TABLE = 'table_import';
+
+    private const SOURCES = [self::SOURCE_MANUAL, self::SOURCE_AI, self::SOURCE_TABLE];
+
     private const TEXT_FIELDS = ['name', 'sku', 'description_fa'];
 
     public function __construct(private PersianTextNormalizer $text) {}
@@ -31,16 +36,15 @@ final readonly class ProductDraftNormalizer
     /**
      * @param  array<string, mixed>  $draft  validated StoreProductDraftRequest input
      * @param  list<string>  $sourceAssetIds  batch photos an extracted value came from (FR-030)
+     * @param  array{table_id: string, line: int}|null  $tableRow  the CSV row an imported value came from (FR-030)
      * @return array<string, mixed>
      */
-    public function normalize(array $draft, string $source = self::SOURCE_MANUAL, array $sourceAssetIds = []): array
+    public function normalize(array $draft, string $source = self::SOURCE_MANUAL, array $sourceAssetIds = [], ?array $tableRow = null): array
     {
         $payload = ['schema_version' => self::SCHEMA_VERSION];
         $evidence = [];
         $originals = [];
-        $cite = fn (string $field): array => $sourceAssetIds === []
-            ? ['field' => $field, 'source' => $source]
-            : ['field' => $field, 'source' => $source, 'source_asset_ids' => $sourceAssetIds];
+        $cite = fn (string $field): array => $this->citation($field, $source, $sourceAssetIds, $tableRow);
 
         foreach (self::TEXT_FIELDS as $field) {
             $payload[$field] = $this->field("{$field}.value", $draft[$field] ?? null, $originals);
@@ -228,13 +232,16 @@ final readonly class ProductDraftNormalizer
         foreach ($previous['evidence'] ?? [] as $entry) {
             // Rebuilt from known parts only: nothing else of a stored entry is carried.
             $ids = $entry['source_asset_ids'] ?? [];
-            if (! is_string($entry['field'] ?? null) || ! in_array($entry['source'] ?? null, [self::SOURCE_MANUAL, self::SOURCE_AI], true)
-                || ! is_array($ids) || ! array_is_list($ids) || array_filter($ids, fn (mixed $id): bool => ! is_string($id) || ! Str::isUuid($id)) !== []) {
+            $table = $entry['source_table_id'] ?? null;
+            $line = $entry['source_line'] ?? null;
+            $tableRow = is_string($table) && Str::isUuid($table) && is_int($line) && $line > 0 ? ['table_id' => $table, 'line' => $line] : null;
+            if (! is_string($entry['field'] ?? null) || ! in_array($entry['source'] ?? null, self::SOURCES, true)
+                || ! is_array($ids) || ! array_is_list($ids) || array_filter($ids, fn (mixed $id): bool => ! is_string($id) || ! Str::isUuid($id)) !== []
+                || ($entry['source'] === self::SOURCE_TABLE) !== ($tableRow !== null)) {
                 continue;
             }
-            $before[$entry['field']] = $ids === []
-                ? ['field' => $entry['field'], 'source' => $entry['source']]
-                : ['field' => $entry['field'], 'source' => $entry['source'], 'source_asset_ids' => $ids];
+            /** @var list<string> $ids */
+            $before[$entry['field']] = $this->citation($entry['field'], $entry['source'], $ids, $tableRow);
         }
         foreach ($payload['evidence'] as $index => $entry) {
             $field = $entry['field'];
@@ -247,6 +254,27 @@ final readonly class ProductDraftNormalizer
         }
 
         return $payload;
+    }
+
+    /**
+     * One evidence entry: its source and the photos or CSV row it came from.
+     *
+     * @param  list<string>  $sourceAssetIds
+     * @param  array{table_id: string, line: int}|null  $tableRow
+     * @return array<string, mixed>
+     */
+    private function citation(string $field, string $source, array $sourceAssetIds, ?array $tableRow): array
+    {
+        $entry = ['field' => $field, 'source' => $source];
+        if ($sourceAssetIds !== []) {
+            $entry['source_asset_ids'] = $sourceAssetIds;
+        }
+        if ($tableRow !== null) {
+            $entry['source_table_id'] = $tableRow['table_id'];
+            $entry['source_line'] = $tableRow['line'];
+        }
+
+        return $entry;
     }
 
     /** @param  array<string, mixed>  $payload */
