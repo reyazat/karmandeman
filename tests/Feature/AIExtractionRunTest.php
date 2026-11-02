@@ -10,10 +10,12 @@ use App\Jobs\AI\DispatchProductExtraction;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
+use App\Models\CreditLedgerEntry;
 use App\Models\CreditQuote;
 use App\Models\Product;
 use App\Models\ProductRevision;
 use App\Models\User;
+use App\Models\Wallet;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
@@ -59,14 +61,16 @@ class AIExtractionRunTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->useApprovedPilotPolicy(aiProviders: ['openai']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => '123:test-token',
             'services.n8n.internal_url' => 'http://n8n.test',
             'services.n8n.workflow_auth_token' => self::WORKFLOW_TOKEN,
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
+            'services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH,
             'karmandeman.ai.extraction_enabled' => true,
+            'karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
             'karmandeman.gift_credits' => 100,
         ]);
         Http::fake([
@@ -156,7 +160,7 @@ class AIExtractionRunTest extends TestCase
             'run_id' => $run->public_id,
             'status' => 'succeeded',
             'error_code' => null,
-            'usage' => ['model_requests' => 3, 'input_tokens' => 1200, 'output_tokens' => 300, 'provider' => 'fixture', 'model' => 'fixture-1'],
+            'usage' => ['model_requests' => 3, 'input_tokens' => 1200, 'output_tokens' => 300, 'provider' => 'openai', 'model' => 'fixture-1'],
             'candidates' => $candidates,
         ], $overrides);
     }
@@ -213,7 +217,7 @@ class AIExtractionRunTest extends TestCase
         $run = AiWorkflowRun::query()->sole();
         $this->assertSame('queued', $run->status->value);
         $this->assertSame($photos, $run->input_asset_ids);
-        $this->assertSame('product-extraction.v1', $run->workflow_version);
+        $this->assertSame(AIWorkflowService::OPENAI_WORKFLOW_VERSION, $run->workflow_version);
         Queue::assertPushedOn('ai', DispatchProductExtraction::class, fn (DispatchProductExtraction $job): bool => $job->runId === $run->id);
         Queue::assertPushed(DispatchProductExtraction::class, 1);
         // The batch is open until approval (ADR-041): a photo sent while the run reads is kept for
@@ -238,6 +242,79 @@ class AIExtractionRunTest extends TestCase
         $this->app['env'] = 'testing';
         $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled());
         $this->assertSame(0, AiWorkflowRun::query()->count());
+    }
+
+    public function test_openai_consent_does_not_unlock_the_retired_gemini_workflow(): void
+    {
+        $this->seller(949);
+        $project = $this->project();
+        $this->photo($project, 1);
+
+        config(['karmandeman.ai.workflow_version' => 'product-extraction.v1']);
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->finish($project)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_HAS_NO_PRODUCTS');
+        $this->assertSame(0, AiWorkflowRun::query()->count());
+
+        config(['karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
+            'services.n8n.extraction_webhook_path' => '/webhook/km-product-extraction-v1']);
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        config(['services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH]);
+        $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled());
+
+        $this->useApprovedPilotPolicy('google-only', aiProviders: ['google']);
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+    }
+
+    public function test_switching_provider_or_policy_revokes_claimed_links_and_old_runs(): void
+    {
+        [$project, , $run] = $this->extracting(950);
+        [$asset] = $this->startedAssets($run);
+        $this->get($asset['download_url'])->assertOk();
+
+        // A changed policy is neither approved consent nor a valid link, even
+        // if the run was already claimed while the old bundle was current.
+        $this->useApprovedPilotPolicy('changed-policy', aiProviders: ['openai']);
+        $this->get($asset['download_url'])->assertStatus(403)->assertJsonPath('error.code', 'RUN_ASSET_FORBIDDEN');
+        $this->sendClaim($run, 'exec-'.$run->id)->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+        $this->assertSame('POLICY_CONSENT_REQUIRED', $run->fresh()->error_code);
+        $this->assertSame('collecting_input', $this->state($project));
+    }
+
+    public function test_a_queued_run_from_the_retired_workflow_cannot_be_dispatched_after_the_switch(): void
+    {
+        [$project, , $run] = $this->extracting(953);
+        DB::table('ai_workflow_runs')->where('id', $run->id)->update(['workflow_version' => 'product-extraction.v1']);
+
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+        $this->assertSame(0, $this->n8nStarts);
+        $this->assertSame('EXTRACTION_DISABLED', $run->fresh()->error_code);
+        $this->assertSame('collecting_input', $this->state($project));
+        $this->assertSame(0, Wallet::query()->where('workspace_id', $run->workspace_id)->sole()->reserved_cached);
+        $this->sendClaim($run, 'old-execution')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
+    }
+
+    public function test_old_run_or_google_usage_never_creates_products_or_captures_credit(): void
+    {
+        [$project, $photos, $run] = $this->extracting(951);
+        [$asset] = $this->startedAssets($run);
+        config(['karmandeman.ai.workflow_version' => 'product-extraction.v1']);
+        $this->get($asset['download_url'])->assertStatus(403);
+        $this->sendCallback($this->runResult($run, [$this->candidate('کیف', [$photos[0]])]))
+            ->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        $this->assertSame('EXTRACTION_DISABLED', $run->fresh()->error_code);
+        $this->assertSame(0, Product::query()->count());
+        $this->assertSame('collecting_input', $this->state($project));
+        $this->assertSame(0, Wallet::query()->where('workspace_id', $run->workspace_id)->sole()->reserved_cached);
+
+        config(['karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION]);
+        [, $nextPhotos, $nextRun] = $this->extracting(952);
+        $body = $this->runResult($nextRun, [$this->candidate('کفش', [$nextPhotos[0]])]);
+        $body['usage']['provider'] = 'google';
+        $this->sendCallback($body)->assertOk()->assertJsonPath('data.outcome', 'run_failed');
+        $this->assertSame('PROVIDER_MISMATCH', $nextRun->fresh()->error_code);
+        $this->assertSame(0, Product::query()->count());
+        $this->assertSame(0, Wallet::query()->where('workspace_id', $nextRun->workspace_id)->sole()->reserved_cached);
+        $this->assertSame(0, CreditLedgerEntry::query()->where('type', 'capture')->count());
     }
 
     public function test_too_many_photos_are_refused_before_any_run(): void
@@ -324,7 +401,7 @@ class AIExtractionRunTest extends TestCase
         $sent = Http::recorded(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'));
         $this->assertCount(1, $sent);
         [$request] = $sent[0];
-        $this->assertSame('http://n8n.test/webhook/km-product-extraction-v1', $request->url());
+        $this->assertSame('http://n8n.test'.AIWorkflowService::OPENAI_WEBHOOK_PATH, $request->url());
         $this->assertTrue((new WorkflowSignature)->verify(self::WORKFLOW_TOKEN, $request->header(WorkflowSignature::HEADER_TIMESTAMP)[0],
             $request->body(), $request->header(WorkflowSignature::HEADER_SIGNATURE)[0], time(), 300));
         $envelope = json_decode($request->body(), true);
@@ -784,15 +861,15 @@ class AIExtractionRunTest extends TestCase
     {
         [$first, , $claimed] = $this->extracting(929);
         $this->sendClaim($claimed, '1')->assertOk();
-        // A new bundle that still names Google, which the seller has not accepted: even the
+        // A new bundle that still names OpenAI, which the seller has not accepted: even the
         // execution holding the claim stops before reading a photo.
-        $this->useApprovedPilotPolicy('test-policy-v2', aiProviders: ['google']);
+        $this->useApprovedPilotPolicy('test-policy-v2', aiProviders: ['openai']);
         $this->sendClaim($claimed, '1')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
         $this->assertSame('POLICY_CONSENT_REQUIRED', $claimed->fresh()->error_code);
         $this->assertSame('collecting_input', $this->state($first));
 
         [$second, , $dropped] = $this->extracting(931);
-        // The policy in force no longer names Google.
+        // The policy in force no longer names OpenAI.
         $this->useApprovedPilotPolicy('test-policy-v3');
         $this->sendClaim($dropped, '2')->assertStatus(409)->assertJsonPath('error.code', 'RUN_CLOSED');
         $this->assertSame('EXTRACTION_DISABLED', $dropped->fresh()->error_code);

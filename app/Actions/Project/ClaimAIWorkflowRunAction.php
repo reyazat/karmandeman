@@ -38,7 +38,7 @@ final readonly class ClaimAIWorkflowRunAction
 
     public const RUN_CLOSED = 'RUN_CLOSED';
 
-    /** Downloads, two Gemini tries of up to 120 s and the callback must fit before the deadline. */
+    /** Downloads, model work and the callback must fit before the deadline. */
     public const MIN_REMAINING_SECONDS = 300;
 
     public function __construct(
@@ -89,7 +89,7 @@ final readonly class ClaimAIWorkflowRunAction
                 return self::RUN_CLOSED;
             }
             // Switched off, or the policy no longer names the provider: reopen the batch now, before photos leave.
-            if (! $this->ai->extractionEnabled()) {
+            if (! $this->ai->canProcessRun($run)) {
                 $this->fail->closeLocked($run, 'EXTRACTION_DISABLED');
 
                 return self::RUN_CLOSED;

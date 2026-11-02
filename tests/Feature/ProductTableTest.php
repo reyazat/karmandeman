@@ -229,6 +229,9 @@ class ProductTableTest extends TestCase
         $this->import($cells, 'IRT')->assertStatus(422)->assertJsonPath('error.code', 'TABLE_PRICE_UNIT_CONFLICT');
         // Toman and rial in one file is refused before anything is stored (QA-02).
         $this->upload($project, "نام,قیمت (تومان)\nکیف,120000 ریال\n")->assertStatus(422)->assertJsonPath('error.code', 'TABLE_MIXED_PRICE_UNITS');
+        $this->upload($project, "نام,قیمت\nکیف,120000 تومان ریال\n")->assertStatus(422)->assertJsonPath('error.code', 'TABLE_MIXED_PRICE_UNITS');
+        $this->upload($project, "نام,قیمت (تومان و ریال)\nکیف,120000\n")->assertStatus(422)->assertJsonPath('error.code', 'TABLE_MIXED_PRICE_UNITS');
+        $this->assertSame(2, ProductTable::query()->count());
         // Without any price no unit is needed.
         $plain = $this->upload($project, "نام;رنگ\nشال;آبی\n")->assertCreated()->json('data.id');
         $this->import($plain)->assertCreated()->assertJsonPath('data.product_count', 1);

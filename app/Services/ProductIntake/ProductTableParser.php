@@ -169,11 +169,16 @@ final readonly class ProductTableParser
             $title = $this->text->line($cell);
             $key = $this->text->nameKey($title);
             $cellUnit = null;
+            $cellUnits = [];
             foreach (self::UNIT_WORDS as $word => $code) {
                 if (str_contains($key, $word)) {
+                    $cellUnits[$code] = true;
                     $cellUnit = $code;
                     $key = str_replace($word, '', $key);
                 }
+            }
+            if (count($cellUnits) > 1) {
+                throw new DomainException('TABLE_MIXED_PRICE_UNITS');
             }
             $field = $title === '' ? 'ignored' : 'attribute';
             foreach (self::HEADERS as $name => $aliases) {
@@ -277,11 +282,16 @@ final readonly class ProductTableParser
     {
         $digits = mb_strtolower($this->text->sku($cell));
         $unit = null;
+        $units = [];
         foreach (self::UNIT_WORDS as $word => $code) {
             if (str_contains($digits, $word)) {
+                $units[$code] = true;
                 $unit = $code;
                 $digits = str_replace($word, '', $digits);
             }
+        }
+        if (count($units) > 1) {
+            throw new DomainException('TABLE_MIXED_PRICE_UNITS');
         }
         $digits = trim($digits);
         // Latin digits only after the Persian and Arabic ones are mapped: \d would take any script.

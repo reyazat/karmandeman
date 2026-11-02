@@ -19,6 +19,10 @@ final readonly class AIWorkflowService
 {
     public const INPUT_SCHEMA_VERSION = 'product-extraction.input.v1';
 
+    public const OPENAI_WORKFLOW_VERSION = 'product-extraction.openai.v1';
+
+    public const OPENAI_WEBHOOK_PATH = '/webhook/km-product-extraction-openai-v1';
+
     public function __construct(
         private N8nWorkflowClient $client,
         private RunAssetUrlSigner $urls,
@@ -26,16 +30,21 @@ final readonly class AIWorkflowService
     ) {}
 
     /**
-     * Off unless configured, and always off in production until an ADR turns it
-     * on: every run now starts from an accepted quote with its credit held
-     * (ADR-039), but the provider's paid tier and quality are unverified. Also
-     * off unless the approved policy bundle names the provider, so the consent
-     * every run checks covers sending the seller's photos there (ADR-037).
+     * The checked-in v1 export still calls Gemini: an OpenAI policy must never
+     * unlock that old webhook. Production remains off until a release ADR.
      */
     public function extractionEnabled(): bool
     {
         return (bool) config('karmandeman.ai.extraction_enabled') && ! app()->isProduction()
-            && $this->policies->current()->allowsAiProvider((string) config('karmandeman.ai.provider'));
+            && config('karmandeman.ai.provider') === 'openai'
+            && config('karmandeman.ai.workflow_version') === self::OPENAI_WORKFLOW_VERSION
+            && config('services.n8n.extraction_webhook_path') === self::OPENAI_WEBHOOK_PATH
+            && $this->policies->current()->allowsAiProvider('openai');
+    }
+
+    public function canProcessRun(AiWorkflowRun $run): bool
+    {
+        return $this->extractionEnabled() && $run->workflow_version === self::OPENAI_WORKFLOW_VERSION;
     }
 
     /**

@@ -33,6 +33,7 @@ use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Services\AI\AIWorkflowService;
 use App\Services\Telegram\TelegramReplyService;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
@@ -51,7 +52,11 @@ final class FoundationConcurrencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->useApprovedPilotPolicy(aiProviders: ['openai']);
+        config([
+            'karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
+            'services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH,
+        ]);
     }
 
     protected function connectionsToTransact(): array
@@ -362,7 +367,7 @@ final class FoundationConcurrencyTest extends TestCase
         ];
         $body = json_encode([
             'schema_version' => 'product-extraction.output.v1', 'run_id' => $run->public_id, 'status' => 'succeeded', 'error_code' => null,
-            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1'],
+            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'openai', 'model' => 'fixture-1'],
             'candidates' => [$candidate('Bag', $photos[0]), $candidate('Shoe', $photos[1])],
         ], JSON_THROW_ON_ERROR);
 

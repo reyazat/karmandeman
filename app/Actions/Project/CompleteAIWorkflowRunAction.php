@@ -112,6 +112,18 @@ final readonly class CompleteAIWorkflowRunAction
                 }
                 throw new DomainException(self::RUN_ALREADY_COMPLETED);
             }
+            // A late callback from the retired Gemini workflow cannot turn
+            // an OpenAI consent into a charge or a product suggestion.
+            if (! $this->ai->canProcessRun($run)) {
+                $this->fail->closeLocked($run, 'EXTRACTION_DISABLED');
+
+                return self::DISCARDED;
+            }
+            if ($result->usage['provider'] !== 'openai') {
+                $this->fail->closeLocked($run, 'PROVIDER_MISMATCH', $result->usage);
+
+                return self::RUN_FAILED;
+            }
 
             // A callback past the deadline is late even before the sweep closes the run.
             if ($run->deadline_at->isPast()) {

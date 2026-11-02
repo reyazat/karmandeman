@@ -39,7 +39,7 @@ final readonly class DispatchExtractionRunAction
             return;
         }
         // Switched off after the batch closed: reopen it now, not at the deadline.
-        if (! $this->ai->extractionEnabled()) {
+        if (! $this->ai->canProcessRun($run)) {
             $this->fail->execute($run->id, 'EXTRACTION_DISABLED');
 
             return;

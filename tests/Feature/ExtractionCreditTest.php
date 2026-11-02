@@ -17,6 +17,7 @@ use App\Models\Wallet;
 use App\Repositories\Contracts\AccountErasureRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Services\AI\AIWorkflowService;
 use App\Services\AI\WorkflowSignature;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -45,14 +46,16 @@ class ExtractionCreditTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->useApprovedPilotPolicy(aiProviders: ['openai']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => '123:test-token',
             'services.n8n.internal_url' => 'http://n8n.test',
             'services.n8n.workflow_auth_token' => 'test-workflow-token',
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
+            'services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH,
             'karmandeman.ai.extraction_enabled' => true,
+            'karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
             'karmandeman.gift_credits' => 10,
             'karmandeman.credits.extraction_per_photo' => 3,
             'karmandeman.credits.quote_cap_percent' => 50,
@@ -133,7 +136,7 @@ class ExtractionCreditTest extends TestCase
     {
         return $this->signed('/api/webhooks/internal/n8n/runs', array_replace([
             'schema_version' => 'product-extraction.output.v1', 'run_id' => $run->public_id, 'status' => 'succeeded', 'error_code' => null,
-            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1'],
+            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'openai', 'model' => 'fixture-1'],
             'candidates' => [[
                 'name' => 'کیف', 'sku' => null, 'description_fa' => null, 'price' => null, 'attributes' => null, 'category_path' => null,
                 'source_asset_ids' => [$run->input_asset_ids[0]],
@@ -247,7 +250,7 @@ class ExtractionCreditTest extends TestCase
         Log::spy();
 
         // 300k input tokens are inside the run caps but cost far more than the accepted cap.
-        $this->runCallback($run, ['usage' => ['model_requests' => 1, 'input_tokens' => 300_000, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1']])
+        $this->runCallback($run, ['usage' => ['model_requests' => 1, 'input_tokens' => 300_000, 'output_tokens' => 10, 'provider' => 'openai', 'model' => 'fixture-1']])
             ->assertOk()->assertJsonPath('data.outcome', 'recorded');
 
         $this->assertSame([5, 0], $this->wallet());
@@ -393,7 +396,7 @@ class ExtractionCreditTest extends TestCase
         // A signed body that breaks the schema.
         $this->runCallback($started(1), ['candidates' => 'nope'])->assertStatus(422);
         // Reported usage over the run caps.
-        $this->runCallback($started(2), ['usage' => ['model_requests' => 999, 'input_tokens' => 1, 'output_tokens' => 1, 'provider' => 'fixture', 'model' => 'fixture-1']])->assertOk();
+        $this->runCallback($started(2), ['usage' => ['model_requests' => 999, 'input_tokens' => 1, 'output_tokens' => 1, 'provider' => 'openai', 'model' => 'fixture-1']])->assertOk();
         // A callback after the deadline, before the sweep.
         $late = $started(3);
         $this->travel(16)->minutes();

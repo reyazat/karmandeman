@@ -16,6 +16,7 @@ use App\Models\ProductRevision;
 use App\Models\Project;
 use App\Models\TelegramMediaIntake;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Services\AI\AIWorkflowService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -41,13 +42,15 @@ class TelegramOpenBatchTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->useApprovedPilotPolicy(aiProviders: ['openai']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => self::BOT_ID.':test-token',
             'services.n8n.internal_url' => 'http://n8n.test',
             'services.n8n.workflow_auth_token' => 'test-workflow-token',
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
+            'services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH,
+            'karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
             'karmandeman.gift_credits' => 100,
         ]);
         // Http::fake keeps the first matching stub: each download serves the next fixture photo.

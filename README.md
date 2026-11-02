@@ -27,6 +27,19 @@ instance**, never the app DB with a renamed connection. Use Node 24 and `npm ci`
 frontend. Empty frontend routes mean there is no working review UI yet; do not
 add dummy tests to conceal that gap.
 
+On hosts where the development container runs as root, permission tests can
+falsely pass and leave root-owned test files. Run SQLite tests as the workspace
+user with an isolated temporary test directory instead (no Compose secrets or
+existing Postgres database are used):
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" \
+  --tmpfs /var/www/html/storage/framework/testing:rw,mode=1777 \
+  -v "$PWD:/var/www/html" -w /var/www/html \
+  -e APP_ENV=testing -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: -e DB_URL= \
+  karmandeman-workspace:latest php artisan test --compact
+```
+
 When building through Docker on WSL, run Node as the workspace user so Vite's
 temporary files and build outputs remain writable on the next local run:
 

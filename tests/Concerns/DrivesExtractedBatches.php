@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Services\AI\AIWorkflowService;
 use App\Services\AI\WorkflowSignature;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -39,14 +40,16 @@ trait DrivesExtractedBatches
     /** Telegram, n8n and storage fakes for a seller whose batch an n8n run extracted. */
     private function setUpExtractedBatches(): void
     {
-        $this->useApprovedPilotPolicy(aiProviders: ['google']);
+        $this->useApprovedPilotPolicy(aiProviders: ['openai']);
         config([
             'services.telegram.webhook_secret' => self::SECRET,
             'services.telegram.bot_token' => '123:test-token',
             'services.n8n.internal_url' => 'http://n8n.test',
             'services.n8n.workflow_auth_token' => 'test-workflow-token',
             'services.n8n.callback_secret' => self::CALLBACK_SECRET,
+            'services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH,
             'karmandeman.ai.extraction_enabled' => true,
+            'karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
             'karmandeman.gift_credits' => 100,
         ]);
         Http::fake(['*' => Http::response(['ok' => true])]);
@@ -120,7 +123,7 @@ trait DrivesExtractedBatches
             'run_id' => $run->public_id,
             'status' => 'succeeded',
             'error_code' => null,
-            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1'],
+            'usage' => ['model_requests' => 1, 'input_tokens' => 10, 'output_tokens' => 10, 'provider' => 'openai', 'model' => 'fixture-1'],
             'candidates' => array_map(fn (array $candidate): array => $candidate + ['source_asset_ids' => [$photo]], $candidates),
         ], JSON_UNESCAPED_UNICODE);
         $timestamp = now()->getTimestamp();

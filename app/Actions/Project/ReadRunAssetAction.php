@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Exceptions\UndecryptableValue;
 use App\Models\Asset;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\AssetRepositoryInterface;
+use App\Services\AI\AIWorkflowService;
 use App\Services\AI\RunAssetUrlSigner;
 use App\Services\Storage\ImageMetadataStripper;
 use App\Services\Storage\PrivateAssetStore;
@@ -33,6 +35,8 @@ final readonly class ReadRunAssetAction
         private RunAssetUrlSigner $signer,
         private PrivateAssetStore $store,
         private ImageMetadataStripper $stripper,
+        private AIWorkflowService $ai,
+        private EnsurePolicyConsentAction $consent,
     ) {}
 
     /**
@@ -51,8 +55,14 @@ final readonly class ReadRunAssetAction
             || ! $run->status->isOpen()
             || $run->claimed_at === null
             || $run->workspace->status !== 'active'
+            || ! $this->ai->canProcessRun($run)
             || ! in_array($assetPublicId, $run->input_asset_ids, true)
             || ! $this->signer->valid($run, $assetPublicId, $expires, $signature, CarbonImmutable::now()->getTimestamp())) {
+            throw new DomainException(self::FORBIDDEN);
+        }
+        try {
+            $this->consent->execute($run->workspace);
+        } catch (DomainException) {
             throw new DomainException(self::FORBIDDEN);
         }
         $asset = $this->assets->findPublicForWorkspace($run->workspace, $assetPublicId);
