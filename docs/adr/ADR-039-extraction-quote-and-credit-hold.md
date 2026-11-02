@@ -2,6 +2,8 @@
 
 تاریخ: ۱ نوامبر ۲۰۲۶. وضعیت: تصمیم مالک و برش اول گام ۵ [DEVELOPMENT_PLAN](../DEVELOPMENT_PLAN.md). وابسته به PRD E08 (FR-070…073)، §۶ (`CREDIT_RESERVED` بدون Quote معتبر و موجودی کافی ممنوع)، QA-07/08/09، [ADR-032](ADR-032-n8n-extraction-run-contract.md) و [ADR-038](ADR-038-n8n-run-claim.md). Engineering Standards §۳ و §۶ (قفل، کلید یکتا، idempotency).
 
+> **اصلاح‌شده با [ADR-042](ADR-042-usage-based-output-charge.md) (۲ نوامبر ۲۰۲۶، پیاده‌سازی‌شده):** قیمت ثابت هر عکس به تخمین و حداقل کلاس `file_to_text` تبدیل می‌شود. پیش‌فاکتور تخمین و سقف دارد و capture مصرف واقعی تا سقف است، نه کل پیش‌فاکتور. قفل، idempotency، یک راه بستن run و release در شکست همین ADR می‌مانند.
+
 ## مسئله
 
 پس از ADR-037 هر run استخراج یک درخواست پولی Gemini است. ADR-032 روشن‌کردن استخراج را به «رزرو اعتبار گام ۵ پیش از run» مشروط کرده بود. Ledger فقط `grant` داشت و `appendEntry` بقیه نوع‌ها را رد می‌کرد. هیچ پیش‌فاکتوری به فروشنده نشان داده نمی‌شد (FR-072).

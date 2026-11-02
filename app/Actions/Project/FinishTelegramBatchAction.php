@@ -86,8 +86,9 @@ final readonly class FinishTelegramBatchAction
     }
 
     /**
-     * The new photos go to a paid run: the price first, with an accept button
-     * only when the credit is there (FR-072, ADR-039).
+     * The new photos go to a paid run: the estimate and the most it can cost
+     * first, with an accept button only when the credit for that most is
+     * there (FR-072, ADR-039, ADR-042).
      */
     private function quoteReply(Workspace $workspace, User $user, string $messageKey, Project $project): BotReply
     {
@@ -101,14 +102,16 @@ final readonly class FinishTelegramBatchAction
         }
         $photos = count($quote->input_asset_ids);
         $minutes = (int) ceil(max(0, $quote->expires_at->getTimestamp() - time()) / 60);
-        $text = "برای استخراج محصولات از {$photos} عکس تازه پروژه «{$project->name}» {$quote->credits_total} اعتبار لازم است. موجودی قابل استفاده تو {$available} اعتبار است.";
-        if ($available < $quote->credits_total) {
+        $cap = $quote->capCredits();
+        $price = $quote->credits_total === $cap ? "حداکثر {$cap} اعتبار" : "حدود {$quote->credits_total} و حداکثر {$cap} اعتبار";
+        $text = "استخراج محصولات از {$photos} عکس تازه پروژه «{$project->name}» {$price} هزینه دارد. موجودی قابل استفاده تو {$available} اعتبار است.";
+        if ($available < $cap) {
             return new BotReply($text.' اعتبار کافی نیست و چیزی رزرو نشد؛ می‌توانی محصول‌ها را بدون استخراج با /product ثبت کنی.');
         }
 
         return new BotReply(
-            $text." با تأیید تو این مقدار رزرو می‌شود، فقط پس از استخراج موفق کسر می‌شود و در صورت شکست، توقف یا لغو برمی‌گردد. این پیش‌فاکتور {$minutes} دقیقه معتبر است.",
-            [[['text' => "تأیید و شروع استخراج ({$quote->credits_total} اعتبار)", 'callback_data' => "quote:accept:{$quote->public_id}"]]],
+            $text." با تأیید تو {$cap} اعتبار رزرو می‌شود. پس از استخراج موفق فقط مصرف واقعی (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود، حتی اگر پیشنهادها را نپذیری، و بقیه برمی‌گردد. در صورت شکست، توقف یا لغو چیزی کسر نمی‌شود. این پیش‌فاکتور {$minutes} دقیقه معتبر است.",
+            [[['text' => "تأیید و شروع استخراج (حداکثر {$cap} اعتبار)", 'callback_data' => "quote:accept:{$quote->public_id}"]]],
         );
     }
 }

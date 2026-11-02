@@ -1,5 +1,8 @@
 <?php
 
+// An empty value counts as unset, so `KEY=` keeps the default instead of becoming 0.
+$integer = fn (string $key, int $default): int => filled(env($key)) ? (int) env($key) : $default;
+
 return [
 
     // One-time gift credits granted to a newly eligible account (E08).
@@ -50,12 +53,28 @@ return [
         'max_columns' => 30,
     ],
 
-    // Credit for paid work (PRD E08, ADR-039). The tariff is not final (PRD
-    // §20); a quote keeps the price and tariff version it was made with.
+    // Credit for paid work (PRD E08, ADR-039, ADR-042). An output is charged
+    // its real usage at these rates, at least its class minimum, and never
+    // more than the cap the seller accepted. The numbers are not final (PRD
+    // §20); a quote keeps the tariff it was made with.
     'credits' => [
-        'tariff_version' => 'extraction-v1',
-        'extraction_per_photo' => max(1, (int) env('KM_CREDITS_EXTRACTION_PER_PHOTO', 1)),
-        'quote_ttl_minutes' => max(1, (int) env('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
+        // Change the version with any rate, minimum or cap change; each quote stores both.
+        'tariff_version' => filled(env('KM_CREDIT_TARIFF_VERSION')) ? (string) env('KM_CREDIT_TARIFF_VERSION') : 'usage-v1',
+        // Estimate per photo for an extraction quote; the cap adds the headroom below.
+        'extraction_per_photo' => max(1, $integer('KM_CREDITS_EXTRACTION_PER_PHOTO', 1)),
+        'quote_cap_percent' => max(0, $integer('KM_CREDIT_QUOTE_CAP_PERCENT', 50)),
+        'quote_ttl_minutes' => max(1, $integer('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
+        'minimum' => [
+            'text' => max(1, $integer('KM_CREDITS_MIN_TEXT', 1)),
+            'file_to_text' => max(1, $integer('KM_CREDITS_MIN_FILE_TO_TEXT', 1)),
+            'file_output' => max(1, $integer('KM_CREDITS_MIN_FILE_OUTPUT', 1)),
+        ],
+        // Credits per million tokens and per model request; the provider's price plus margin.
+        'rates' => [
+            'input_tokens_per_million' => max(0, $integer('KM_CREDITS_PER_MILLION_INPUT_TOKENS', 100)),
+            'output_tokens_per_million' => max(0, $integer('KM_CREDITS_PER_MILLION_OUTPUT_TOKENS', 400)),
+            'model_request' => max(0, $integer('KM_CREDITS_PER_MODEL_REQUEST', 0)),
+        ],
     ],
 
     // FR-087 / NFR-12 erasure timing (ADR-011, ADR-013, ADR-014). Completion is

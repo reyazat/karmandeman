@@ -67,6 +67,31 @@ class WalletLedgerTest extends TestCase
         $this->assertSame(['grant', 'reserve', 'release', 'reserve', 'capture'], CreditLedgerEntry::query()->orderBy('id')->pluck('type')->map->value->all());
     }
 
+    public function test_a_partial_capture_spends_the_charge_and_frees_the_rest_of_the_hold(): void
+    {
+        $wallets = app(WalletRepositoryInterface::class);
+        $workspace = Workspace::create(['owner_id' => User::factory()->create()->id, 'status' => 'active']);
+        $wallet = $wallets->ensureWallet($workspace);
+        $wallets->appendEntry($wallet, CreditLedgerType::Grant, 10, 'grant-10');
+        $held = DB::transaction(fn () => app(ReserveCreditsAction::class)->execute($workspace, 6, 'hold-p', 'ai_workflow_run', 1, 'test'));
+        $capture = fn (int $charge) => DB::transaction(fn () => app(CaptureCreditsAction::class)->execute($held, 'succeeded', $charge));
+
+        // A charge is between one credit and the whole hold (ADR-042).
+        $this->assertDomainError('CAPTURE_OUTSIDE_HOLD', fn () => $capture(7));
+        $this->assertDomainError('CAPTURE_OUTSIDE_HOLD', fn () => $capture(0));
+        $this->assertSame([10, 6], [$wallet->fresh()->balance_cached, $wallet->fresh()->reserved_cached]);
+
+        $spent = $capture(2);
+        $this->assertSame([-2, -6], [$spent->amount, $spent->held_amount]);
+        $this->assertSame([8, 0], [$wallet->fresh()->balance_cached, $wallet->fresh()->reserved_cached]);
+        // The hold is settled: another capture or a release returns the same entry.
+        $this->assertSame($spent->id, $capture(6)->id);
+        $this->assertSame($spent->id, DB::transaction(fn () => app(ReleaseCreditsAction::class)->execute($held, 'late')->id));
+        $this->assertSame([8, 0], [$wallet->fresh()->balance_cached, $wallet->fresh()->reserved_cached]);
+        $this->assertSame((int) CreditLedgerEntry::query()->sum('amount'), $wallet->fresh()->balance_cached);
+        $this->assertSame((int) CreditLedgerEntry::query()->sum('held_amount'), $wallet->fresh()->reserved_cached);
+    }
+
     public function test_the_database_refuses_an_overdrawn_wallet(): void
     {
         if (config('database.default') !== 'pgsql') {

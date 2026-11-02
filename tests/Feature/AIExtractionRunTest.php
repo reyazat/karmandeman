@@ -623,7 +623,7 @@ class AIExtractionRunTest extends TestCase
         // The run is paid: /done prices it and waits for the seller (ADR-039).
         $this->assertSame('collecting_input', $this->state($project));
         $quote = CreditQuote::query()->sole();
-        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '1 اعتبار لازم است')
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'حدود 1 و حداکثر 2 اعتبار')
             && $job->buttons[0][0]['callback_data'] === "quote:accept:{$quote->public_id}");
         $this->postJson('/api/webhooks/telegram', [
             'update_id' => random_int(1, 10_000_000),

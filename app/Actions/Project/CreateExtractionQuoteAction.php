@@ -14,6 +14,7 @@ use App\Repositories\Contracts\CreditQuoteRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Services\AI\AIWorkflowService;
+use App\Services\Billing\CreditTariff;
 use App\Services\ProductIntake\ExtractionInputSelector;
 use Carbon\CarbonImmutable;
 use DomainException;
@@ -21,12 +22,16 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * Prices the extraction run the batch's new photos would need (FR-072,
- * ADR-039): the photos, credits per photo, total and expiry, bound to the
- * batch version. Nothing is held yet; finish-input with the quote holds it.
+ * ADR-039, ADR-042): an estimate per photo, the cap the seller would pay at
+ * most, the tariff and expiry, bound to the batch version. Nothing is held
+ * yet; finish-input with the quote holds the cap.
  */
 final readonly class CreateExtractionQuoteAction
 {
     public const LINE_TYPE = 'product_extraction_photo';
+
+    /** Tops a small estimate up to the class minimum. */
+    public const MINIMUM_LINE_TYPE = 'output_class_minimum';
 
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
@@ -36,6 +41,7 @@ final readonly class CreateExtractionQuoteAction
         private WalletRepositoryInterface $wallets,
         private ExtractionInputSelector $inputs,
         private AIWorkflowService $ai,
+        private CreditTariff $tariff,
     ) {}
 
     /**
@@ -65,11 +71,19 @@ final readonly class CreateExtractionQuoteAction
                 }
 
                 $perPhoto = (int) config('karmandeman.credits.extraction_per_photo');
+                $tariff = $this->tariff->current();
+                $lines = [['type' => self::LINE_TYPE, 'quantity' => count($photos), 'unit_credits' => $perPhoto, 'credits' => count($photos) * $perPhoto]];
+                $minimum = $this->tariff->charge($tariff, CreditTariff::CLASS_FILE_TO_TEXT, null);
+                if ($lines[0]['credits'] < $minimum) {
+                    $lines[] = ['type' => self::MINIMUM_LINE_TYPE, 'quantity' => 1, 'unit_credits' => $minimum - $lines[0]['credits'], 'credits' => $minimum - $lines[0]['credits']];
+                }
+                $estimate = (int) array_sum(array_column($lines, 'credits'));
 
                 return $this->quotes->create(
-                    $project, $user, CreditQuote::KIND_PRODUCT_EXTRACTION, (string) config('karmandeman.credits.tariff_version'),
+                    $project, $user, CreditQuote::KIND_PRODUCT_EXTRACTION, $tariff,
                     array_map(fn ($asset): string => $asset->public_id, $photos),
-                    [['type' => self::LINE_TYPE, 'quantity' => count($photos), 'unit_credits' => $perPhoto, 'credits' => count($photos) * $perPhoto]],
+                    $lines,
+                    $this->tariff->cap($tariff, CreditTariff::CLASS_FILE_TO_TEXT, $estimate),
                     CarbonImmutable::now()->addMinutes((int) config('karmandeman.credits.quote_ttl_minutes')),
                 );
             },

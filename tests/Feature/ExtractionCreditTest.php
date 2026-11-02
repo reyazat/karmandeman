@@ -20,6 +20,7 @@ use App\Services\AI\WorkflowSignature;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
@@ -28,7 +29,7 @@ use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\Fakes\ImageFixture;
 use Tests\TestCase;
 
-/** Step 5 slice: an extraction run is quoted, held, then spent or released (ADR-039). */
+/** Step 5: an extraction run is quoted, its cap held, then its real usage spent or the hold released (ADR-039, ADR-042). */
 class ExtractionCreditTest extends TestCase
 {
     use UsesApprovedPilotPolicy;
@@ -52,6 +53,10 @@ class ExtractionCreditTest extends TestCase
             'karmandeman.ai.extraction_enabled' => true,
             'karmandeman.gift_credits' => 10,
             'karmandeman.credits.extraction_per_photo' => 3,
+            'karmandeman.credits.quote_cap_percent' => 50,
+            'karmandeman.credits.minimum.file_to_text' => 1,
+            // The callback fixture's 10 input and 10 output tokens cost 1 + 2 = 3 credits.
+            'karmandeman.credits.rates' => ['input_tokens_per_million' => 100_000, 'output_tokens_per_million' => 200_000, 'model_request' => 0],
         ]);
         Http::fake(['*' => Http::response(['ok' => true])]);
         Storage::fake('assets');
@@ -166,10 +171,11 @@ class ExtractionCreditTest extends TestCase
         $quote = $this->quote($project, 'quote-once-1')->assertCreated()
             ->assertJsonPath('data.credits_total', 6)
             ->assertJsonPath('data.lines.0', ['type' => 'product_extraction_photo', 'quantity' => 2, 'unit_credits' => 3, 'credits' => 6])
-            ->assertJsonPath('data.increase_cap_credits', 0)
+            ->assertJsonPath('data.increase_cap_credits', 3)
+            ->assertJsonPath('data.cap_credits', 9)
             ->assertJsonPath('data.available_credits', 10)
             ->assertJsonPath('data.accepted', false)
-            ->assertJsonPath('data.tariff_version', 'extraction-v1')
+            ->assertJsonPath('data.tariff_version', 'usage-v1')
             ->json('data');
         $this->assertCount(2, $quote['photo_ids']);
         $this->assertSame(now()->addMinutes(15)->getTimestamp(), strtotime($quote['expires_at']));
@@ -197,7 +203,7 @@ class ExtractionCreditTest extends TestCase
         $this->assertSame(0, CreditQuote::query()->count());
     }
 
-    public function test_accepting_holds_the_quote_and_success_spends_it_once(): void
+    public function test_accepting_holds_the_cap_and_success_spends_the_real_usage_once(): void
     {
         $this->seller(5003);
         $project = $this->batch(2, 1);
@@ -206,25 +212,132 @@ class ExtractionCreditTest extends TestCase
         $this->accept($project, $quote)->assertStatus(202)->assertJsonPath('data.state', 'extracting');
 
         $run = AiWorkflowRun::query()->sole();
-        $this->assertSame([10, 6], $this->wallet());
+        $this->assertSame([10, 9], $this->wallet());
         $hold = CreditLedgerEntry::query()->findOrFail($run->reservation_entry_id);
         $this->assertSame(CreditLedgerType::Reserve, $hold->type);
-        $this->assertSame(['ai_workflow_run', $run->id, 0, 6], [$hold->related_type, $hold->related_id, $hold->amount, $hold->held_amount]);
+        $this->assertSame(['ai_workflow_run', $run->id, 0, 9], [$hold->related_type, $hold->related_id, $hold->amount, $hold->held_amount]);
         $this->assertSame(CreditQuote::query()->sole()->id, $run->quote_id);
         $this->getJson('/api/v1/wallet/ledger')->assertOk()
-            ->assertJsonPath('data.balance', 10)->assertJsonPath('data.reserved', 6)->assertJsonPath('data.available', 4)
-            ->assertJsonPath('data.entries.0.type', 'reserve')->assertJsonPath('data.entries.0.held_amount', 6);
+            ->assertJsonPath('data.balance', 10)->assertJsonPath('data.reserved', 9)->assertJsonPath('data.available', 1)
+            ->assertJsonPath('data.entries.0.type', 'reserve')->assertJsonPath('data.entries.0.held_amount', 9);
 
+        // The run's usage costs 3; the rest of the hold is free again in the same entry.
         $this->runCallback($run)->assertOk()->assertJsonPath('data.outcome', 'recorded');
-        $this->assertSame([4, 0], $this->wallet());
+        $this->assertSame([7, 0], $this->wallet());
         $capture = CreditLedgerEntry::query()->where('type', 'capture')->sole();
-        $this->assertSame(['ai_workflow_run', $run->id, -6, -6], [$capture->related_type, $capture->related_id, $capture->amount, $capture->held_amount]);
-        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '6 اعتبار از موجودی کسر شد'));
+        $this->assertSame(['ai_workflow_run', $run->id, -3, -9], [$capture->related_type, $capture->related_id, $capture->amount, $capture->held_amount]);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '3 اعتبار از موجودی کسر شد'));
 
         // The same callback again is answered and spends nothing more.
         $this->runCallback($run)->assertOk()->assertJsonPath('data.outcome', 'already_recorded');
-        $this->assertSame([4, 0], $this->wallet());
+        $this->assertSame([7, 0], $this->wallet());
         $this->assertSame(3, CreditLedgerEntry::query()->count());
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_usage_above_the_cap_charges_only_the_cap_and_is_logged(): void
+    {
+        $this->seller(5012);
+        $project = $this->batch(1, 1);
+        $this->accept($project, $this->quote($project)->json('data.id'))->assertStatus(202);
+        $run = AiWorkflowRun::query()->sole();
+        $this->assertSame([10, 5], $this->wallet());
+        Log::spy();
+
+        // 300k input tokens are inside the run caps but cost far more than the accepted cap.
+        $this->runCallback($run, ['usage' => ['model_requests' => 1, 'input_tokens' => 300_000, 'output_tokens' => 10, 'provider' => 'fixture', 'model' => 'fixture-1']])
+            ->assertOk()->assertJsonPath('data.outcome', 'recorded');
+
+        $this->assertSame([5, 0], $this->wallet());
+        $this->assertSame([-5, -5], [CreditLedgerEntry::query()->where('type', 'capture')->sole()->amount, CreditLedgerEntry::query()->where('type', 'capture')->sole()->held_amount]);
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context = []): bool => $message === 'credit.charge_capped'
+            && $context === ['run_id' => $run->public_id, 'charge' => 30_002, 'cap' => 5])->once();
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_the_class_minimum_tops_up_a_small_estimate_and_a_small_charge(): void
+    {
+        config([
+            'karmandeman.credits.extraction_per_photo' => 1,
+            'karmandeman.credits.minimum.file_to_text' => 4,
+            'karmandeman.credits.rates' => ['input_tokens_per_million' => 0, 'output_tokens_per_million' => 0, 'model_request' => 0],
+        ]);
+        $this->seller(5013);
+        $project = $this->batch(1, 1);
+
+        $quote = $this->quote($project)->assertCreated()
+            ->assertJsonPath('data.lines.1', ['type' => 'output_class_minimum', 'quantity' => 1, 'unit_credits' => 3, 'credits' => 3])
+            ->assertJsonPath('data.credits_total', 4)
+            ->assertJsonPath('data.cap_credits', 6)
+            ->json('data.id');
+        $this->accept($project, $quote)->assertStatus(202);
+        $this->assertSame([10, 6], $this->wallet());
+
+        $this->runCallback(AiWorkflowRun::query()->sole())->assertOk();
+        $this->assertSame([6, 0], $this->wallet());
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_a_quote_keeps_its_tariff_and_a_fixed_price_quote_is_spent_whole(): void
+    {
+        $this->seller(5014);
+
+        // Rates raised after acceptance do not reach the accepted quote.
+        $first = $this->batch(1, 1);
+        $this->accept($first, $this->quote($first)->json('data.id'))->assertStatus(202);
+        config(['karmandeman.credits.rates' => ['input_tokens_per_million' => 1_000_000, 'output_tokens_per_million' => 1_000_000, 'model_request' => 5]]);
+        $this->runCallback(AiWorkflowRun::query()->latest('id')->firstOrFail())->assertOk();
+        $this->assertSame([7, 0], $this->wallet());
+
+        // A fixed-price quote of ADR-039, accepted before the usage tariff, is spent whole.
+        $second = $this->batch(1, 2);
+        $quote = $this->quote($second)->json('data.id');
+        DB::table('credit_quotes')->where('public_id', $quote)->update(['tariff' => null, 'tariff_version' => 'extraction-v1', 'increase_cap_credits' => 0]);
+        $this->accept($second, $quote)->assertStatus(202);
+        $this->assertSame([7, 3], $this->wallet());
+        $this->runCallback(AiWorkflowRun::query()->latest('id')->firstOrFail())->assertOk();
+        $this->assertSame([4, 0], $this->wallet());
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_the_minimum_comes_from_the_quote_and_a_run_without_its_quote_pays_only_the_current_minimum(): void
+    {
+        config(['karmandeman.credits.rates' => ['input_tokens_per_million' => 0, 'output_tokens_per_million' => 0, 'model_request' => 0]]);
+        $this->seller(5016);
+
+        // A minimum raised after acceptance does not reach the accepted quote.
+        $first = $this->batch(1, 1);
+        $this->accept($first, $this->quote($first)->json('data.id'))->assertStatus(202);
+        config(['karmandeman.credits.minimum.file_to_text' => 4]);
+        $this->runCallback(AiWorkflowRun::query()->latest('id')->firstOrFail())->assertOk();
+        $this->assertSame([9, 0], $this->wallet());
+
+        // A run whose quote is gone pays the current minimum, not the cap, and it is logged.
+        $second = $this->batch(1, 2);
+        $this->accept($second, $this->quote($second)->json('data.id'))->assertStatus(202);
+        $run = AiWorkflowRun::query()->latest('id')->firstOrFail();
+        $this->assertSame([9, 6], $this->wallet());
+        DB::table('ai_workflow_runs')->where('id', $run->id)->update(['quote_id' => null]);
+        Log::spy();
+        $this->runCallback($run)->assertOk();
+        $this->assertSame([5, 0], $this->wallet());
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context = []): bool => $message === 'credit.quote_missing' && $context === ['run_id' => $run->public_id])->once();
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_the_charge_stands_whether_or_not_the_seller_accepts_the_output(): void
+    {
+        $this->seller(5015);
+        $project = $this->batch(1, 1);
+        $this->accept($project, $this->quote($project)->json('data.id'))->assertStatus(202);
+        $this->runCallback(AiWorkflowRun::query()->sole())->assertOk();
+        $this->assertSame('review_required', $this->state($project));
+        $this->assertSame([7, 0], $this->wallet());
+
+        // The seller turns the suggestions down by cancelling the batch: the output was made, so nothing returns.
+        $this->postJson("/api/v1/projects/{$project}/cancel", ['version' => $this->version($project)], ['Idempotency-Key' => 'cancel-after-output'])->assertOk();
+        $this->assertSame([7, 0], $this->wallet());
+        $this->assertSame(['grant', 'reserve', 'capture'], CreditLedgerEntry::query()->orderBy('id')->pluck('type')->map->value->all());
         $this->assertLedgerReconciles();
     }
 
@@ -254,7 +367,7 @@ class ExtractionCreditTest extends TestCase
         // Cancel releases (FR-063).
         $cancelled = $this->batch(1, 3);
         $this->accept($cancelled, $this->quote($cancelled)->json('data.id'))->assertStatus(202);
-        $this->assertSame([10, 3], $this->wallet());
+        $this->assertSame([10, 5], $this->wallet());
         $this->postJson("/api/v1/projects/{$cancelled}/cancel", ['version' => $this->version($cancelled)], ['Idempotency-Key' => 'cancel-held'])->assertOk();
         $this->assertSame([10, 0], $this->wallet());
 
@@ -406,7 +519,7 @@ class ExtractionCreditTest extends TestCase
         $this->batch(1, 1);
 
         $this->botText('/done', 5008);
-        $job = Queue::pushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '3 اعتبار لازم است'))->last();
+        $job = Queue::pushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'حدود 3 و حداکثر 5 اعتبار'))->last();
         $this->assertNotNull($job);
         $this->assertStringContainsString('اعتبار کافی نیست', $job->text);
         $this->assertSame([], $job->buttons);
@@ -415,15 +528,19 @@ class ExtractionCreditTest extends TestCase
         $this->botText('/done', 5008);
         $offer = Queue::pushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => $job->buttons !== [] && str_starts_with($job->buttons[0][0]['callback_data'], 'quote:accept:'))->last();
         $this->assertNotNull($offer);
+        $this->assertStringContainsString('فقط مصرف واقعی (حداقل 1 اعتبار) کسر می‌شود، حتی اگر پیشنهادها را نپذیری', $offer->text);
         $this->botPress($offer->buttons[0][0]['callback_data'], 5008, 'cb-one');
-        $this->assertSame([5, 3], $this->wallet());
+        $this->assertSame('تأیید و شروع استخراج (حداکثر 5 اعتبار)', $offer->buttons[0][0]['text']);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار برای استخراج پروژه')
+            && str_contains($job->text, 'مصرف واقعی (حداقل 1 اعتبار) کسر می‌شود و بقیه برمی‌گردد'));
+        $this->assertSame([5, 5], $this->wallet());
         // The same press again replays, and holds nothing more.
         $this->botPress($offer->buttons[0][0]['callback_data'], 5008, 'cb-one');
-        $this->assertSame([5, 3], $this->wallet());
+        $this->assertSame([5, 5], $this->wallet());
         $this->assertSame(1, AiWorkflowRun::query()->count());
 
         $this->botText('/balance', 5008);
-        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار، که 3 اعتبار آن'));
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار، که 5 اعتبار آن'));
     }
 
     private function completeOnboarding(User $user): void

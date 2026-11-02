@@ -131,10 +131,10 @@ final readonly class FinishProjectInputAction
             $quote->input_asset_ids,
             CarbonImmutable::now()->addMinutes((int) config('karmandeman.ai.run_timeout_minutes')),
         );
-        // The quoted price is held before n8n hears of the run; without the credit the
+        // The quote's cap is held before n8n hears of the run; without the credit the
         // whole transaction, run included, rolls back (FR-070).
         $hold = $this->reserve->execute(
-            $workspace, $quote->credits_total, "credit:reserve:quote:{$quote->id}", 'ai_workflow_run', $run->id, CreditQuote::KIND_PRODUCT_EXTRACTION,
+            $workspace, $quote->capCredits(), "credit:reserve:quote:{$quote->id}", 'ai_workflow_run', $run->id, CreditQuote::KIND_PRODUCT_EXTRACTION,
         );
         $this->runs->attachCredit($run, $quote, $hold);
         $this->quotes->markAccepted($quote, CarbonImmutable::now());

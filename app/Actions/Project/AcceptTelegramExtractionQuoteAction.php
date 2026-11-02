@@ -56,6 +56,11 @@ final readonly class AcceptTelegramExtractionQuoteAction
             });
         }
 
-        return new BotReply("ورودی پروژه «{$project->name}» بسته شد و {$quote->credits_total} اعتبار برای استخراج رزرو شد. محصولات از عکس‌ها استخراج می‌شوند و پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. اعتبار فقط پس از استخراج موفق کسر می‌شود.");
+        // A fixed-price quote of ADR-039 is spent whole; a usage quote spends what the run used.
+        $charge = $quote->minimumCredits() === null
+            ? 'این مقدار فقط پس از استخراج موفق کسر می‌شود.'
+            : "فقط پس از استخراج موفق مصرف واقعی (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود و بقیه برمی‌گردد.";
+
+        return new BotReply("{$quote->capCredits()} اعتبار برای استخراج پروژه «{$project->name}» رزرو شد. محصولات از عکس‌ها استخراج می‌شوند و پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. {$charge}");
     }
 }

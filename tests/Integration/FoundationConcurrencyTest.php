@@ -375,6 +375,18 @@ final class FoundationConcurrencyTest extends TestCase
         $this->assertDatabaseCount('product_revisions', 2);
         $this->assertSame('succeeded', $run->fresh()->status->value);
         $this->assertSame('review_required', DB::table('projects')->value('state'));
+        // One charge of the run's usage, here the class minimum, and the rest of the hold freed (ADR-042).
+        $this->assertWallet(99, 0, 1);
+    }
+
+    /** Balance, reserved and capture count, with both caches equal to their ledger sums. */
+    private function assertWallet(int $balance, int $reserved, int $captures): void
+    {
+        $wallet = DB::table('wallets')->sole();
+        $this->assertSame([$balance, $reserved], [(int) $wallet->balance_cached, (int) $wallet->reserved_cached]);
+        $this->assertSame($balance, (int) DB::table('credit_ledger')->sum('amount'));
+        $this->assertSame($reserved, (int) DB::table('credit_ledger')->sum('held_amount'));
+        $this->assertSame($captures, DB::table('credit_ledger')->where('type', 'capture')->count());
     }
 
     public function test_parallel_run_callback_and_cancel_commit_one_outcome(): void
@@ -401,19 +413,21 @@ final class FoundationConcurrencyTest extends TestCase
             $this->assertSame('review_required', $state);
             $this->assertDatabaseCount('products', 2);
             $this->assertSame('succeeded', $run->fresh()->status->value);
+            $this->assertWallet(99, 0, 1);
         } else {
             // A cancel came first: the run closed and every callback was contained.
             $this->assertSame(3, count(array_keys($results, CompleteAIWorkflowRunAction::DISCARDED, true)));
             $this->assertSame('cancelled', $state);
             $this->assertDatabaseCount('products', 0);
             $this->assertSame('cancelled', $run->fresh()->status->value);
+            $this->assertWallet(100, 0, 0);
         }
     }
 
     public function test_parallel_quote_accepts_hold_only_the_credit_there_is(): void
     {
-        // Credit for one of two quoted runs (FR-070, ADR-039).
-        config(['karmandeman.ai.extraction_enabled' => true, 'karmandeman.gift_credits' => 3, 'karmandeman.credits.extraction_per_photo' => 3]);
+        // Credit for the cap of one of two quoted runs (FR-070, ADR-039, ADR-042).
+        config(['karmandeman.ai.extraction_enabled' => true, 'karmandeman.gift_credits' => 3, 'karmandeman.credits.extraction_per_photo' => 3, 'karmandeman.credits.quote_cap_percent' => 0]);
         Storage::fake('assets');
         $user = app(RegisterTelegramUserAction::class)->execute(new TelegramUserData(91304));
         $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($user);

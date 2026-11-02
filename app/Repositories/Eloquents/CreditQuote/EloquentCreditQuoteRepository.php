@@ -13,21 +13,29 @@ use Carbon\CarbonImmutable;
 
 final class EloquentCreditQuoteRepository implements CreditQuoteRepositoryInterface
 {
-    public function create(Project $project, User $author, string $kind, string $tariffVersion, array $inputAssetIds, array $lines, CarbonImmutable $expiresAt): CreditQuote
+    public function create(Project $project, User $author, string $kind, array $tariff, array $inputAssetIds, array $lines, int $capCredits, CarbonImmutable $expiresAt): CreditQuote
     {
+        $total = array_sum(array_column($lines, 'credits'));
+
         return CreditQuote::create([
             'workspace_id' => $project->workspace_id,
             'project_id' => $project->id,
             'created_by' => $author->id,
             'kind' => $kind,
-            'tariff_version' => $tariffVersion,
+            'tariff_version' => $tariff['version'],
+            'tariff' => $tariff,
             'project_version' => $project->version,
             'input_asset_ids' => $inputAssetIds,
             'lines' => $lines,
-            'credits_total' => array_sum(array_column($lines, 'credits')),
-            'increase_cap_credits' => 0,
+            'credits_total' => $total,
+            'increase_cap_credits' => max(0, $capCredits - $total),
             'expires_at' => $expiresAt,
         ]);
+    }
+
+    public function findForWorkspace(int $workspaceId, int $id): ?CreditQuote
+    {
+        return CreditQuote::query()->where('workspace_id', $workspaceId)->find($id);
     }
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?CreditQuote

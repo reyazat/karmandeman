@@ -20,16 +20,19 @@ question for suggested prices, the n8n extraction workflow export with a
 Gemini model step (owner-chosen provider; runs start only while the approved
 policy the seller accepted names Google, which the current bundle does not),
 a Laravel-owned run claim so only one n8n execution pays for the model,
-and a seller-accepted extraction quote whose credit is held before the run
-and spent only on success, released on failure, timeout or cancel,
+and a seller-accepted extraction quote whose cap is held before the run;
+on success the run's real usage is charged at the quote's tariff (at least
+the class minimum, at most the cap) whether or not the seller approves the
+output, and failure, timeout or cancel release the hold,
 and a simple seller CSV intake mapped once and imported as cited drafts,
 and bot batches that stay open for input until approval, with approved
 batches corrected and reopened from a reply to a product card
-(ADR-016 to ADR-041) with code and tests. These
+(ADR-016 to ADR-042) with code and tests. These
 are partial foundations, not a completed MVP. A Gemini call against the real
 API, an approved policy naming the provider, voice and XLSX intake,
-CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments
-and ledger reconciliation are still missing. Read
+CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,
+the `text` and `file_output` charge classes and ledger reconciliation are
+still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and
 `docs/DEVELOPMENT_PLAN.md` for the implementation order. Do not claim a build,
 release or production deployment is working until it has been tested against

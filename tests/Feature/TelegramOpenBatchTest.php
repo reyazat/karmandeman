@@ -192,7 +192,7 @@ class TelegramOpenBatchTest extends TestCase
         $this->text('/done', 7005);
         $quote = CreditQuote::query()->latest('id')->firstOrFail();
         $this->assertSame([$new], $quote->input_asset_ids);
-        $this->sent('برای استخراج محصولات از 1 عکس تازه');
+        $this->sent('استخراج محصولات از 1 عکس تازه');
         $this->sent('«کیف»');
         $this->press("quote:accept:{$quote->public_id}", 7005);
         $this->assertSame('extracting', $project->fresh()->state->value);

@@ -35,6 +35,8 @@ final class CreditQuoteResource extends JsonResource
             'lines' => $this->lines,
             'credits_total' => $this->credits_total,
             'increase_cap_credits' => $this->increase_cap_credits,
+            // What accepting holds and the most the seller pays (ADR-042).
+            'cap_credits' => $this->capCredits(),
             'expires_at' => $this->expires_at->toIso8601String(),
             'accepted' => $this->accepted_at !== null,
             'available_credits' => $this->available,
