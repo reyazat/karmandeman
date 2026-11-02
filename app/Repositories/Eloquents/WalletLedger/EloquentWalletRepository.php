@@ -132,4 +132,89 @@ final class EloquentWalletRepository implements WalletRepositoryInterface
             ->limit($limit)
             ->get();
     }
+
+    public function cacheDrift(): array
+    {
+        $sums = DB::table('credit_ledger')
+            ->select('wallet_id')
+            ->selectRaw('SUM(amount) AS ledger_amount, SUM(held_amount) AS ledger_held')
+            ->groupBy('wallet_id');
+
+        return DB::table('wallets')
+            ->leftJoinSub($sums, 'sums', 'sums.wallet_id', '=', 'wallets.id')
+            ->select('wallets.id', 'wallets.balance_cached', 'wallets.reserved_cached')
+            ->selectRaw('COALESCE(sums.ledger_amount, 0) AS ledger_amount, COALESCE(sums.ledger_held, 0) AS ledger_held')
+            ->whereRaw('wallets.balance_cached <> COALESCE(sums.ledger_amount, 0) OR wallets.reserved_cached <> COALESCE(sums.ledger_held, 0)')
+            ->orderBy('wallets.id')
+            ->get()
+            ->map(fn (object $row): array => [
+                'wallet_id' => (int) $row->id,
+                'balance_cached' => (int) $row->balance_cached,
+                'reserved_cached' => (int) $row->reserved_cached,
+                'ledger_amount' => (int) $row->ledger_amount,
+                'ledger_held' => (int) $row->ledger_held,
+            ])
+            ->all();
+    }
+
+    public function holdsWithSettlements(): iterable
+    {
+        $rows = DB::table('credit_ledger AS hold')
+            ->join('wallets', 'wallets.id', '=', 'hold.wallet_id')
+            ->leftJoin('credit_ledger AS settled', function ($join): void {
+                $join->on('settled.wallet_id', '=', 'hold.wallet_id')
+                    ->whereRaw("settled.idempotency_key = 'credit:settle:' || hold.id");
+            })
+            ->leftJoin('ai_workflow_runs AS run', function ($join): void {
+                $join->on('run.id', '=', 'hold.related_id')->where('hold.related_type', '=', CreditLedgerEntry::RELATED_RUN);
+            })
+            ->where('hold.type', CreditLedgerType::Reserve->value)
+            ->select([
+                'hold.public_id AS hold_id', 'hold.wallet_id', 'hold.held_amount AS held', 'hold.related_type', 'hold.related_id',
+                'settled.type AS settlement', 'settled.amount AS settled_amount', 'settled.held_amount AS settled_held',
+                'settled.related_type AS settled_related_type', 'settled.related_id AS settled_related_id',
+                'run.status AS run_status', 'run.workspace_id AS run_workspace_id', 'wallets.workspace_id AS wallet_workspace_id',
+            ])
+            ->orderBy('hold.id')
+            ->cursor();
+
+        foreach ($rows as $row) {
+            $nullable = fn (mixed $value): ?int => $value === null ? null : (int) $value;
+            yield [
+                'hold_id' => (string) $row->hold_id,
+                'wallet_id' => (int) $row->wallet_id,
+                'held' => (int) $row->held,
+                'settlement' => $row->settlement === null ? null : (string) $row->settlement,
+                'settled_amount' => $nullable($row->settled_amount),
+                'settled_held' => $nullable($row->settled_held),
+                'same_target' => $row->settlement === null
+                    || ($row->settled_related_type === $row->related_type && $nullable($row->settled_related_id) === $nullable($row->related_id)),
+                'run_status' => $row->run_status === null ? null : (string) $row->run_status,
+                'run_workspace_id' => $nullable($row->run_workspace_id),
+                'wallet_workspace_id' => (int) $row->wallet_workspace_id,
+                'related_run' => $row->related_type === CreditLedgerEntry::RELATED_RUN,
+            ];
+        }
+    }
+
+    public function settlementsWithoutHold(): array
+    {
+        return DB::table('credit_ledger AS settled')
+            ->leftJoin('credit_ledger AS hold', function ($join): void {
+                $join->on('hold.wallet_id', '=', 'settled.wallet_id')
+                    ->where('hold.type', '=', CreditLedgerType::Reserve->value)
+                    ->whereRaw("settled.idempotency_key = 'credit:settle:' || hold.id");
+            })
+            ->whereIn('settled.type', [CreditLedgerType::Capture->value, CreditLedgerType::Release->value])
+            ->whereNull('hold.id')
+            ->orderBy('settled.id')
+            ->get(['settled.public_id', 'settled.wallet_id'])
+            ->map(fn (object $row): array => ['entry_id' => (string) $row->public_id, 'wallet_id' => (int) $row->wallet_id])
+            ->all();
+    }
+
+    public function countWallets(): int
+    {
+        return Wallet::query()->count();
+    }
 }

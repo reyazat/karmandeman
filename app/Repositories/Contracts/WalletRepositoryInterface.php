@@ -59,4 +59,30 @@ interface WalletRepositoryInterface
      * @return Collection<int, CreditLedgerEntry>
      */
     public function entries(Wallet $wallet, int $limit = 50): Collection;
+
+    /**
+     * Wallets whose cached balance or hold differs from the sum of their
+     * ledger (ADR-039 invariant), in one statement so a commit in flight
+     * cannot show a false drift.
+     *
+     * @return list<array{wallet_id: int, balance_cached: int, reserved_cached: int, ledger_amount: int, ledger_held: int}>
+     */
+    public function cacheDrift(): array;
+
+    /**
+     * Every hold with its settlement, if any, and the run it was made for,
+     * read in one statement, ordered by hold id.
+     *
+     * @return iterable<array{hold_id: string, wallet_id: int, held: int, settlement: string|null, settled_amount: int|null, settled_held: int|null, same_target: bool, run_status: string|null, run_workspace_id: int|null, wallet_workspace_id: int, related_run: bool}>
+     */
+    public function holdsWithSettlements(): iterable;
+
+    /**
+     * Captures and releases with no hold of their wallet behind their key.
+     *
+     * @return list<array{entry_id: string, wallet_id: int}>
+     */
+    public function settlementsWithoutHold(): array;
+
+    public function countWallets(): int;
 }

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 
 final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryInterface
 {
@@ -50,6 +51,22 @@ final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryIn
     public function findByPublicId(string $publicId): ?AiWorkflowRun
     {
         return AiWorkflowRun::query()->where('public_id', $publicId)->first();
+    }
+
+    public function forWorkspaceByIds(int $workspaceId, array $ids): Collection
+    {
+        if ($ids === []) {
+            return new Collection;
+        }
+
+        return AiWorkflowRun::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('id', $ids)
+            // The workspace too: decrypting each project name would otherwise load it once per run.
+            ->with(['project' => fn ($query) => $query->where('workspace_id', $workspaceId), 'project.workspace'])
+            ->get()
+            ->keyBy('id')
+            ->toBase();
     }
 
     public function openForProject(Project $project): ?AiWorkflowRun

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
+use App\Actions\Wallet\ReconcileCreditLedgerAction;
 use App\Enums\CreditLedgerType;
 use App\Jobs\AI\DispatchProductExtraction;
 use App\Jobs\Telegram\SendTelegramMessage;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\UsesApprovedPilotPolicy;
@@ -541,6 +543,181 @@ class ExtractionCreditTest extends TestCase
 
         $this->botText('/balance', 5008);
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار، که 5 اعتبار آن'));
+    }
+
+    public function test_the_ledger_and_balance_tie_each_charge_to_its_run_project_and_output(): void
+    {
+        $user = $this->seller(5020);
+        $this->completeOnboarding($user);
+        $project = $this->batch(2, 1);
+        $this->accept($project, $this->quote($project)->json('data.id'))->assertStatus(202);
+        $run = AiWorkflowRun::query()->sole();
+        $this->runCallback($run)->assertOk();
+        // A failed run releases its hold and is no charge.
+        $failed = $this->batch(1, 3);
+        $this->accept($failed, $this->quote($failed)->json('data.id'))->assertStatus(202);
+        $this->runCallback(AiWorkflowRun::query()->latest('id')->firstOrFail(), ['status' => 'failed', 'error_code' => 'MODEL_BLOCKED', 'candidates' => []])->assertOk();
+
+        $this->getJson('/api/v1/wallet/ledger')->assertOk()
+            ->assertJsonPath('data.balance', 7)
+            ->assertJsonPath('data.entries.0.type', 'release')
+            ->assertJsonPath('data.entries.0.project_id', $failed)
+            ->assertJsonPath('data.entries.2.type', 'capture')
+            ->assertJsonPath('data.entries.2.amount', -3)
+            ->assertJsonPath('data.entries.2.reason', 'product_extraction_succeeded')
+            ->assertJsonPath('data.entries.2.output_class', 'file_to_text')
+            ->assertJsonPath('data.entries.2.run_id', $run->public_id)
+            ->assertJsonPath('data.entries.2.project_id', $project)
+            ->assertJsonPath('data.entries.3.type', 'reserve')
+            ->assertJsonPath('data.entries.3.run_id', $run->public_id)
+            ->assertJsonPath('data.entries.4.type', 'grant')
+            ->assertJsonPath('data.entries.4.output_class', null)
+            ->assertJsonPath('data.entries.4.run_id', null)
+            ->assertJsonPath('data.entries.4.project_id', null);
+
+        $this->botText('/balance', 5020);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => $job->text
+            === "موجودی اعتبار تو: 7 اعتبار.\n\nآخرین کسرها:\n• 3 اعتبار: استخراج محصول از 2 عکس، پروژه «Batch»");
+    }
+
+    public function test_a_ledger_entry_never_shows_a_run_of_another_workspace(): void
+    {
+        $this->seller(5021);
+        $project = $this->batch(1, 1);
+        $this->accept($project, $this->quote($project)->json('data.id'))->assertStatus(202);
+        $foreign = AiWorkflowRun::query()->sole();
+
+        $this->seller(5022);
+        $wallets = app(WalletRepositoryInterface::class);
+        DB::transaction(fn () => $wallets->record(
+            $wallets->lock(Wallet::query()->latest('id')->firstOrFail()->id), CreditLedgerType::Adjustment, 0, 0,
+            'test-forged-link', CreditLedgerEntry::RELATED_RUN, $foreign->id, 'test_forged_link',
+        ));
+
+        $ledger = $this->getJson('/api/v1/wallet/ledger')->assertOk()
+            ->assertJsonPath('data.entries.0.reason', 'test_forged_link')
+            ->assertJsonPath('data.entries.0.run_id', null)
+            ->assertJsonPath('data.entries.0.project_id', null)
+            ->assertJsonPath('data.entries.0.output_class', null);
+        $this->assertStringNotContainsString($foreign->public_id, (string) $ledger->getContent());
+        $this->assertStringNotContainsString($project, (string) $ledger->getContent());
+    }
+
+    public function test_reconciliation_passes_a_sound_ledger_and_reports_each_broken_invariant(): void
+    {
+        $this->seller(5023);
+        $done = $this->batch(1, 1);
+        $this->accept($done, $this->quote($done)->json('data.id'))->assertStatus(202);
+        $settledRun = AiWorkflowRun::query()->sole();
+        $this->runCallback($settledRun)->assertOk();
+        $open = $this->batch(1, 2);
+        $this->accept($open, $this->quote($open)->json('data.id'))->assertStatus(202);
+        $openRun = AiWorkflowRun::query()->latest('id')->firstOrFail();
+
+        // A gift, a settled capture and an open hold reconcile.
+        $this->artisan('credits:reconcile')->expectsOutput('{"wallets":1,"holds":2,"mismatches":0}')->assertSuccessful();
+        $this->assertLedgerReconciles();
+
+        $wallet = Wallet::query()->sole();
+        $capture = CreditLedgerEntry::query()->where('type', 'capture')->sole();
+        DB::table('credit_ledger')->where('id', $capture->id)->update(['amount' => -100]);
+        DB::table('wallets')->where('id', $wallet->id)->update(['reserved_cached' => $wallet->reserved_cached + 1]);
+        DB::table('ai_workflow_runs')->where('id', $settledRun->id)->update(['status' => 'dispatched']);
+        DB::table('ai_workflow_runs')->where('id', $openRun->id)->update(['status' => 'failed']);
+        DB::table('credit_ledger')->insert([
+            'public_id' => (string) Str::uuid(), 'wallet_id' => $wallet->id, 'type' => 'release', 'amount' => 0, 'held_amount' => 0,
+            'related_type' => CreditLedgerEntry::RELATED_RUN, 'related_id' => $openRun->id,
+            'idempotency_key' => 'credit:settle:999999', 'reason' => 'test', 'created_at' => now(),
+        ]);
+        Log::spy();
+
+        $mismatches = app(ReconcileCreditLedgerAction::class)->execute()['mismatches'];
+        $checks = array_column($mismatches, 'check');
+        sort($checks);
+        $this->assertSame([
+            'balance_cache_drift', 'capture_outside_hold', 'hold_unsettled', 'reserved_cache_drift', 'settled_open_run', 'settlement_without_hold',
+        ], $checks);
+        $this->assertContains(['check' => 'capture_outside_hold', 'wallet_id' => $wallet->id, 'entry_id' => CreditLedgerEntry::query()->findOrFail($settledRun->reservation_entry_id)->public_id], $mismatches);
+        Log::shouldHaveReceived('error')->with('credit.reconcile_mismatch', ['check' => 'hold_unsettled', 'wallet_id' => $wallet->id, 'entry_id' => CreditLedgerEntry::query()->findOrFail($openRun->reservation_entry_id)->public_id]);
+        $this->artisan('credits:reconcile')->assertFailed();
+        // Reporting corrects nothing.
+        $this->assertSame(-100, (int) DB::table('credit_ledger')->where('id', $capture->id)->value('amount'));
+    }
+
+    public function test_reconciliation_reports_settlements_that_disagree_with_their_hold_or_run(): void
+    {
+        $this->seller(5025);
+        $failed = $this->batch(1, 1);
+        $this->accept($failed, $this->quote($failed)->json('data.id'))->assertStatus(202);
+        $failedRun = AiWorkflowRun::query()->sole();
+        $this->runCallback($failedRun, ['status' => 'failed', 'error_code' => 'MODEL_BLOCKED', 'candidates' => []])->assertOk();
+        $succeeded = $this->batch(1, 2);
+        $this->accept($succeeded, $this->quote($succeeded)->json('data.id'))->assertStatus(202);
+        $succeededRun = AiWorkflowRun::query()->latest('id')->firstOrFail();
+        $this->runCallback($succeededRun)->assertOk();
+        $orphan = $this->batch(1, 3);
+        $this->accept($orphan, $this->quote($orphan)->json('data.id'))->assertStatus(202);
+        $orphanRun = AiWorkflowRun::query()->latest('id')->firstOrFail();
+        $this->seller(5026);
+        $foreign = $this->batch(1, 4);
+        $this->accept($foreign, $this->quote($foreign)->json('data.id'))->assertStatus(202);
+        $foreignRun = AiWorkflowRun::query()->latest('id')->firstOrFail();
+        $this->assertSame([], app(ReconcileCreditLedgerAction::class)->execute()['mismatches']);
+
+        $release = CreditLedgerEntry::query()->where('type', 'release')->sole();
+        DB::table('credit_ledger')->where('id', $release->id)->update(['amount' => -1, 'held_amount' => $release->held_amount + 1]);
+        $capture = CreditLedgerEntry::query()->where('type', 'capture')->sole();
+        DB::table('credit_ledger')->where('id', $capture->id)->update(['related_id' => $failedRun->id]);
+        DB::table('ai_workflow_runs')->where('id', $succeededRun->id)->update(['status' => 'failed']);
+        DB::table('credit_ledger')->where('id', $orphanRun->reservation_entry_id)->update(['related_id' => 999_999]);
+        DB::table('ai_workflow_runs')->where('id', $foreignRun->id)->update(['workspace_id' => $failedRun->workspace_id]);
+
+        $found = array_map(fn (array $mismatch): string => $mismatch['check'].':'.($mismatch['entry_id'] ?? 'wallet'), app(ReconcileCreditLedgerAction::class)->execute()['mismatches']);
+        $entry = fn (int $id): string => CreditLedgerEntry::query()->findOrFail($id)->public_id;
+        $expected = [
+            'balance_cache_drift:wallet',
+            'reserved_cache_drift:wallet',
+            'settlement_hold_mismatch:'.$entry($failedRun->reservation_entry_id),
+            'release_moved_balance:'.$entry($failedRun->reservation_entry_id),
+            'settlement_of_another_target:'.$entry($succeededRun->reservation_entry_id),
+            'settlement_disagrees_with_run:'.$entry($succeededRun->reservation_entry_id),
+            'hold_without_run:'.$entry($orphanRun->reservation_entry_id),
+            'run_of_another_workspace:'.$entry($foreignRun->reservation_entry_id),
+        ];
+        sort($found);
+        sort($expected);
+        $this->assertSame($expected, $found);
+    }
+
+    public function test_retention_drops_quotes_never_accepted_and_keeps_the_accepted_one(): void
+    {
+        $user = $this->seller(5024);
+        $this->completeOnboarding($user);
+        $project = $this->batch(1, 1);
+        $abandoned = $this->quote($project)->json('data.id');
+        $accepted = $this->quote($project)->json('data.id');
+        $this->accept($project, $accepted)->assertStatus(202);
+        $this->assertNotSame($abandoned, $accepted);
+
+        // A limit set below a quote's life never reaches a quote still in it.
+        config(['karmandeman.retention.credit_quote_hours' => 0]);
+        $this->artisan('privacy:prune-retention')->assertSuccessful();
+        $this->assertSame(2, CreditQuote::query()->count());
+        config(['karmandeman.retention.credit_quote_hours' => 168]);
+
+        $this->travel(167)->hours();
+        $this->artisan('privacy:prune-retention')->assertSuccessful();
+        $this->assertSame(2, CreditQuote::query()->count());
+
+        $this->travel(2)->hours();
+        $this->artisan('privacy:prune-retention')->assertSuccessful();
+        $this->assertSame([$accepted], CreditQuote::query()->pluck('public_id')->all());
+        $this->assertSame(CreditQuote::query()->sole()->id, AiWorkflowRun::query()->sole()->quote_id);
+
+        // The button of a deleted quote is answered and starts nothing.
+        $this->botPress("quote:accept:{$abandoned}", 5024, 'cb-pruned');
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => $job->text === 'پیش‌فاکتور یافت نشد.');
+        $this->assertSame(1, AiWorkflowRun::query()->count());
     }
 
     private function completeOnboarding(User $user): void

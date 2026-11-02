@@ -28,13 +28,13 @@ use App\Actions\Project\QueueTelegramPhotoAction;
 use App\Actions\Project\ReopenTelegramProjectAction;
 use App\Actions\Project\RequestTelegramSnapshotAction;
 use App\Actions\Project\SelectTelegramProjectAction;
+use App\Actions\Wallet\ShowTelegramBalanceAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Privacy\ContainedAccount;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
-use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use Illuminate\Support\Facades\Gate;
@@ -51,7 +51,7 @@ final readonly class TelegramConversationService
     public function __construct(
         private RegisterTelegramUserAction $register,
         private WorkspaceRepositoryInterface $workspaces,
-        private WalletRepositoryInterface $wallets,
+        private ShowTelegramBalanceAction $balance,
         private ProjectRepositoryInterface $projects,
         private EnsureBrandAction $ensureBrand,
         private AdvanceTelegramOnboardingAction $onboarding,
@@ -188,14 +188,8 @@ final readonly class TelegramConversationService
     private function handleBalance(array $message, int|string $chatId): void
     {
         $user = $this->resolveUser($message);
-        $wallet = $this->wallets->forWorkspace($this->workspaceFor($user));
-        $balance = $wallet === null ? 0 : $wallet->balance_cached;
-        $reserved = $wallet === null ? 0 : $wallet->reserved_cached;
-
-        // Held credit is still the seller's until its run succeeds (ADR-039).
-        $this->bot->sendMessage($chatId, $reserved > 0
-            ? "موجودی اعتبار تو: {$balance} اعتبار، که {$reserved} اعتبار آن برای استخراج در حال اجرا رزرو شده است."
-            : "موجودی اعتبار تو: {$balance} اعتبار.");
+        $reply = $this->balance->execute($this->workspaceFor($user), $user);
+        $this->bot->sendMessage($chatId, $reply->text);
     }
 
     private function handleNew(array $message, int|string $chatId, string $text): void
@@ -606,7 +600,7 @@ final readonly class TelegramConversationService
             '/projects — آخرین پروژه‌ها و انتخاب پروژه جاری',
             '/cancel — لغو پروژه جاری (با تأیید)',
             '/mybrand — مشاهده پروفایل برند',
-            '/balance — مشاهده موجودی اعتبار',
+            '/balance — موجودی اعتبار و آخرین کسرها',
             '/privacy — حریم خصوصی و حذف داده',
             '/terms — شرایط استفاده',
             '/retention — مدت نگهداری هر گروه داده',

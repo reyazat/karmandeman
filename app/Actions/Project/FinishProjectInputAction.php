@@ -11,6 +11,7 @@ use App\Enums\ProjectState;
 use App\Jobs\AI\DispatchProductExtraction;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
+use App\Models\CreditLedgerEntry;
 use App\Models\CreditQuote;
 use App\Models\Project;
 use App\Models\User;
@@ -134,7 +135,7 @@ final readonly class FinishProjectInputAction
         // The quote's cap is held before n8n hears of the run; without the credit the
         // whole transaction, run included, rolls back (FR-070).
         $hold = $this->reserve->execute(
-            $workspace, $quote->capCredits(), "credit:reserve:quote:{$quote->id}", 'ai_workflow_run', $run->id, CreditQuote::KIND_PRODUCT_EXTRACTION,
+            $workspace, $quote->capCredits(), "credit:reserve:quote:{$quote->id}", CreditLedgerEntry::RELATED_RUN, $run->id, CreditQuote::KIND_PRODUCT_EXTRACTION,
         );
         $this->runs->attachCredit($run, $quote, $hold);
         $this->quotes->markAccepted($quote, CarbonImmutable::now());

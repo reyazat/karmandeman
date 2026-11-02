@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\API\V1\Wallet;
 
+use App\Actions\Wallet\ListCreditUsageAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Wallet\WalletLedgerResource;
 use App\Http\Responses\ApiResponse;
@@ -19,6 +20,7 @@ final class WalletLedgerController extends Controller
         Request $request,
         WorkspaceRepositoryInterface $workspaces,
         WalletRepositoryInterface $wallets,
+        ListCreditUsageAction $usage,
     ): JsonResponse {
         $workspace = $workspaces->currentFor($request->user());
         $wallet = $workspace !== null ? $wallets->forWorkspace($workspace) : null;
@@ -29,6 +31,6 @@ final class WalletLedgerController extends Controller
 
         Gate::authorize('view', $wallet);
 
-        return ApiResponse::success((new WalletLedgerResource($wallet))->withEntries($wallets->entries($wallet)));
+        return ApiResponse::success(new WalletLedgerResource($usage->execute($wallet)));
     }
 }

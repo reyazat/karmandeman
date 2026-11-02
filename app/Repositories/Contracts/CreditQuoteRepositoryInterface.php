@@ -25,4 +25,10 @@ interface CreditQuoteRepositoryInterface
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?CreditQuote;
 
     public function markAccepted(CreditQuote $quote, CarbonImmutable $at): void;
+
+    /**
+     * Delete quotes created before the cutoff that were never accepted (FR-084,
+     * ADR-043). An accepted quote stays with its run for the ledger's audit.
+     */
+    public function deleteUnacceptedCreatedBefore(CarbonImmutable $cutoff): int;
 }

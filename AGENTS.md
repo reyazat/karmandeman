@@ -26,13 +26,14 @@ the class minimum, at most the cap) whether or not the seller approves the
 output, and failure, timeout or cancel release the hold,
 and a simple seller CSV intake mapped once and imported as cited drafts,
 and bot batches that stay open for input until approval, with approved
-batches corrected and reopened from a reply to a product card
-(ADR-016 to ADR-042) with code and tests. These
+batches corrected and reopened from a reply to a product card,
+and per-charge usage in the wallet API and /balance with a daily
+read-only ledger reconciliation (ADR-016 to ADR-043) with code and tests. These
 are partial foundations, not a completed MVP. A Gemini call against the real
 API, an approved policy naming the provider, voice and XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,
-the `text` and `file_output` charge classes and ledger reconciliation are
-still missing. Read
+the `text` and `file_output` charge classes and reconciling reported usage
+against the provider's bill are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and
 `docs/DEVELOPMENT_PLAN.md` for the implementation order. Do not claim a build,
 release or production deployment is working until it has been tested against

@@ -11,6 +11,7 @@ use App\Models\CreditQuote;
 use App\Models\Project;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 
 interface AiWorkflowRunRepositoryInterface
 {
@@ -28,6 +29,15 @@ interface AiWorkflowRunRepositoryInterface
     public function lock(AiWorkflowRun $run): AiWorkflowRun;
 
     public function findByPublicId(string $publicId): ?AiWorkflowRun;
+
+    /**
+     * The workspace's runs among these ids, keyed by id, with their projects.
+     * Ids of another workspace are left out (FR-073).
+     *
+     * @param  list<int>  $ids
+     * @return Collection<int, AiWorkflowRun>
+     */
+    public function forWorkspaceByIds(int $workspaceId, array $ids): Collection;
 
     /** The run still able to change the batch, if any. */
     public function openForProject(Project $project): ?AiWorkflowRun;

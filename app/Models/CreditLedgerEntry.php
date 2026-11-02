@@ -27,6 +27,9 @@ class CreditLedgerEntry extends Model
 {
     use HasPublicId;
 
+    /** related_type of an entry that holds or settles credit for an AI workflow run. */
+    public const RELATED_RUN = 'ai_workflow_run';
+
     protected $table = 'credit_ledger';
 
     public $timestamps = false;

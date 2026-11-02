@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\CreditQuoteRepositoryInterface;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 final class EloquentCreditQuoteRepository implements CreditQuoteRepositoryInterface
 {
@@ -46,5 +47,14 @@ final class EloquentCreditQuoteRepository implements CreditQuoteRepositoryInterf
     public function markAccepted(CreditQuote $quote, CarbonImmutable $at): void
     {
         $quote->forceFill(['accepted_at' => $at])->save();
+    }
+
+    public function deleteUnacceptedCreatedBefore(CarbonImmutable $cutoff): int
+    {
+        return CreditQuote::query()
+            ->whereNull('accepted_at')
+            ->where('created_at', '<', $cutoff)
+            ->whereNotExists(fn ($runs) => $runs->select(DB::raw(1))->from('ai_workflow_runs')->whereColumn('ai_workflow_runs.quote_id', 'credit_quotes.id'))
+            ->delete();
     }
 }

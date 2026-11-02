@@ -101,6 +101,8 @@ return [
         'onboarding_draft_hours' => (int) env('KM_RETENTION_ONBOARDING_DRAFT_HOURS', 168),
         // A bot photo not imported by then is dropped with its encrypted file reference (ADR-024).
         'media_intake_hours' => (int) env('KM_RETENTION_MEDIA_INTAKE_HOURS', 24),
+        // A quote never accepted (ADR-043); an accepted one stays with its run and ledger entry.
+        'credit_quote_hours' => (int) env('KM_RETENTION_CREDIT_QUOTE_HOURS', 168),
     ],
 
 ];

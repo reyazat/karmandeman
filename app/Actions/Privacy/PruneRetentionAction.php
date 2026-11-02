@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Privacy;
 
+use App\Repositories\Contracts\CreditQuoteRepositoryInterface;
 use App\Repositories\Contracts\RetentionRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Repositories\Contracts\TelegramOutboxRepositoryInterface;
@@ -20,6 +21,7 @@ final readonly class PruneRetentionAction
         private RetentionRepositoryInterface $retention,
         private TelegramOutboxRepositoryInterface $outbox,
         private TelegramMediaIntakeRepositoryInterface $mediaIntakes,
+        private CreditQuoteRepositoryInterface $quotes,
     ) {}
 
     /** @return array<string, int> affected rows per category */
@@ -34,6 +36,10 @@ final readonly class PruneRetentionAction
             'api_snapshots' => $this->retention->expireIdempotencySnapshotsBefore($hours('api_snapshot_hours')),
             'onboarding_drafts' => $this->retention->resetOnboardingDraftsBefore($hours('onboarding_draft_hours')),
             'media_intakes' => $this->mediaIntakes->deleteCreatedBefore($hours('media_intake_hours')),
+            // Never inside a quote's life, whatever the configured limit: an accept may be reading it.
+            'credit_quotes' => $this->quotes->deleteUnacceptedCreatedBefore(
+                $hours('credit_quote_hours')->min($now->subMinutes((int) config('karmandeman.credits.quote_ttl_minutes'))->subHour()),
+            ),
         ];
     }
 }
