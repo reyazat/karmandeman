@@ -256,7 +256,7 @@ class TelegramProductEditTest extends TestCase
 
         // The reply to the card reopens and corrects in one step, no extra press (ADR-041).
         $this->text("کیف\n۱۵۰٬۰۰۰ تومان", 1305, $card)->assertOk();
-        $this->replied('برای اصلاح دوباره باز شد؛ نسخه نهایی قبلی در سابقه محفوظ است');
+        $this->replied('برای اصلاح دوباره باز شد و پروژه جاری ربات است؛ نسخه نهایی قبلی در سابقه محفوظ است');
         $this->assertSame('review_required', $project->fresh()->state->value);
         $this->assertSame(2, $product->fresh()->current_revision);
         $this->assertSame(["product:approve:{$product->public_id}:2", "product:reject:{$product->public_id}:2"], $this->buttonsOf('محصول اصلاح شد'));

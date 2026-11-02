@@ -29,6 +29,7 @@ interface ProjectRepositoryInterface
      */
     public function openForBot(Workspace $workspace, int $limit): array;
 
+    /** Make the project the bot's current batch: later than every earlier selection. Under the workspace lock. */
     public function selectForBot(Project $project): void;
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project;

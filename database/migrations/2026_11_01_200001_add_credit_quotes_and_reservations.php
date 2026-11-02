@@ -35,7 +35,7 @@ return new class extends Migration
             $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
             $table->string('kind', 32);
             $table->string('tariff_version', 32);
-            // The batch version and photos priced; any change makes the quote stale.
+            // The batch version (kept for audit) and the photos priced; a new or used photo makes the quote stale (ADR-041).
             $table->unsignedInteger('project_version');
             $table->json('input_asset_ids');
             $table->json('lines');

@@ -23,8 +23,9 @@ use Illuminate\Support\Facades\Gate;
 /**
  * Prices the extraction run the batch's new photos would need (FR-072,
  * ADR-039, ADR-042): an estimate per photo, the cap the seller would pay at
- * most, the tariff and expiry, bound to the batch version. Nothing is held
- * yet; finish-input with the quote holds the cap.
+ * most, the tariff and expiry, bound to exactly these photos (ADR-041: the
+ * batch version is kept for audit, not enforced). Nothing is held yet;
+ * finish-input with the quote holds the cap.
  */
 final readonly class CreateExtractionQuoteAction
 {

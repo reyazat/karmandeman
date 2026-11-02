@@ -37,6 +37,8 @@ use App\Services\Telegram\TelegramReplyService;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Ramsey\Uuid\Generator\UnixTimeGenerator;
+use ReflectionProperty;
 use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\Fakes\ImageFixture;
 use Tests\TestCase;
@@ -81,6 +83,10 @@ final class FoundationConcurrencyTest extends TestCase
                 fread($child, 1);
                 try {
                     DB::purge();
+                    // The UUIDv7 generator keeps its last millisecond and seed in static
+                    // state. A forked worker inherits them, so two workers in the parent's
+                    // millisecond would derive the same public_id; forget the inherited time.
+                    (new ReflectionProperty(UnixTimeGenerator::class, 'time'))->setValue(null, '');
                     fwrite($child, json_encode(['result' => $operation($i)]));
                     fclose($child);
                     exit(0);

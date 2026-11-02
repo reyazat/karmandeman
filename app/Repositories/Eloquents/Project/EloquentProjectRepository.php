@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 final class EloquentProjectRepository implements ProjectRepositoryInterface
@@ -56,8 +57,15 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
 
     public function selectForBot(Project $project): void
     {
+        // Strictly after the latest selection, even if the wall clock stepped back,
+        // so the last selection always wins. Callers hold the workspace lock (ADR-031).
+        $latest = Project::query()->where('workspace_id', $project->workspace_id)->max('bot_selected_at');
+        $at = CarbonImmutable::now();
+        if ($latest !== null && ! $at->greaterThan($floor = CarbonImmutable::parse((string) $latest))) {
+            $at = $floor->addMicrosecond();
+        }
         Project::query()->where('workspace_id', $project->workspace_id)->whereKey($project->id)
-            ->update(['bot_selected_at' => now()->format('Y-m-d H:i:s.u')]);
+            ->update(['bot_selected_at' => $at->format('Y-m-d H:i:s.u')]);
     }
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Project

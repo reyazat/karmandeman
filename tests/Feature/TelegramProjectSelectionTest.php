@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -111,6 +112,26 @@ class TelegramProjectSelectionTest extends TestCase
         $this->assertNotNull($job, $fragment);
 
         return array_map(fn (array $row) => $row[$column]['callback_data'], $job->buttons);
+    }
+
+    public function test_the_last_selection_wins_even_when_the_clock_steps_back(): void
+    {
+        $this->seller(1210);
+        $this->text('/new Second', 1210)->assertOk();
+        [$first, $second] = Project::query()->orderBy('id')->get()->all();
+        $workspace = Workspace::query()->sole();
+        $projects = app(ProjectRepositoryInterface::class);
+        $this->assertSame($second->id, $projects->currentForBot($workspace)?->id);
+
+        $this->travel(-5)->seconds();
+        $projects->selectForBot($first);
+        $this->assertSame($first->id, $projects->currentForBot($workspace)?->id);
+        // Within the same microsecond too.
+        $this->freezeTime(function () use ($projects, $workspace, $first, $second): void {
+            $projects->selectForBot($second);
+            $projects->selectForBot($first);
+            $this->assertSame($first->id, $projects->currentForBot($workspace)?->id);
+        });
     }
 
     public function test_projects_lists_open_batches_with_select_buttons_and_photos_follow_the_choice(): void

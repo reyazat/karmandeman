@@ -15,6 +15,7 @@ use App\Models\Product;
 use App\Models\ProductRevision;
 use App\Models\Project;
 use App\Models\TelegramMediaIntake;
+use App\Repositories\Contracts\ProjectRepositoryInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -121,6 +122,28 @@ class TelegramOpenBatchTest extends TestCase
         $this->assertSame(1, Project::query()->count());
         $this->getJson("/api/v1/projects/{$project->public_id}/snapshot")->assertStatus(409);
         $this->assertSame(0, TelegramMediaIntake::query()->count());
+    }
+
+    public function test_a_correction_makes_the_reopened_batch_current_so_done_finishes_it(): void
+    {
+        $card = $this->approvedBag(7010);
+        $approved = Project::query()->sole();
+        // Input after approval opened a new current batch.
+        $this->text('/product شال', 7010);
+        $other = Project::query()->latest('id')->firstOrFail();
+        $this->assertNotSame($approved->id, $other->id);
+        $workspace = $approved->workspace;
+        $projects = app(ProjectRepositoryInterface::class);
+        $this->assertSame($other->id, $projects->currentForBot($workspace)?->id);
+
+        $this->photo(7010, $card);
+
+        $this->assertSame('review_required', $approved->fresh()->state->value);
+        $this->assertStringContainsString('برای اصلاح دوباره باز شد و پروژه جاری ربات است', $this->sent('عکس به محصول')->text);
+        $this->assertSame($approved->id, $projects->currentForBot($workspace)?->id);
+        $this->text('/done', 7010);
+        Queue::assertNotPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, "«{$other->name}»") && str_contains($job->text, 'بسته'));
+        $this->assertSame('collecting_input', $other->fresh()->state->value);
     }
 
     public function test_a_stale_foreign_or_full_card_stores_nothing_and_reopens_nothing(): void
