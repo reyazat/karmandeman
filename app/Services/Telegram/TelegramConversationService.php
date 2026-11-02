@@ -215,7 +215,7 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage(
             $chatId,
             "پروژه «{$project->name}» ساخته شد.\n".
-            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. پردازش خودکار هنوز فعال نیست.'
+            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. تا تأیید نهایی پروژه هر ورودی تازه به همین پروژه می‌رود.'
         );
     }
 
@@ -225,7 +225,8 @@ final readonly class TelegramConversationService
         if (! $this->readyForProject($user, $chatId)) {
             return;
         }
-        $reply = $this->queuePhoto->execute($this->workspaceFor($user), $user, $message);
+        // A photo in reply to a product card joins that product (ADR-041).
+        $reply = $this->queuePhoto->execute($this->workspaceFor($user), $user, $message, $this->repliedCard($message));
         if ($reply !== null) {
             $this->bot->sendMessage($chatId, $reply);
         }

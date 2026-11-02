@@ -155,6 +155,9 @@ final class ProductController extends Controller
                 'PRODUCT_ARCHIVED', 'PROJECT_NOT_ACCEPTING_PRODUCTS', 'PROJECT_CANCELLED' => ApiResponse::error(
                     $e->getMessage(), 'نسخه یا کلید درخواست با وضعیت کنونی سازگار نیست.', 409,
                 ),
+                'PRODUCT_IMAGES_BEING_EXTRACTED' => ApiResponse::error(
+                    'PRODUCT_IMAGES_BEING_EXTRACTED', 'این عکس‌ها در حال استخراج‌اند؛ پس از پایان استخراج آن‌ها را به محصول وصل کن.', 409,
+                ),
                 'PROJECT_REOPEN_REQUIRED' => ApiResponse::error(
                     'PROJECT_REOPEN_REQUIRED', 'پروژه تأیید شده است؛ برای اصلاح یا رد محصول ابتدا پروژه را بازگشایی کنید.', 409,
                 ),

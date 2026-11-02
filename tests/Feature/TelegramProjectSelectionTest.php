@@ -176,7 +176,7 @@ class TelegramProjectSelectionTest extends TestCase
         $this->assertSame(['محصول یافت نشد.', 'محصول یافت نشد.'], Queue::pushed(SendTelegramMessage::class)->map(fn ($job) => $job->text)->all());
     }
 
-    public function test_a_closed_current_batch_stops_input_instead_of_falling_back(): void
+    public function test_a_closed_current_batch_opens_a_new_one_instead_of_falling_back(): void
     {
         $owner = $this->seller(1206);
         $this->text('/new Second', 1206)->assertOk();
@@ -184,11 +184,12 @@ class TelegramProjectSelectionTest extends TestCase
         Sanctum::actingAs($owner);
         $this->postJson("/api/v1/projects/{$second->public_id}/cancel", ['version' => 1], ['Idempotency-Key' => 'cancel-current'])->assertOk();
 
+        // Never the older open batch the seller did not pick: a new batch, said so (ADR-041).
         $this->text("/product کیف\n۱۰۰ تومان", 1206)->assertOk();
-        $this->replied('پروژه جاری «Second» دیگر ورودی نمی‌پذیرد');
-        $this->text('/done', 1206)->assertOk();
-        $this->replied('پروژه جاری «Second» بسته است');
-        $this->assertSame(0, Product::query()->count());
+        $this->replied('«Second» لغو شده بود؛ پروژه تازه');
+        $third = Project::query()->latest('id')->firstOrFail();
+        $this->assertNotContains($third->id, [$first->id, $second->id]);
+        $this->assertSame($third->id, Product::query()->sole()->project_id);
 
         // /projects offers the other open batch, beyond the five newest if needed.
         $this->text('/projects', 1206)->assertOk();

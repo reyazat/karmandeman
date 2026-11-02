@@ -11,6 +11,7 @@ use App\Enums\ProjectState;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
@@ -33,6 +34,7 @@ final readonly class ReviseProductDraftAction
         private ProjectRepositoryInterface $projects,
         private ProductRevisionBuilder $builder,
         private ProjectSnapshotSigner $signer,
+        private AiWorkflowRunRepositoryInterface $runs,
     ) {}
 
     /**
@@ -66,6 +68,11 @@ final readonly class ReviseProductDraftAction
                 }
                 if ($product->current_revision !== $expectedRevision) {
                     throw new DomainException('PRODUCT_REVISION_CONFLICT');
+                }
+                // Photos an open extraction run is reading stay with the run (ADR-041).
+                $reading = $project === null ? [] : ($this->runs->openForProject($project)->input_asset_ids ?? []);
+                if (array_intersect(array_map('strtolower', (array) ($draft['image_asset_ids'] ?? [])), $reading) !== []) {
+                    throw new DomainException('PRODUCT_IMAGES_BEING_EXTRACTED');
                 }
 
                 $replaced = $this->products->revision($product, $expectedRevision)

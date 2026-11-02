@@ -233,7 +233,7 @@ class TelegramProductEditTest extends TestCase
         Queue::assertNotPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job) => str_contains(json_encode($job->buttons), 'project:reopen'));
     }
 
-    public function test_an_approved_batch_is_corrected_only_after_reopen(): void
+    public function test_an_approved_batch_reopens_with_the_correction_itself(): void
     {
         $owner = $this->seller(1305);
         $this->text("/product کیف\n۱۲۰٬۰۰۰ تومان", 1305)->assertOk();
@@ -246,28 +246,23 @@ class TelegramProductEditTest extends TestCase
         $this->assertSame('product_approved', $project->fresh()->state->value);
         $approvedVersion = $project->fresh()->version;
 
-        $this->text("کیف\n۱۵۰٬۰۰۰ تومان", 1305, $card)->assertOk();
-        $this->replied('تأیید شده است و محصولش بدون بازگشایی اصلاح نمی‌شود');
-        $reopen = "project:reopen:{$project->public_id}:{$approvedVersion}";
-        $this->assertSame([$reopen], $this->buttonsOf('بدون بازگشایی'));
-        $this->assertSame(1, $product->fresh()->current_revision);
-
-        // A stale or foreign reopen button does nothing.
+        // A stale or foreign reopen button of an older answer still does nothing.
         $this->press("project:reopen:{$project->public_id}:".($approvedVersion - 1), 1305)->assertOk();
         $this->replied('پروژه پس از این پیام تغییر کرده است');
         $this->seller(1306);
-        $this->press($reopen, 1306)->assertOk();
+        $this->press("project:reopen:{$project->public_id}:{$approvedVersion}", 1306)->assertOk();
         $this->replied('پروژه یافت نشد.');
         $this->assertSame('product_approved', $project->fresh()->state->value);
 
-        $this->press($reopen, 1305)->assertOk();
+        // The reply to the card reopens and corrects in one step, no extra press (ADR-041).
+        $this->text("کیف\n۱۵۰٬۰۰۰ تومان", 1305, $card)->assertOk();
+        $this->replied('برای اصلاح دوباره باز شد؛ نسخه نهایی قبلی در سابقه محفوظ است');
         $this->assertSame('review_required', $project->fresh()->state->value);
-        $this->replied('برای اصلاح باز شد و پروژه جاری ربات است');
+        $this->assertSame(2, $product->fresh()->current_revision);
+        $this->assertSame(["product:approve:{$product->public_id}:2", "product:reject:{$product->public_id}:2"], $this->buttonsOf('محصول اصلاح شد'));
         Sanctum::actingAs($owner);
         $this->getJson("/api/v1/projects/{$project->public_id}/snapshot")->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_APPROVED');
 
-        // The reopen answer resends each card to reply to.
-        $this->text("کیف\n۱۵۰٬۰۰۰ تومان", 1305, $this->card('محصول: «کیف»', 1305))->assertOk();
         $this->press("product:approve:{$product->public_id}:2", 1305)->assertOk();
         $this->text('/done', 1305)->assertOk();
         $project->refresh();
@@ -277,5 +272,7 @@ class TelegramProductEditTest extends TestCase
             ->assertJsonPath('data.number', 2)
             ->assertJsonPath('data.products.0.revision', 2)
             ->assertJsonPath('data.products.0.pricing.regular_price_irr', 1_500_000);
+        // The first snapshot stays as history.
+        $this->assertSame(2, DB::table('project_snapshots')->where('project_id', $project->id)->count());
     }
 }

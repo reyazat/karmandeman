@@ -9,6 +9,7 @@ use App\Enums\AiRunStatus;
 use App\Enums\ProjectState;
 use App\Models\AiWorkflowRun;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
+use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Services\Telegram\TelegramReplyService;
@@ -19,7 +20,8 @@ use Illuminate\Support\Facades\DB;
  * Ends an open extraction run without a result (ADR-032): its start failed,
  * its deadline passed or n8n reported failure. The batch goes back to
  * collecting input, so the seller can send /done again or add products by
- * hand. Nothing was stored from the run, and its held credit is released.
+ * hand; a batch with products goes back to review instead (ADR-041).
+ * Nothing was stored from the run, and its held credit is released.
  */
 final readonly class FailAIWorkflowRunAction
 {
@@ -28,6 +30,7 @@ final readonly class FailAIWorkflowRunAction
     public function __construct(
         private AiWorkflowRunRepositoryInterface $runs,
         private CloseAIWorkflowRunAction $closeRun,
+        private ProductRepositoryInterface $products,
         private ProjectRepositoryInterface $projects,
         private UserRepositoryInterface $users,
         private LockActiveWorkspaceAction $lockActive,
@@ -71,7 +74,10 @@ final readonly class FailAIWorkflowRunAction
         if ($project === null || $project->state !== ProjectState::Extracting) {
             return;
         }
-        $this->projects->advance($project, ProjectState::CollectingInput);
+        // A batch that already has products goes back to review, where it can still be approved
+        // and /done offers the unread photos again (ADR-041); without products, to input.
+        $this->projects->advance($project, $this->products->activeForProject($run->workspace, $project)->isNotEmpty()
+            ? ProjectState::ReviewRequired : ProjectState::CollectingInput);
         $requester = $this->users->find($run->requested_by);
         $chatId = $requester === null ? null : $this->users->telegramChatId($requester);
         if ($chatId !== null) {

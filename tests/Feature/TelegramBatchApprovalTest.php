@@ -189,10 +189,11 @@ class TelegramBatchApprovalTest extends TestCase
         $this->text('/done', 1104)->assertOk();
         $this->assertSame('review_required', $second->fresh()->state->value);
         $this->assertSame('collecting_input', $first->fresh()->state->value);
-        // It stays current, so /product refuses instead of writing elsewhere.
+        // It stays current and open until approved (ADR-041): /product adds to it, never elsewhere.
         $this->text("/product ج\n۵۰ تومان", 1104)->assertOk();
-        $this->replied('پروژه جاری «Second» دیگر ورودی نمی‌پذیرد');
-        $this->assertSame(2, Product::query()->count());
+        $this->replied('در پروژه «Second» ثبت شد');
+        $this->assertSame(3, Product::query()->count());
+        $this->assertSame('review_required', $second->fresh()->state->value);
 
         $this->press("project:select:{$first->public_id}", 1104)->assertOk();
         $this->text("/product ج\n۵۰ تومان", 1104)->assertOk();
@@ -201,7 +202,7 @@ class TelegramBatchApprovalTest extends TestCase
         $this->replied('ورودی پروژه «Batch» بسته است. 2 از 2');
 
         // A product revised after its card was sent gets a card with the new content.
-        $product = Product::query()->where('project_id', $second->id)->sole();
+        $product = Product::query()->where('project_id', $second->id)->orderBy('id')->firstOrFail();
         Sanctum::actingAs($owner);
         $this->patchJson("/api/v1/products/{$product->public_id}/draft", [
             'expected_revision' => 1, 'name' => ['value' => 'ب', 'status' => 'confirmed'],

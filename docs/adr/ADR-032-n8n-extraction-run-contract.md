@@ -2,6 +2,8 @@
 
 تاریخ: ۳۱ اکتبر ۲۰۲۶. وضعیت: تصمیم فنی برش اول گام ۴ [DEVELOPMENT_PLAN](../DEVELOPMENT_PLAN.md) («n8n با JSON Schema نسخه‌دار، signed callback، timeout/retry و cost cap»)، PRD E04، E07 (FR-060…064)، §۸ و ADR-001 در PRD. ادامه [ADR-022](ADR-022-private-encrypted-asset-storage.md)، [ADR-023](ADR-023-product-photos-from-batch-assets.md) و [ADR-027](ADR-027-bot-batch-finish-and-approval.md). **مجوز انتخاب provider AI، پردازش هزینه‌دار، intake واقعی در production یا پایان گام ۲ نیست.**
 
+> **یادداشت [ADR-041](ADR-041-batch-open-until-approval.md) (۲ نوامبر ۲۰۲۶):** پس از run موفق، فروشنده در ربات هم می‌تواند عکس تازه یا محصول دستی اضافه کند؛ تعارض متن محدودیت این سند با رفتار ربات بسته شد.
+
 ## زمینه
 
 گام ۳ پایان یافت: ورودی دستی، Gate A، snapshot و JSON از ربات. گام ۴ استخراج چندرسانه‌ای با n8n است. شرط شروع آن «provider تأییدشده» است و provider هنوز انتخاب نشده است (PRD §۲۰). گام ۵ (Quote و رزرو اعتبار) هم پیش از هر پردازش هزینه‌دار لازم است و ساخته نشده است.

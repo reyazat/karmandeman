@@ -112,11 +112,12 @@ class TelegramProjectCancelTest extends TestCase
         $this->press($this->buttonsOf('لغو شود؟')[0], 1301, 'cb-cancel')->assertOk();
         $this->replied('پروژه «Batch» لغو شد');
         $this->assertSame('cancelled', $project->fresh()->state->value);
-        // Products stay (ADR-019); the batch stays current, so input is refused, not redirected.
+        // Products stay (ADR-019); new input never joins the cancelled batch, it opens a new one (ADR-041).
         $this->assertSame(1, Product::query()->count());
         $this->text("/product کفش\n۲۰۰ تومان", 1301)->assertOk();
-        $this->replied('دیگر ورودی نمی‌پذیرد');
-        $this->assertSame(1, Product::query()->count());
+        $this->replied('«Batch» لغو شده بود؛ پروژه تازه');
+        $this->assertSame(1, Product::query()->where('project_id', $project->id)->count());
+        $this->assertSame(2, Product::query()->count());
 
         // The same button press again replays the answer instead of failing.
         $version = $project->fresh()->version;
@@ -125,8 +126,10 @@ class TelegramProjectCancelTest extends TestCase
         $this->assertSame($version, $project->fresh()->version);
         $this->assertSame(['پروژه «Batch» لغو شد. با /projects پروژه دیگری انتخاب کن یا با /new پروژه تازه بساز.'],
             Queue::pushed(SendTelegramMessage::class)->map(fn ($job) => $job->text)->all());
+        // The new batch is current now; /cancel offers it, never the cancelled one.
         $this->text('/cancel', 1301)->assertOk();
-        $this->replied('پروژه جاری «Batch» قابل لغو نیست');
+        $newest = Project::query()->latest('id')->firstOrFail();
+        $this->assertSame(["project:cancel:{$newest->public_id}:{$newest->version}"], $this->buttonsOf('با 1 محصول فعال لغو شود؟'));
     }
 
     public function test_a_stale_offer_does_not_cancel_a_changed_batch(): void

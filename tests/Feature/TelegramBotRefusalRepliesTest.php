@@ -180,7 +180,7 @@ class TelegramBotRefusalRepliesTest extends TestCase
         $this->assertSame('product_approved', $project->fresh()->state->value);
     }
 
-    public function test_the_current_card_in_an_approved_batch_still_offers_reopen(): void
+    public function test_the_current_card_in_an_approved_batch_reopens_it_with_the_correction(): void
     {
         $this->seller(2004);
         $this->text("/product کیف\n۱۰۰ تومان", 2004)->assertOk();
@@ -193,7 +193,9 @@ class TelegramBotRefusalRepliesTest extends TestCase
 
         $this->text("کیف دو\n۲۰۰ تومان", 2004, $card)->assertOk();
 
-        $buttons = Queue::pushed(SendTelegramMessage::class)->last()->buttons;
-        $this->assertStringStartsWith("project:reopen:{$project->public_id}:", $buttons[0][0]['callback_data']);
+        $job = Queue::pushed(SendTelegramMessage::class)->last();
+        $this->assertStringContainsString('برای اصلاح دوباره باز شد', $job->text);
+        $this->assertSame("product:approve:{$product->public_id}:2", $job->buttons[0][0]['callback_data']);
+        $this->assertSame('review_required', $project->fresh()->state->value);
     }
 }

@@ -2,6 +2,8 @@
 
 تاریخ: ۱ نوامبر ۲۰۲۶. وضعیت: تصمیم مالک و برش هشتم گام ۴ [DEVELOPMENT_PLAN](../DEVELOPMENT_PLAN.md). وابسته به PRD E03 (ورودی `.csv`، FR-021…025)، E04 (FR-030، قیمت ریالی، `null` نه صفر)، QA-02/05/06، [ADR-016](ADR-016-product-record-and-manual-draft-slice.md)، [ADR-017](ADR-017-product-normalisation-sku-and-review-queue.md)، [ADR-022](ADR-022-private-encrypted-asset-storage.md) و [ADR-024](ADR-024-telegram-photo-intake.md). Engineering Standards §۳ و §۶.
 
+> **اصلاح‌شده با [ADR-041](ADR-041-batch-open-until-approval.md) (۲ نوامبر ۲۰۲۶):** CSV ربات هم تا تأیید پروژه پذیرفته می‌شود.
+
 ## مسئله
 
 گام ۴ «دریافت عکس/ویس/CSV ساده» است. عکس و استخراج ساخته شده‌اند؛ ویس به provider و سیاست مصوب وابسته است. CSV ساده بدون مدل و بدون هزینه قابل ساخت است و بسته سیاست v3 «فایل اصلی عکس، صدا و CSV» را پوشش می‌دهد. فروشنده کم‌وقت فهرست محصول را اغلب در جدول دارد (PRD §۳).

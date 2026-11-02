@@ -216,9 +216,12 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame('product-extraction.v1', $run->workflow_version);
         Queue::assertPushedOn('ai', DispatchProductExtraction::class, fn (DispatchProductExtraction $job): bool => $job->runId === $run->id);
         Queue::assertPushed(DispatchProductExtraction::class, 1);
-        // The batch takes no more input while its photos are read.
-        $this->post("/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('x.jpg', ImageFixture::make(3))],
-            ['Idempotency-Key' => 'late-photo', 'Accept' => 'application/json'])->assertStatus(409);
+        // The batch is open until approval (ADR-041): a photo sent while the run reads is kept for
+        // the next /done and never joins the run already started.
+        $late = $this->post("/api/v1/projects/{$project}/assets", ['file' => UploadedFile::fake()->createWithContent('x.jpg', ImageFixture::make(3))],
+            ['Idempotency-Key' => 'late-photo', 'Accept' => 'application/json'])->assertCreated()->json('data.id');
+        $this->assertSame($photos, $run->fresh()->input_asset_ids);
+        $this->assertNotContains($late, $run->fresh()->input_asset_ids);
     }
 
     public function test_without_extraction_or_in_production_finish_input_stays_manual(): void

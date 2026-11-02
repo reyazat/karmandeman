@@ -150,13 +150,9 @@ class TelegramPhotoIntakeTest extends TestCase
 
     public function test_refusals_fetch_nothing(): void
     {
-        $this->seller(982, project: false);
+        $this->seller(982);
         $this->fakeTelegram(ImageFixture::make(3));
 
-        $this->send($this->photo(), 982)->assertOk();
-        $this->replied('/new');
-
-        $this->send(['text' => '/new Batch'], 982)->assertOk();
         $this->send(['document' => ['file_id' => 'doc', 'mime_type' => 'application/pdf', 'file_size' => 100]], 982)->assertOk();
         $this->replied('JPEG');
         $this->send(['document' => ['file_id' => 'big', 'mime_type' => 'image/jpeg', 'file_size' => 11 * 1024 * 1024]], 982)->assertOk();
@@ -165,6 +161,38 @@ class TelegramPhotoIntakeTest extends TestCase
         Http::assertNothingSent();
         $this->assertSame(0, Asset::query()->count());
         $this->assertSame(0, TelegramMediaIntake::query()->count());
+    }
+
+    public function test_a_photo_without_an_open_batch_opens_one_and_says_so(): void
+    {
+        $this->seller(989, project: false);
+        // Http::fake keeps the first matching stub: one sequence serves the three photos.
+        Http::fake([
+            'api.telegram.org/bot*/getFile' => Http::response(['ok' => true, 'result' => ['file_id' => 'x', 'file_path' => 'photos/file.jpg', 'file_size' => 500]]),
+            'api.telegram.org/file/bot*' => Http::sequence()->push(ImageFixture::make(5))->push(ImageFixture::make(6))->push(ImageFixture::make(7)),
+            '*' => Http::response(['ok' => true]),
+        ]);
+
+        $this->send($this->photo(), 989)->assertOk();
+
+        $this->replied('ساخته شد و این ورودی در آن ثبت می‌شود');
+        $project = Project::query()->sole();
+        $this->assertSame('collecting_input', $project->state->value);
+        $this->assertSame($project->id, Asset::query()->sole()->project_id);
+
+        // Approved, the batch is closed: the next photo opens a new batch, never joins the old one.
+        Project::query()->update(['state' => 'product_approved']);
+        $this->send($this->photo('b'), 989)->assertOk();
+        $this->replied("پروژه «{$project->name}» تأیید شده بود؛ پروژه تازه");
+        $this->assertSame(2, Project::query()->count());
+        $this->assertSame([$project->id, Project::query()->latest('id')->value('id')], Asset::query()->orderBy('id')->pluck('project_id')->all());
+
+        // In review the batch is still open: the photo joins it.
+        $newest = Project::query()->latest('id')->firstOrFail();
+        $newest->forceFill(['state' => 'review_required'])->save();
+        $this->send($this->photo('c'), 989)->assertOk();
+        $this->assertSame(2, Project::query()->count());
+        $this->assertSame(2, Asset::query()->where('project_id', $newest->id)->count());
     }
 
     public function test_queue_payload_and_pending_row_hold_no_file_id_or_chat_id(): void
@@ -258,19 +286,20 @@ class TelegramPhotoIntakeTest extends TestCase
         $this->replied('صبر کن');
     }
 
-    public function test_batch_closed_after_queueing_takes_no_photo(): void
+    public function test_a_batch_approved_after_queueing_sends_the_photo_to_a_new_batch(): void
     {
         Queue::fake([SendTelegramMessage::class, ImportTelegramPhoto::class]);
         $this->seller(988);
-        Http::fake(['*' => Http::response(['ok' => true])]);
+        $this->fakeTelegram(ImageFixture::make(8));
         $this->send($this->photo(), 988)->assertOk();
-        Project::query()->update(['state' => 'review_required']);
+        // Approved after the photo was queued: the closed batch never takes it; a new batch does (ADR-041).
+        Project::query()->update(['state' => 'product_approved']);
 
         app(ImportTelegramPhotoAction::class)->execute(TelegramMediaIntake::query()->value('id'));
 
-        Http::assertNothingSent();
-        $this->replied('دیگر عکس نمی‌پذیرد');
-        $this->assertSame(0, Asset::query()->count());
+        $this->replied('تأیید شده بود؛ پروژه تازه');
+        $this->assertSame(2, Project::query()->count());
+        $this->assertSame(Project::query()->latest('id')->value('id'), Asset::query()->sole()->project_id);
         $this->assertSame(0, TelegramMediaIntake::query()->count());
     }
 

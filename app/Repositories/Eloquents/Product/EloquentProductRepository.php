@@ -81,6 +81,14 @@ final class EloquentProductRepository implements ProductRepositoryInterface
         return $product;
     }
 
+    public function findForWorkspace(Workspace $workspace, int $productId): ?Product
+    {
+        $product = Product::query()->where('workspace_id', $workspace->id)->whereKey($productId)->first();
+        $product?->setRelation('workspace', $workspace);
+
+        return $product;
+    }
+
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Product
     {
         $product = Product::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->first();

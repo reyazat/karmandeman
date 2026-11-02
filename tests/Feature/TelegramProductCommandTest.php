@@ -171,11 +171,12 @@ class TelegramProductCommandTest extends TestCase
         $this->assertSame(1, Asset::query()->whereNull('claimed_by_product_id')->count());
     }
 
-    public function test_malformed_text_and_closed_batches_create_nothing(): void
+    public function test_malformed_text_creates_nothing_and_a_closed_batch_opens_a_new_one(): void
     {
         $this->seller(992, project: false);
-        $this->send(['text' => '/product کیف'], 992)->assertOk();
-        $this->replied('/new');
+        // The format reply comes before any batch is opened.
+        $this->send(['text' => '/product'], 992)->assertOk();
+        $this->assertSame(0, Project::query()->count());
 
         $this->send(['text' => '/new Batch'], 992)->assertOk();
         foreach (['/product', "/product کیف\nصد هزار تومان", "/product کیف\n0 تومان", "/product الف\nب\nپ", '/product '.str_repeat('ا', 201),
@@ -187,11 +188,17 @@ class TelegramProductCommandTest extends TestCase
         $this->replied('۲۰۰ نویسه');
         $this->replied('قیمت معتبر نیست');
 
-        // A batch past input takes no bot product; the seller is sent back to /new.
+        $this->assertSame(0, Product::query()->count());
+
+        // In review the batch is still open (ADR-041); approved, it is closed and a new batch takes the product.
         Queue::fake([SendTelegramMessage::class]);
         Project::query()->update(['state' => 'review_required']);
         $this->send(['text' => "/product کیف\n۱۰۰ تومان"], 992)->assertOk();
-        $this->replied('/new');
-        $this->assertSame(0, Product::query()->count());
+        $this->replied('در پروژه «Batch» ثبت شد');
+        Project::query()->update(['state' => 'product_approved']);
+        $this->send(['text' => "/product کفش\n۲۰۰ تومان"], 992)->assertOk();
+        $this->replied('«Batch» تأیید شده بود؛ پروژه تازه');
+        $this->assertSame(2, Project::query()->count());
+        $this->assertSame(Project::query()->latest('id')->value('id'), Product::query()->latest('id')->value('project_id'));
     }
 }

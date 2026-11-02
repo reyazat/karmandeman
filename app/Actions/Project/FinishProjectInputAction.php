@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\Gate;
  * product has claimed go to one n8n run and the batch waits in `extracting`
  * (ADR-032). That run is paid work: it starts only from a quote the seller
  * accepted, which holds its credit first (FR-072, ADR-039). Otherwise the
- * manual path goes straight to review.
+ * manual path goes straight to review. A batch in review is open until
+ * approval: new photos sent there start a run the same way (ADR-041).
  */
 final readonly class FinishProjectInputAction
 {
@@ -61,7 +62,8 @@ final readonly class FinishProjectInputAction
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);
-                if ($project->state !== ProjectState::CollectingInput) {
+                // A batch in review is still open (ADR-041): photos sent since its run go to a new one.
+                if ($project->state !== ProjectState::CollectingInput && $project->state !== ProjectState::ReviewRequired) {
                     throw new DomainException('PROJECT_STATE_CONFLICT');
                 }
                 if ($project->version !== $version) {
@@ -76,6 +78,10 @@ final readonly class FinishProjectInputAction
                 // A quote for a run that is no longer needed or allowed is never taken as accepted.
                 if ($quotePublicId !== null) {
                     throw new DomainException('QUOTE_STALE');
+                }
+                // In review, with nothing new to read, the batch is already where /done would take it.
+                if ($project->state === ProjectState::ReviewRequired) {
+                    throw new DomainException('PROJECT_STATE_CONFLICT');
                 }
                 if ($this->products->activeForProject($workspace, $project)->isEmpty()) {
                     throw new DomainException('PROJECT_HAS_NO_PRODUCTS');
@@ -108,9 +114,9 @@ final readonly class FinishProjectInputAction
         if ($quote->expires_at->isPast()) {
             throw new DomainException('QUOTE_EXPIRED');
         }
-        // A new photo, product or edit since the quote changes what would be read.
-        if ($quote->project_version !== $project->version
-            || $quote->input_asset_ids !== array_map(fn (Asset $asset): string => $asset->public_id, $photos)) {
+        // A new or used photo since the quote changes what would be read. A Gate A press or an
+        // edit of another product does not: the price is for these photos only (ADR-041).
+        if ($quote->input_asset_ids !== array_map(fn (Asset $asset): string => $asset->public_id, $photos)) {
             throw new DomainException('QUOTE_STALE');
         }
 

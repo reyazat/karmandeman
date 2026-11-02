@@ -32,7 +32,8 @@ use Illuminate\Support\Facades\Gate;
 final readonly class ImportProductTableAction
 {
     private const OPEN_PROJECT_STATES = [
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::ReviewRequired,
+        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
+        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
     ];
 
     public function __construct(

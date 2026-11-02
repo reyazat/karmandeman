@@ -34,7 +34,7 @@ final readonly class AcceptTelegramExtractionQuoteAction
         }
         try {
             [$project] = $this->finish->execute(
-                $workspace, $user, 'telegram-cb-'.substr(hash('sha256', $callbackId), 0, 48), $project->public_id, $quote->project_version, $quote->public_id,
+                $workspace, $user, 'telegram-cb-'.substr(hash('sha256', $callbackId), 0, 48), $project->public_id, $project->version, $quote->public_id,
             );
         } catch (AuthorizationException) {
             return new BotReply('پیش‌فاکتور یافت نشد.');

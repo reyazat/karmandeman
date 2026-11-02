@@ -10,6 +10,7 @@ use App\Jobs\Project\ImportTelegramPhoto;
 use App\Models\TelegramMediaIntake;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
@@ -33,6 +34,8 @@ final readonly class QueueTelegramPhotoAction
     public function __construct(
         private EnsurePolicyConsentAction $consent,
         private ProjectRepositoryInterface $projects,
+        private ProductRepositoryInterface $products,
+        private ResolveTelegramInputProjectAction $inputProject,
         private TelegramMediaIntakeRepositoryInterface $intakes,
         private WorkspaceFieldCipher $cipher,
         private TelegramSubjectKey $subjects,
@@ -40,9 +43,10 @@ final readonly class QueueTelegramPhotoAction
 
     /**
      * @param  array<string, mixed>  $message  a private-chat message with a photo or document
-     * @return string|null the reply now, or null when the import job answers later
+     * @param  array{0: string, 1: int}|null  $target  the product card the photo replies to, and the revision it shows
+     * @return string|null the reply now (a refusal, or where a new batch was opened), or null when only the import job answers
      */
-    public function execute(Workspace $workspace, User $user, array $message): ?string
+    public function execute(Workspace $workspace, User $user, array $message, ?array $target = null): ?string
     {
         $file = $this->pick($message);
         if ($file === null) {
@@ -58,14 +62,6 @@ final readonly class QueueTelegramPhotoAction
         } catch (DomainException) {
             return 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.';
         }
-        $project = $this->projects->currentForBot($workspace);
-        if ($project === null) {
-            return 'پروژه بازی برای دریافت عکس نداری؛ اول با /new یک پروژه بساز.';
-        }
-        if ($project->state !== ProjectState::CollectingInput) {
-            return "پروژه جاری «{$project->name}» دیگر عکس نمی‌پذیرد؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.";
-        }
-        Gate::forUser($user)->authorize('update', $project);
         // Same budget as the API upload route: each photo costs a download, encryption and storage.
         $limit = 'telegram-photo:'.$user->id;
         if (RateLimiter::tooManyAttempts($limit, (int) config('karmandeman.assets.uploads_per_minute'))) {
@@ -73,18 +69,37 @@ final readonly class QueueTelegramPhotoAction
         }
         RateLimiter::hit($limit, 60);
 
+        $notice = null;
+        $cardTarget = null;
+        if ($target !== null) {
+            // A photo in reply to a product card goes to that product's batch (ADR-041).
+            $product = $this->products->findPublicForWorkspace($workspace, $target[0]);
+            $project = $product === null || $file['kind'] !== TelegramMediaIntake::KIND_PHOTO ? null : $this->projects->findForWorkspace($workspace, (int) $product->project_id);
+            if ($product === null || $project === null || Gate::forUser($user)->denies('update', $product)) {
+                return $file['kind'] === TelegramMediaIntake::KIND_PHOTO ? 'محصول این کارت یافت نشد.' : 'فایل CSV را بدون پاسخ به کارت بفرست.';
+            }
+            if ($project->state === ProjectState::Cancelled) {
+                return "پروژه «{$project->name}» لغو شده است و عکس تازه نمی‌گیرد.";
+            }
+            $cardTarget = [$product->id, $target[1]];
+        } else {
+            [$project, $notice] = $this->inputProject->execute($workspace);
+        }
+        Gate::forUser($user)->authorize('update', $project);
+
         $intake = $this->intakes->createOnce(
             $workspace, $project, $user,
             $this->cipher->encrypt($workspace, 'telegram_media_intakes.file_ref', $file['id']),
             $file['size'],
             $this->subjects->message($message['chat']['id'], $message['message_id']),
             $file['kind'],
+            $cardTarget,
         );
         if ($intake !== null) {
             ImportTelegramPhoto::dispatch($intake->id)->afterCommit();
         }
 
-        return null;
+        return $notice;
     }
 
     /**

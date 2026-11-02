@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Actions\Product\AttachTelegramPhotoToProductAction;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\BotReply;
 use App\Enums\ProjectState;
@@ -35,6 +36,8 @@ final readonly class ImportTelegramPhotoAction
         private AttachProjectAssetAction $attach,
         private AttachProductTableAction $attachTable,
         private TelegramProductTablePreview $tablePreview,
+        private AttachTelegramPhotoToProductAction $attachToProduct,
+        private ResolveTelegramInputProjectAction $inputProject,
         private WorkspaceFieldCipher $cipher,
         private TelegramBotService $bot,
         private TelegramReplyService $replies,
@@ -62,11 +65,17 @@ final readonly class ImportTelegramPhotoAction
         }
 
         $table = $intake->kind === TelegramMediaIntake::KIND_TABLE;
-        // Only the batch still collecting input takes files, as when the file was queued.
-        if ($project->state !== ProjectState::CollectingInput) {
-            $this->finish($intake, $table ? "پروژه «{$project->name}» دیگر فایل نمی‌پذیرد." : "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.");
+        $toCard = $intake->target_product_id !== null;
+        // A batch takes files until approval (ADR-041); a photo for a card reopens an approved one.
+        $notice = null;
+        if (! in_array($project->state, ResolveTelegramInputProjectAction::OPEN_STATES, true) && ! ($toCard && $project->state === ProjectState::ProductApproved)) {
+            if ($toCard) {
+                $this->finish($intake, "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.");
 
-            return;
+                return;
+            }
+            // Approved after the file was queued: it goes where a new file would, never into the closed batch.
+            [$project, $notice] = DB::transaction(fn (): array => $this->inputProject->execute($workspace));
         }
 
         $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : 'karmandeman.assets.max_kilobytes') * 1024;
@@ -82,7 +91,12 @@ final readonly class ImportTelegramPhotoAction
             return;
         }
         if ($table) {
-            $this->finish($intake, $this->attachTable($intake, $project, $bytes));
+            $this->finish($intake, $this->attachTable($intake, $project, $bytes), $notice);
+
+            return;
+        }
+        if ($toCard) {
+            $this->finish($intake, $this->attachToProduct->execute($intake, $project, $bytes));
 
             return;
         }
@@ -112,7 +126,7 @@ final readonly class ImportTelegramPhotoAction
 
         $this->finish($intake, $replayed || $asset->wasRecentlyCreated
             ? "عکس به پروژه «{$project->name}» اضافه شد."
-            : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.");
+            : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.", $notice);
     }
 
     /** The CSV through the API's path; the reply is its mapping for the seller to confirm (ADR-040). */
@@ -159,8 +173,11 @@ final readonly class ImportTelegramPhotoAction
         }
     }
 
-    private function finish(TelegramMediaIntake $intake, BotReply|string|null $reply): void
+    private function finish(TelegramMediaIntake $intake, BotReply|string|null $reply, ?string $notice = null): void
     {
+        if ($reply !== null && $notice !== null) {
+            $reply = is_string($reply) ? "{$notice}\n{$reply}" : new BotReply("{$notice}\n{$reply->text}", $reply->buttons);
+        }
         DB::transaction(function () use ($intake, $reply): void {
             // Workspace lock first, in the purge's order. Erasure that started meanwhile
             // gets no new message, and a reply queued first is seen by the purge (FR-086).

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Product;
 
+use App\Actions\Project\ReopenForCorrectionAction;
 use App\Data\Telegram\BotReply;
-use App\Enums\ProjectState;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProductRepositoryInterface;
@@ -16,6 +16,7 @@ use App\Services\Telegram\TelegramProductCard;
 use App\Services\Telegram\TelegramProductText;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * Correction from the bot (ADR-029): the seller replies to a product card with
  * the name and, optionally, a new price. The card names the revision corrected,
  * so a newer revision is never overwritten. Other fields and the photos stay.
- * In an approved batch the answer offers reopen instead. Refusals are answered.
+ * An approved batch is reopened by the correction itself (ADR-041). Refusals are answered.
  */
 final readonly class ReviseTelegramProductAction
 {
@@ -31,6 +32,7 @@ final readonly class ReviseTelegramProductAction
         private ReviseProductDraftAction $revise,
         private ProductRepositoryInterface $products,
         private ProjectRepositoryInterface $projects,
+        private ReopenForCorrectionAction $reopen,
         private ProductDraftNormalizer $normalizer,
         private ProjectSnapshotSigner $signer,
         private TelegramProductText $productText,
@@ -65,16 +67,28 @@ final readonly class ReviseTelegramProductAction
         if ($parsed['price'] !== null) {
             $draft['pricing'] = ['regular_price' => $parsed['price'], 'input_unit' => $parsed['unit'], 'status' => 'confirmed'];
         }
+        $project = $product->project_id === null ? null : $this->projects->findForWorkspace($workspace, $product->project_id);
+        $key = 'telegram-'.substr($messageKey, 0, 48);
         try {
-            [$revised] = $this->revise->execute($workspace, $user, 'telegram-'.substr($messageKey, 0, 48), $productPublicId, $revision, $draft);
+            // An approved batch reopens with the correction itself, no extra press (ADR-041).
+            // An outdated card never gets here: it fails the revision check and reopens nothing.
+            [$revised, $notice] = DB::transaction(function () use ($workspace, $user, $key, $project, $product, $productPublicId, $revision, $draft): array {
+                $notice = null;
+                if ($project !== null && $revision === $product->current_revision) {
+                    [, $notice] = $this->reopen->execute($workspace, $user, "{$key}-reopen", $project);
+                }
+                [$revised] = $this->revise->execute($workspace, $user, $key, $productPublicId, $revision, $draft);
+
+                return [$revised, $notice];
+            });
         } catch (AuthorizationException) {
             return new BotReply('محصول یافت نشد.');
         } catch (DomainException $e) {
             return match ($e->getMessage()) {
                 // An outdated card can never apply, so it must not invalidate the approved batch.
-                'PROJECT_REOPEN_REQUIRED' => $revision !== $product->current_revision
-                    ? new BotReply('این محصول پس از این پیام تغییر کرده است؛ به کارت نسخه تازه پاسخ بده.')
-                    : $this->reopenOffer($workspace, $product->project_id),
+                'PROJECT_REOPEN_REQUIRED' => new BotReply('این محصول پس از این پیام تغییر کرده است؛ به کارت نسخه تازه پاسخ بده.'),
+                'PROJECT_PAST_APPROVAL' => new BotReply("پروژه «{$project?->name}» از مرحله تأیید گذشته است و محصولش اصلاح نمی‌شود."),
+                'PROJECT_VERSION_CONFLICT' => new BotReply('پروژه همین حالا تغییر کرد؛ دوباره به کارت پاسخ بده.'),
                 'PRODUCT_NOT_FOUND' => new BotReply('محصول یافت نشد.'),
                 'PRODUCT_REVISION_CONFLICT' => new BotReply('این محصول پس از این پیام تغییر کرده است؛ به کارت نسخه تازه پاسخ بده.'),
                 'PRODUCT_ARCHIVED' => new BotReply('این محصول رد شده است و اصلاح نمی‌شود.'),
@@ -87,25 +101,7 @@ final readonly class ReviseTelegramProductAction
         }
 
         return $this->card->reply($revised->product, $revised,
-            'محصول اصلاح شد: '.$this->card->summary($revised)." (نسخه {$revised->revision}).\nنسخه تازه را تأیید کن؛ تأیید قبلی برای آن معتبر نیست.",
-        );
-    }
-
-    private function reopenOffer(Workspace $workspace, ?int $projectId): BotReply
-    {
-        $project = $projectId === null ? null : $this->projects->findForWorkspace($workspace, $projectId);
-        if ($project === null) {
-            return new BotReply('پروژه یافت نشد.');
-        }
-        // Later states hold a quote or credit and are not reopened yet (ReopenProjectAction).
-        if ($project->state !== ProjectState::ProductApproved) {
-            return new BotReply("پروژه «{$project->name}» از مرحله تأیید گذشته است و محصولش اصلاح نمی‌شود.");
-        }
-
-        return new BotReply(
-            "پروژه «{$project->name}» تأیید شده است و محصولش بدون بازگشایی اصلاح نمی‌شود.\n"
-            .'با بازگشایی، خروجی نسخه نهایی فعلی تا تأیید دوباره پروژه در دسترس نیست.',
-            [[['text' => 'بازگشایی پروژه برای اصلاح', 'callback_data' => "project:reopen:{$project->public_id}:{$project->version}"]]],
+            ($notice ?? '').'محصول اصلاح شد: '.$this->card->summary($revised)." (نسخه {$revised->revision}).\nنسخه تازه را تأیید کن؛ تأیید قبلی برای آن معتبر نیست.",
         );
     }
 }

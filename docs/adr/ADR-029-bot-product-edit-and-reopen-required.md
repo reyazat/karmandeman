@@ -2,6 +2,8 @@
 
 تاریخ: ۲۹ اکتبر ۲۰۲۶. وضعیت: تصمیم مالک محصول و تصمیم فنی برش چهاردهم گام ۳، ادامه [ADR-028](ADR-028-bot-current-batch-and-reject.md)، [ADR-019](ADR-019-reopen-cancel-and-approval-integrity.md) و [ADR-018](ADR-018-batch-finish-input-and-approved-snapshot.md) (PRD §۶، FR-033). **مجوز intake واقعی در production، انتشار یا پایان گام ۲ نیست.**
 
+> **اصلاح‌شده با [ADR-041](ADR-041-batch-open-until-approval.md) (۲ نوامبر ۲۰۲۶):** بازگشایی اجباری می‌ماند، ولی پاسخ به کارت نسخه جاری خودش پروژه را باز و اصلاح را ثبت می‌کند؛ دکمه جدا لازم نیست.
+
 ## زمینه
 
 - اصلاح محصول فقط با API ممکن بود. در ربات راه اصلاح «رد و ارسال دوباره» بود (ADR-028).

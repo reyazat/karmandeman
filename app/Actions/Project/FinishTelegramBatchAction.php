@@ -47,14 +47,22 @@ final readonly class FinishTelegramBatchAction
         if (! in_array($project->state, [ProjectState::CollectingInput, ProjectState::ReviewRequired], true)) {
             return [new BotReply("پروژه جاری «{$project->name}» بسته است؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.")];
         }
-        if ($project->state === ProjectState::CollectingInput) {
+        $inReview = $project->state === ProjectState::ReviewRequired;
+        if ($project->state === ProjectState::CollectingInput || $inReview) {
             try {
                 [$project] = $this->finish->execute($workspace, $user, 'telegram-'.substr($messageKey, 0, 48), $project->public_id, $project->version);
             } catch (AuthorizationException) {
                 return [new BotReply('پروژه یافت نشد.')];
             } catch (DomainException $e) {
                 if ($e->getMessage() === 'EXTRACTION_QUOTE_REQUIRED') {
-                    return [$this->quoteReply($workspace, $user, $messageKey, $project)];
+                    // In review the seller also gets the cards of the products already there (ADR-041).
+                    $quote = $this->quoteReply($workspace, $user, $messageKey, $project);
+
+                    return $inReview ? [$quote, ...$this->review->replies($workspace, $project)] : [$quote];
+                }
+                // In review with nothing new: show the review again.
+                if ($inReview && $e->getMessage() === 'PROJECT_STATE_CONFLICT') {
+                    return $this->review->replies($workspace, $project);
                 }
 
                 return [new BotReply(match ($e->getMessage()) {

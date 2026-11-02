@@ -2,6 +2,8 @@
 
 تاریخ: ۲۹ اکتبر ۲۰۲۶. وضعیت: تصمیم فنی برش نهم گام ۳، ادامه [ADR-022](ADR-022-private-encrypted-asset-storage.md) و [ADR-023](ADR-023-product-photos-from-batch-assets.md) (PRD FR-025، FR-030، [DEVELOPMENT_PLAN](../DEVELOPMENT_PLAN.md) گام ۳: «یک محصول ساده از متن/عکس»). **مجوز intake واقعی در production، انتشار یا پایان گام ۲ نیست.**
 
+> **اصلاح‌شده با [ADR-041](ADR-041-batch-open-until-approval.md) (۲ نوامبر ۲۰۲۶):** پروژه مقصد تا تأیید باز است (`collecting_input`، `extracting`، `review_required`) و پس از تأیید یا لغو، پروژه تازه خودکار ساخته می‌شود. عکس در پاسخ به کارت به همان محصول می‌رود.
+
 ## زمینه
 
 ADR-022 بارگذاری عکس را فقط از API ساخت. کانال اصلی پایلوت ربات تلگرام است و PRD می‌خواهد فایل «از تلگرام به مخزن امن مستقل منتقل شود» تا حذف چت یا منقضی‌شدن لینک تلگرام آن را از بین نبرد. تلگرام و n8n adapter نامطمئن‌اند (AGENTS.md).

@@ -38,6 +38,8 @@ interface ProductRepositoryInterface
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Product;
 
+    public function findForWorkspace(Workspace $workspace, int $productId): ?Product;
+
     public function revision(Product $product, int $revision): ?ProductRevision;
 
     /**

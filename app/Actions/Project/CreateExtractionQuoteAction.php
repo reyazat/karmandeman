@@ -51,7 +51,8 @@ final readonly class CreateExtractionQuoteAction
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);
-                if ($project->state !== ProjectState::CollectingInput) {
+                // Open until approval: a batch in review prices its new photos too (ADR-041).
+                if ($project->state !== ProjectState::CollectingInput && $project->state !== ProjectState::ReviewRequired) {
                     throw new DomainException('PROJECT_STATE_CONFLICT');
                 }
                 if ($project->version !== $version) {

@@ -16,6 +16,8 @@ use Illuminate\Support\Carbon;
  * @property int $project_id
  * @property int $user_id
  * @property string $kind
+ * @property int|null $target_product_id
+ * @property int|null $target_revision
  * @property string $file_ref
  * @property int|null $declared_size
  * @property string $message_key
@@ -29,7 +31,7 @@ class TelegramMediaIntake extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'file_ref', 'declared_size', 'message_key', 'created_at'];
+    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'target_product_id', 'target_revision', 'file_ref', 'declared_size', 'message_key', 'created_at'];
 
     protected $hidden = ['file_ref'];
 

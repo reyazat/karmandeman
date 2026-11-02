@@ -10,6 +10,7 @@ use App\Enums\ProjectState;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductRevisionBuilder;
@@ -24,7 +25,8 @@ use Illuminate\Support\Facades\Gate;
 final readonly class CreateManualProductDraftAction
 {
     private const OPEN_PROJECT_STATES = [
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::ReviewRequired,
+        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
+        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
     ];
 
     public function __construct(
@@ -33,6 +35,7 @@ final readonly class CreateManualProductDraftAction
         private ProjectRepositoryInterface $projects,
         private ProductRepositoryInterface $products,
         private ProductRevisionBuilder $builder,
+        private AiWorkflowRunRepositoryInterface $runs,
     ) {}
 
     /**
@@ -51,6 +54,11 @@ final readonly class CreateManualProductDraftAction
                 Gate::forUser($user)->authorize('update', $project);
                 if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
+                }
+                // Photos an open extraction run is reading stay with the run (ADR-032, ADR-041).
+                $reading = $this->runs->openForProject($project)->input_asset_ids ?? [];
+                if (array_intersect(array_map('strtolower', (array) ($draft['image_asset_ids'] ?? [])), $reading) !== []) {
+                    throw new DomainException('PRODUCT_IMAGES_BEING_EXTRACTED');
                 }
 
                 $revision = $this->products->createWithRevision($workspace, $project, $user, $this->builder->build($workspace, $project, $draft));

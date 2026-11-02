@@ -55,7 +55,7 @@ final readonly class ArchiveProductAction
                         throw new DomainException('PRODUCT_REVISION_CONFLICT');
                     }
                     $state = $product->project_id === null ? null : $this->projects->findForWorkspace($workspace, $product->project_id)?->state;
-                    if (! in_array($state, [ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::ReviewRequired], true)) {
+                    if (! in_array($state, [ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired], true)) {
                         throw new DomainException('PROJECT_STATE_CONFLICT');
                     }
                 }
