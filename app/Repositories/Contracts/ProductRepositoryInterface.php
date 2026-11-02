@@ -55,6 +55,14 @@ interface ProductRepositoryInterface
     public function activeForProject(Workspace $workspace, Project $project): Collection;
 
     /**
+     * Photo public ids the current revisions of live products of the batch cite,
+     * whatever channel attached them (ADR-023, ADR-044).
+     *
+     * @return list<string>
+     */
+    public function citedImageIds(Workspace $workspace, Project $project, ?Product $except = null): array;
+
+    /**
      * Server-side batch counts (FR-040); archived products count only in total and archived.
      *
      * @return array{total: int, needs_review: int, approved: int, archived: int, ready_for_approval: int, needs_confirmation: int, price_missing: int, image_missing: int, duplicate_suspected: int}

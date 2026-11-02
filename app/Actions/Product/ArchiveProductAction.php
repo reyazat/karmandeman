@@ -7,7 +7,6 @@ namespace App\Actions\Product;
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Enums\ProductStatus;
-use App\Enums\ProjectState;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
@@ -55,7 +54,7 @@ final readonly class ArchiveProductAction
                         throw new DomainException('PRODUCT_REVISION_CONFLICT');
                     }
                     $state = $product->project_id === null ? null : $this->projects->findForWorkspace($workspace, $product->project_id)?->state;
-                    if (! in_array($state, [ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired], true)) {
+                    if ($state?->isOpenForInput() !== true) {
                         throw new DomainException('PROJECT_STATE_CONFLICT');
                     }
                 }

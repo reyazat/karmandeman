@@ -21,11 +21,6 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
  */
 final readonly class ResolveTelegramInputProjectAction
 {
-    /** States that still take bot input. */
-    public const OPEN_STATES = [
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
-    ];
-
     public function __construct(
         private LockActiveWorkspaceAction $lockActive,
         private ProjectRepositoryInterface $projects,
@@ -41,7 +36,7 @@ final readonly class ResolveTelegramInputProjectAction
         // updates, and each must find the batch the first one opened, not open its own.
         $this->lockActive->execute($workspace);
         $current = $this->projects->currentForBot($workspace);
-        if ($current !== null && in_array($current->state, self::OPEN_STATES, true)) {
+        if ($current !== null && $current->state->isOpenForInput()) {
             return [$current, null];
         }
         $project = $this->createProject->execute($workspace);

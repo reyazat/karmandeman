@@ -6,7 +6,6 @@ namespace App\Actions\Project;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
-use App\Enums\ProjectState;
 use App\Exceptions\ProductTableRejected;
 use App\Models\ProductTable;
 use App\Models\User;
@@ -31,11 +30,6 @@ use Illuminate\Support\Facades\Gate;
  */
 final readonly class ImportProductTableAction
 {
-    private const OPEN_PROJECT_STATES = [
-        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
-    ];
-
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
@@ -68,7 +62,7 @@ final readonly class ImportProductTableAction
                 if ($table->status !== ProductTable::STATUS_PENDING) {
                     throw new DomainException('TABLE_ALREADY_IMPORTED');
                 }
-                if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
+                if (! $project->state->isOpenForInput()) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }
 

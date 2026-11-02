@@ -141,7 +141,7 @@ class TelegramProjectSelectionTest extends TestCase
         [$first, $second] = Project::query()->orderBy('id')->get()->all();
 
         $this->text('/projects', 1201)->assertOk();
-        $this->replied('Second — collecting_input (جاری)');
+        $this->replied('Second — در حال دریافت ورودی — '.now()->format('Y-m-d').' (جاری)');
         $this->assertSame(["project:select:{$first->public_id}"], $this->buttonsOf('آخرین پروژه‌ها'));
 
         $this->press("project:select:{$first->public_id}", 1201)->assertOk();
@@ -165,7 +165,7 @@ class TelegramProjectSelectionTest extends TestCase
         Project::query()->whereKey($project->id)->update(['state' => 'cancelled']);
         $selectedAt = DB::table('projects')->where('id', $project->id)->value('bot_selected_at');
         $this->press("project:select:{$project->public_id}", 1202)->assertOk();
-        $this->replied('باز نیست');
+        $this->replied('انتخاب نمی‌شود');
         $this->assertSame($selectedAt, DB::table('projects')->where('id', $project->id)->value('bot_selected_at'));
     }
 
@@ -217,32 +217,23 @@ class TelegramProjectSelectionTest extends TestCase
         $this->assertSame(["project:select:{$first->public_id}"], $this->buttonsOf('آخرین پروژه‌ها'));
     }
 
-    public function test_reject_never_reaches_a_finished_batch_or_a_stale_archived_revision(): void
+    public function test_reject_never_reaches_a_stale_archived_revision(): void
     {
         $owner = $this->seller(1207);
         $this->productButton(1207, 'کیف');
         $product = Product::query()->sole();
-        [$approve, $reject] = [$this->buttonsOf('محصول «کیف»')[0], $this->buttonsOf('محصول «کیف»', 1)[0]];
-        $this->press($approve, 1207)->assertOk();
-        $this->text('/done', 1207)->assertOk();
-        $project = Project::query()->sole();
-        $this->press("project:approve:{$project->public_id}:{$project->version}", 1207)->assertOk();
-        $this->assertSame('product_approved', $project->fresh()->state->value);
+        $reject = $this->buttonsOf('محصول «کیف»', 1)[0];
 
-        $this->press($reject, 1207)->assertOk();
-        $this->replied('دیگر در حال بررسی نیست');
-        $this->assertSame('approved', $product->fresh()->status->value);
-
-        // An archived product with a newer revision: an old reject card reports the change.
+        // An archived product with a newer revision: an old reject card says it is already rejected.
         Sanctum::actingAs($owner);
-        $this->postJson("/api/v1/projects/{$project->public_id}/reopen", ['version' => $project->fresh()->version], ['Idempotency-Key' => 'reopen-batch'])->assertOk();
         $this->patchJson("/api/v1/products/{$product->public_id}/draft", [
             'expected_revision' => 1, 'name' => ['value' => 'کیف نو', 'status' => 'confirmed'],
-        ], ['Idempotency-Key' => 'revise-after-reopen'])->assertOk();
+        ], ['Idempotency-Key' => 'revise-before-archive'])->assertOk();
         $this->postJson("/api/v1/products/{$product->public_id}/archive", [], ['Idempotency-Key' => 'archive-by-api'])->assertOk();
         $this->postJson("/api/v1/products/{$product->public_id}/archive", [], ['Idempotency-Key' => 'archive-by-api'])->assertOk();
         $this->press($reject, 1207)->assertOk();
-        $this->replied('تغییر کرده است');
+        $this->replied('این محصول قبلاً رد شده است');
+        $this->assertSame(2, $product->fresh()->current_revision);
     }
 
     public function test_a_batch_created_through_the_api_becomes_the_current_one(): void

@@ -39,11 +39,7 @@ final readonly class ExtractionInputSelector
      */
     public function photos(Workspace $workspace, Project $project): array
     {
-        $used = $this->runs->extractedAssetIds($project);
-        foreach ($this->products->activeForProject($workspace, $project) as $product) {
-            $revision = $this->products->revision($product, $product->current_revision);
-            array_push($used, ...($revision === null ? [] : $revision->payload['image_asset_ids']));
-        }
+        $used = [...$this->runs->extractedAssetIds($project), ...$this->products->citedImageIds($workspace, $project)];
         $photos = array_values(array_filter(
             $this->assets->unclaimedInProject($project, self::PHOTO_SCAN_LIMIT),
             fn (Asset $asset): bool => ! in_array($asset->public_id, $used, true),

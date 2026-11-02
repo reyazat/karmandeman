@@ -44,8 +44,15 @@ final readonly class FinishTelegramBatchAction
         if ($project->state === ProjectState::Extracting) {
             return [new BotReply("محصولات پروژه «{$project->name}» در حال استخراج از عکس‌هاست؛ پس از پایان خبر می‌دهم.")];
         }
+        // Approved or cancelled: input already opens a new batch by itself (ADR-041).
+        if ($project->state === ProjectState::Cancelled) {
+            return [new BotReply("پروژه جاری «{$project->name}» لغو شده است؛ عکس، فایل CSV یا /product بعدی خودش پروژه تازه می‌سازد.")];
+        }
+        if ($project->state->hasApprovedSnapshot()) {
+            return [new BotReply("پروژه جاری «{$project->name}» تأیید شده است؛ عکس، فایل CSV یا /product بعدی خودش پروژه تازه می‌سازد. برای اصلاح این پروژه، به کارت محصولش پاسخ بده.")];
+        }
         if (! in_array($project->state, [ProjectState::CollectingInput, ProjectState::ReviewRequired], true)) {
-            return [new BotReply("پروژه جاری «{$project->name}» بسته است؛ با /projects پروژه دیگری انتخاب کن یا با /new بساز.")];
+            return [new BotReply("پروژه «{$project->name}» هنوز آماده پایان ورودی نیست؛ کمی بعد /done را دوباره بفرست.")];
         }
         $inReview = $project->state === ProjectState::ReviewRequired;
         if ($project->state === ProjectState::CollectingInput || $inReview) {
@@ -79,7 +86,7 @@ final readonly class FinishTelegramBatchAction
 
         // The photos went to an n8n run (ADR-032); its callback sends the next message.
         if ($project->state === ProjectState::Extracting) {
-            return [new BotReply("ورودی پروژه «{$project->name}» بسته شد و محصولات از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود.")];
+            return [new BotReply("محصولات پروژه «{$project->name}» از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. عکسی که در این مدت بفرستی برای /done بعدی می‌ماند.")];
         }
 
         return $this->review->replies($workspace, $project);

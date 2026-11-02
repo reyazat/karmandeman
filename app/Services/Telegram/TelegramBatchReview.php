@@ -44,12 +44,12 @@ final readonly class TelegramBatchReview
         }
         if ($pending->isEmpty()) {
             return [new BotReply(
-                "ورودی پروژه «{$project->name}» بسته است و هر {$active->count()} محصول تأیید شده‌اند. برای ثبت نسخه نهایی پروژه را تأیید کن.",
+                "هر {$active->count()} محصول پروژه «{$project->name}» تأیید شده‌اند. برای ثبت نسخه نهایی پروژه را تأیید کن؛ تا تأیید پروژه، عکس یا محصول تازه هم پذیرفته می‌شود.",
                 [[['text' => 'تأیید پروژه', 'callback_data' => "project:approve:{$project->public_id}:{$project->version}"]]],
             )];
         }
 
-        $summary = "ورودی پروژه «{$project->name}» بسته است. {$pending->count()} از {$active->count()} محصول هنوز تأیید نشده‌اند"
+        $summary = "پروژه «{$project->name}» در بررسی است. {$pending->count()} از {$active->count()} محصول هنوز تأیید نشده‌اند"
             .$this->counts($pending).'. پس از تأیید همه، دوباره /done را بفرست.';
         $grouped = $this->prices->list($workspace, $project);
         // Rows the seller cannot tell apart are never answered together.

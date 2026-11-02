@@ -133,7 +133,7 @@ class TelegramBatchApprovalTest extends TestCase
         $this->press("product:approve:{$shoe->public_id}:1", 1101)->assertOk();
         $this->text('/done', 1101)->assertOk();
         $project->refresh();
-        $this->assertSame(["project:approve:{$project->public_id}:{$project->version}"], $this->buttonsOf('هر 2 محصول تأیید شده‌اند'));
+        $this->assertSame(["project:approve:{$project->public_id}:{$project->version}"], $this->buttonsOf('هر 2 محصول پروژه'));
 
         $this->press("project:approve:{$project->public_id}:{$project->version}", 1101)->assertOk()->assertJsonPath('data.status', 'ok');
         $this->replied('پروژه تأیید شد: 2 محصول در نسخه نهایی شماره 1');
@@ -199,7 +199,7 @@ class TelegramBatchApprovalTest extends TestCase
         $this->text("/product ج\n۵۰ تومان", 1104)->assertOk();
         $this->text('/done', 1104)->assertOk();
         $this->assertSame('review_required', $first->fresh()->state->value);
-        $this->replied('ورودی پروژه «Batch» بسته است. 2 از 2');
+        $this->replied('پروژه «Batch» در بررسی است. 2 از 2');
 
         // A product revised after its card was sent gets a card with the new content.
         $product = Product::query()->where('project_id', $second->id)->orderBy('id')->firstOrFail();

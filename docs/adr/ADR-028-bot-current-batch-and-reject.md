@@ -2,6 +2,8 @@
 
 تاریخ: ۲۹ اکتبر ۲۰۲۶. وضعیت: تصمیم فنی برش سیزدهم گام ۳، ادامه [ADR-027](ADR-027-bot-batch-finish-and-approval.md)، [ADR-026](ADR-026-bot-product-approval.md) و [ADR-024](ADR-024-telegram-photo-intake.md) (PRD §۶، FR-041). **مجوز intake واقعی در production، انتشار یا پایان گام ۲ نیست.**
 
+> **اصلاح [ADR-041](ADR-041-batch-open-until-approval.md) و [ADR-044](ADR-044-api-bot-parity-after-open-batch.md):** پروژه «باز» یعنی `ProjectState::OPEN_FOR_INPUT` (`collecting_input`، `needs_clarification`، `extracting`، `review_required`)، برای فهرست، دکمه انتخاب و fallback پروژه جاری. ورودی ربات در پروژه جاری تأییدشده یا لغوشده رد نمی‌شود و پروژه تازه می‌سازد (ADR-041 بند ۲). دکمه رد روی کارت نسخه جاری پروژه تأییدشده آن را باز و محصول را رد می‌کند. کارت قدیمی همچنان هیچ پروژه‌ای را باز نمی‌کند (ADR-044 بند ۳).
+
 ## زمینه
 
 تا ADR-027 ربات پروژه را ضمنی انتخاب می‌کرد: عکس و `/product` جدیدترین پروژه در حال ورودی را می‌گرفتند و `/done` قاعده دیگری داشت. فروشنده با چند پروژه باز نمی‌توانست پروژه را انتخاب کند. رد محصول هم فقط با API بود.

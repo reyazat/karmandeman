@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\AssetRepositoryInterface;
+use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\Telegram\TelegramProductCard;
 use App\Services\Telegram\TelegramProductText;
@@ -35,6 +36,7 @@ final readonly class CreateTelegramProductDraftAction
         private AiWorkflowRunRepositoryInterface $runs,
         private TelegramMediaIntakeRepositoryInterface $intakes,
         private AssetRepositoryInterface $assets,
+        private ProductRepositoryInterface $products,
         private CreateManualProductDraftAction $create,
         private TelegramProductText $productText,
         private TelegramProductCard $card,
@@ -67,11 +69,12 @@ final readonly class CreateTelegramProductDraftAction
         }
         RateLimiter::hit($limit, 60);
 
-        // Photos an extraction run is reading stay with the run (ADR-032).
-        $reading = $this->runs->openForProject($project)->input_asset_ids ?? [];
+        // Photos an extraction run is reading stay with the run (ADR-032), and a
+        // photo a product already cites, from any channel, is not taken twice (ADR-044).
+        $taken = [...($this->runs->openForProject($project)->input_asset_ids ?? []), ...$this->products->citedImageIds($workspace, $project)];
         $free = array_values(array_filter(
-            $this->assets->unclaimedInProject($project, self::MAX_IMAGES + 1 + count($reading)),
-            fn ($asset): bool => ! in_array($asset->public_id, $reading, true),
+            $this->assets->unclaimedInProject($project, self::MAX_IMAGES + 1 + count($taken)),
+            fn ($asset): bool => ! in_array($asset->public_id, $taken, true),
         ));
         $photos = array_slice($free, 0, self::MAX_IMAGES);
         $left = count($free) > self::MAX_IMAGES;

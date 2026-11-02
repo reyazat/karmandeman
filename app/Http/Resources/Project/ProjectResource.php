@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Project;
 
+use App\Data\Project\ProjectActivity;
 use App\Models\Project;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin Project */
+/**
+ * @mixin Project
+ *
+ * @property-read ProjectActivity $activity set by the project list, never loaded from the database
+ */
 final class ProjectResource extends JsonResource
 {
     /**
@@ -23,6 +28,13 @@ final class ProjectResource extends JsonResource
             'version' => $this->version,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
+            // The project list only (FR-080): files, live products and credit charged.
+            'activity' => $this->whenLoaded('activity', fn (): array => [
+                'photos' => $this->activity->photos,
+                'tables' => $this->activity->tables,
+                'products' => $this->activity->products,
+                'credits_used' => $this->activity->creditsUsed,
+            ]),
         ];
     }
 }

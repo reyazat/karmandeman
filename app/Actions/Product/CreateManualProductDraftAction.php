@@ -6,7 +6,6 @@ namespace App\Actions\Product;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
-use App\Enums\ProjectState;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
@@ -24,11 +23,6 @@ use Illuminate\Support\Facades\Gate;
  */
 final readonly class CreateManualProductDraftAction
 {
-    private const OPEN_PROJECT_STATES = [
-        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
-    ];
-
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
@@ -52,7 +46,7 @@ final readonly class CreateManualProductDraftAction
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);
-                if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
+                if (! $project->state->isOpenForInput()) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_PRODUCTS');
                 }
                 // Photos an open extraction run is reading stay with the run (ADR-032, ADR-041).

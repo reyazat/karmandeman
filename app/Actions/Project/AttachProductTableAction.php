@@ -7,7 +7,6 @@ namespace App\Actions\Project;
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Data\Product\ParsedProductTable;
-use App\Enums\ProjectState;
 use App\Models\ProductTable;
 use App\Models\User;
 use App\Models\Workspace;
@@ -29,11 +28,6 @@ use Throwable;
  */
 final readonly class AttachProductTableAction
 {
-    private const OPEN_PROJECT_STATES = [
-        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
-    ];
-
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
@@ -64,7 +58,7 @@ final readonly class AttachProductTableAction
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);
-                if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
+                if (! $project->state->isOpenForInput()) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_INPUT');
                 }
 

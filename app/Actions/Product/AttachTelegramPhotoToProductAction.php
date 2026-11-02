@@ -116,13 +116,6 @@ final readonly class AttachTelegramPhotoToProductAction
     /** A photo the current revision of another active product of the batch cites (ADR-023). */
     private function citedElsewhere(Workspace $workspace, Project $project, Product $product, Asset $asset): bool
     {
-        foreach ($this->products->activeForProject($workspace, $project) as $other) {
-            if ($other->id !== $product->id
-                && in_array($asset->public_id, $this->products->revision($other, $other->current_revision)?->payload['image_asset_ids'] ?? [], true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return in_array($asset->public_id, $this->products->citedImageIds($workspace, $project, $product), true);
     }
 }

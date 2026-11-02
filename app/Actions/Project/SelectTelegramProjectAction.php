@@ -13,7 +13,7 @@ use DomainException;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * The bot's "select" button under /projects (ADR-028): makes an open batch the
+ * The bot's "select" button under /projects (ADR-028): makes a batch open for input (ADR-041) the
  * current one for photos, /product and /done. No product data changes, so the
  * batch version stays.
  */
@@ -38,13 +38,16 @@ final readonly class SelectTelegramProjectAction
         if ($project === null || Gate::forUser($user)->denies('view', $project)) {
             return 'پروژه یافت نشد.';
         }
-        if (! in_array($project->state, [ProjectState::CollectingInput, ProjectState::ReviewRequired], true)) {
-            return "پروژه «{$project->name}» باز نیست و انتخاب نمی‌شود.";
+        // Open until approval (ADR-041): a batch in extraction or review still takes photos.
+        if (! $project->state->isOpenForInput()) {
+            return "پروژه «{$project->name}» تأیید یا لغو شده است و انتخاب نمی‌شود؛ برای اصلاح، به کارت محصولش پاسخ بده.";
         }
         $this->projects->selectForBot($project);
 
-        return $project->state === ProjectState::CollectingInput
-            ? "پروژه «{$project->name}» انتخاب شد؛ عکس‌ها و /product به این پروژه می‌روند."
-            : "پروژه «{$project->name}» انتخاب شد؛ ورودی آن بسته است و /done آن را نشان می‌دهد.";
+        return "پروژه «{$project->name}» انتخاب شد؛ عکس، فایل CSV و /product به این پروژه می‌روند".match ($project->state) {
+            ProjectState::CollectingInput => '.',
+            ProjectState::Extracting => '. استخراج آن در جریان است و پس از پایان خبر می‌دهم.',
+            default => ' و /done بررسی آن را نشان می‌دهد.',
+        };
     }
 }

@@ -22,6 +22,18 @@ enum ProjectState: string
     case Failed = 'failed';
     case Expired = 'expired';
 
+    /**
+     * A batch takes new input until it is approved (FR-022 as read by ADR-041),
+     * from the API and the bot alike, extraction included: the next /done reads
+     * the new photos.
+     */
+    public const OPEN_FOR_INPUT = [self::CollectingInput, self::NeedsClarification, self::Extracting, self::ReviewRequired];
+
+    public function isOpenForInput(): bool
+    {
+        return in_array($this, self::OPEN_FOR_INPUT, true);
+    }
+
     /** States after PRODUCT_APPROVED: the latest snapshot is the batch (PRD §6, ADR-019). */
     public function hasApprovedSnapshot(): bool
     {

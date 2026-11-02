@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\DrivesExtractedBatches;
 use Tests\Fakes\ImageFixture;
 use Tests\TestCase;
@@ -327,5 +328,127 @@ class TelegramOpenBatchTest extends TestCase
         $run = AiWorkflowRun::query()->latest('id')->firstOrFail();
         app(FailAIWorkflowRunAction::class)->execute($run->id, 'MODEL_BLOCKED');
         $this->assertSame('review_required', $project->fresh()->state->value);
+    }
+
+    public function test_reject_reopens_an_approved_batch_but_never_one_past_approval_or_from_a_stale_card(): void
+    {
+        $card = $this->approvedBag(7020);
+        $product = Product::query()->sole();
+        $project = Project::query()->sole();
+
+        // Past approval (quote or credit, step 6): nothing reopens.
+        Project::query()->whereKey($project->id)->update(['state' => 'quoted']);
+        $this->press("product:reject:{$product->public_id}:1", 7020);
+        $this->sent('از مرحله تأیید گذشته است و محصولش رد نمی‌شود');
+        $this->assertSame('approved', $product->fresh()->status->value);
+        Project::query()->whereKey($project->id)->update(['state' => 'product_approved']);
+
+        // A photo on the card makes revision 2; the batch is approved again with it.
+        $this->photo(7020, $card);
+        $this->press("product:approve:{$product->public_id}:2", 7020);
+        $this->text('/done', 7020);
+        $project->refresh();
+        $this->press("project:approve:{$project->public_id}:{$project->version}", 7020);
+        $this->assertSame('product_approved', $project->fresh()->state->value);
+        $approvedVersion = $project->fresh()->version;
+
+        // The old card's reject: refused, and the approved batch stays as it was.
+        $this->press("product:reject:{$product->public_id}:1", 7020);
+        $this->sent('پس از این پیام تغییر کرده است');
+        $this->assertSame('product_approved', $project->fresh()->state->value);
+        $this->assertSame($approvedVersion, $project->fresh()->version);
+        $this->assertSame('approved', $product->fresh()->status->value);
+
+        // The current card's reject reopens the batch and rejects in one step (ADR-044).
+        $this->press("product:reject:{$product->public_id}:2", 7020);
+        $reply = $this->sent('رد شد');
+        $this->assertStringContainsString('برای اصلاح دوباره باز شد', $reply->text);
+        $this->assertSame('archived', $product->fresh()->status->value);
+        $this->assertSame('review_required', $project->fresh()->state->value);
+        $this->getJson("/api/v1/projects/{$project->public_id}/snapshot")->assertStatus(409);
+        $this->assertSame(2, DB::table('project_snapshots')->where('project_id', $project->id)->count());
+    }
+
+    public function test_product_never_takes_a_photo_a_product_from_the_api_cites(): void
+    {
+        $this->seller(7021);
+        $this->text('/new Batch', 7021);
+        $this->photo(7021);
+        $this->photo(7021);
+        $project = Project::query()->sole();
+        [$first, $second] = Asset::query()->orderBy('id')->pluck('public_id')->all();
+        $this->postJson("/api/v1/projects/{$project->public_id}/products", [
+            'name' => ['value' => 'کیف', 'status' => 'confirmed'], 'image_asset_ids' => [$first],
+        ], ['Idempotency-Key' => 'api-product-photo'])->assertCreated();
+
+        $this->text('/product شال', 7021);
+
+        $shawl = Product::query()->latest('id')->firstOrFail();
+        $this->assertSame([$second], $this->payload($shawl, 1)['image_asset_ids']);
+        // The next /product finds no photo left.
+        $this->text('/product کفش', 7021);
+        $this->assertSame([], $this->payload(Product::query()->latest('id')->firstOrFail(), 1)['image_asset_ids'] ?? []);
+    }
+
+    public function test_a_batch_in_extraction_is_listed_and_can_be_selected_again(): void
+    {
+        $this->seller(7022);
+        $this->text('/new Extracting', 7022);
+        $this->photo(7022);
+        $extracting = Project::query()->sole();
+        Project::query()->whereKey($extracting->id)->update(['state' => 'extracting']);
+        $this->text('/new Other', 7022);
+
+        $this->text('/projects', 7022);
+        $list = $this->sent('آخرین پروژه‌ها');
+        $this->assertStringContainsString('Extracting — در حال استخراج — '.now()->format('Y-m-d'), $list->text);
+        $this->assertStringContainsString('1 عکس، 0 فایل CSV، 0 محصول؛ مصرف 0 اعتبار', $list->text);
+        $this->assertSame(["project:select:{$extracting->public_id}"], $this->buttons($list));
+
+        $this->press("project:select:{$extracting->public_id}", 7022);
+        $this->sent('«Extracting» انتخاب شد؛ عکس، فایل CSV و /product به این پروژه می‌روند. استخراج آن در جریان است');
+        $this->photo(7022);
+        $this->assertSame(2, Asset::query()->where('project_id', $extracting->id)->count());
+    }
+
+    public function test_the_project_list_shows_files_products_and_credit_used_in_both_channels(): void
+    {
+        config(['karmandeman.ai.extraction_enabled' => true]);
+        [$owner] = $this->extracted(7023, [$this->candidate('کیف'), $this->candidate('شال')]);
+        $project = Project::query()->sole();
+        $used = -(int) DB::table('credit_ledger')->where('type', 'capture')->sum('amount');
+        $this->assertGreaterThan(0, $used);
+        // Another seller's batch is never counted in.
+        $this->extracted(7024, [$this->candidate('کفش')]);
+        Sanctum::actingAs($owner);
+
+        $row = collect($this->getJson('/api/v1/projects')->assertOk()->json('data'))->firstWhere('id', $project->public_id);
+        $this->assertSame(['photos' => 1, 'tables' => 0, 'products' => 2, 'credits_used' => $used], $row['activity']);
+
+        $this->text('/projects', 7023);
+        $this->assertStringContainsString("1 عکس، 0 فایل CSV، 2 محصول؛ مصرف {$used} اعتبار", $this->sent('آخرین پروژه‌ها')->text);
+    }
+
+    public function test_an_old_reject_card_of_a_product_rejected_before_approval_reopens_nothing(): void
+    {
+        $this->seller(7025);
+        $this->text('/new Batch', 7025);
+        $this->text("/product کیف\n۱۲۰٬۰۰۰ تومان", 7025);
+        $this->text("/product شال\n۹۰٬۰۰۰ تومان", 7025);
+        [$bag, $shawl] = Product::query()->orderBy('id')->get()->all();
+        $this->press("product:reject:{$shawl->public_id}:1", 7025);
+        $this->press("product:approve:{$bag->public_id}:1", 7025);
+        $this->text('/done', 7025);
+        $project = Project::query()->sole();
+        $this->press("project:approve:{$project->public_id}:{$project->version}", 7025);
+        $this->assertSame('product_approved', $project->fresh()->state->value);
+        $version = $project->fresh()->version;
+
+        // Same revision as the card, but rejected already: the approved batch stays as it was.
+        $this->press("product:reject:{$shawl->public_id}:1", 7025);
+        $this->sent('این محصول قبلاً رد شده است');
+        $this->assertSame('product_approved', $project->fresh()->state->value);
+        $this->assertSame($version, $project->fresh()->version);
+        $this->getJson("/api/v1/projects/{$project->public_id}/snapshot")->assertOk();
     }
 }

@@ -68,7 +68,7 @@ final readonly class ImportTelegramPhotoAction
         $toCard = $intake->target_product_id !== null;
         // A batch takes files until approval (ADR-041); a photo for a card reopens an approved one.
         $notice = null;
-        if (! in_array($project->state, ResolveTelegramInputProjectAction::OPEN_STATES, true) && ! ($toCard && $project->state === ProjectState::ProductApproved)) {
+        if (! $project->state->isOpenForInput() && ! ($toCard && $project->state === ProjectState::ProductApproved)) {
             if ($toCard) {
                 $this->finish($intake, "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.");
 

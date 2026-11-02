@@ -45,9 +45,14 @@ final class ProjectController extends Controller
             return ApiResponse::error('WORKSPACE_NOT_FOUND', 'فضای کاری یافت نشد.', 404);
         }
 
-        return ApiResponse::success(
-            ProjectResource::collection($projects->paginateFor($workspace))
-        );
+        $page = $projects->paginateFor($workspace);
+        // FR-080: what each batch holds and has cost, counted in a few grouped queries.
+        $activity = $projects->activityFor($workspace, $page->items());
+        foreach ($page->items() as $project) {
+            $project->setRelation('activity', $activity[$project->id]);
+        }
+
+        return ApiResponse::success(ProjectResource::collection($page));
     }
 
     public function store(

@@ -34,7 +34,6 @@ use App\Data\Privacy\ContainedAccount;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use Illuminate\Support\Facades\Gate;
@@ -52,7 +51,6 @@ final readonly class TelegramConversationService
         private RegisterTelegramUserAction $register,
         private WorkspaceRepositoryInterface $workspaces,
         private ShowTelegramBalanceAction $balance,
-        private ProjectRepositoryInterface $projects,
         private EnsureBrandAction $ensureBrand,
         private AdvanceTelegramOnboardingAction $onboarding,
         private CreateProjectAction $createProject,
@@ -65,6 +63,7 @@ final readonly class TelegramConversationService
         private ReopenTelegramProjectAction $reopenProject,
         private RequestTelegramSnapshotAction $requestSnapshot,
         private SelectTelegramProjectAction $selectProject,
+        private TelegramProjectList $projectList,
         private FinishTelegramBatchAction $finishBatch,
         private ApproveTelegramBatchAction $approveBatch,
         private AnswerTelegramPriceQuestionAction $priceQuestion,
@@ -286,26 +285,8 @@ final readonly class TelegramConversationService
         if (! $this->readyForProject($user, $chatId)) {
             return;
         }
-        $projects = $this->projects->paginateFor($this->workspaceFor($user), 5);
-
-        if ($projects->isEmpty()) {
-            $this->bot->sendMessage($chatId, 'هنوز پروژه‌ای نداری. با /new یکی بساز.');
-
-            return;
-        }
-
-        $workspace = $this->workspaceFor($user);
-        $current = $this->projects->currentForBot($workspace);
-        $lines = collect($projects->items())->map(
-            fn ($p) => "• {$p->name} — {$p->state->value}".($p->id === $current?->id ? ' (جاری)' : '')
-        );
-        // Open batches can be made current (ADR-028).
-        $buttons = collect($this->projects->openForBot($workspace, 10))
-            ->filter(fn ($p) => $p->id !== $current?->id)
-            ->map(fn ($p) => [['text' => 'انتخاب: '.mb_strimwidth((string) $p->name, 0, 30, '…'), 'callback_data' => "project:select:{$p->public_id}"]])
-            ->values()->all();
-
-        $this->bot->sendMessage($chatId, "آخرین پروژه‌ها:\n".$lines->implode("\n"), $buttons);
+        $reply = $this->projectList->reply($this->workspaceFor($user));
+        $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
     }
 
     private function handleMyBrand(array $message, int|string $chatId): void
@@ -594,10 +575,12 @@ final readonly class TelegramConversationService
             '/forget name|category|tone — حذف یک بخش حافظه برند',
             '/skip — گذشتن از پرسش اختیاری',
             '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
+            'عکس یا فایل CSV — به پروژه جاری می‌رود؛ اگر پروژه جاری تأیید شده باشد، پروژه تازه خودکار ساخته می‌شود',
             '/product نام (و قیمت در خط دوم) — ثبت محصول با عکس‌های تازه همین پروژه',
-            '/done — پایان ورودی پروژه و تأیید محصولات و پروژه',
-            'پاسخ (Reply) به کارت محصول — اصلاح نام و قیمت همان محصول',
-            '/projects — آخرین پروژه‌ها و انتخاب پروژه جاری',
+            '/done — بررسی محصولات و تأیید پروژه؛ تا تأیید پروژه، ورودی تازه هم پذیرفته می‌شود',
+            'پاسخ (Reply) به کارت محصول — اصلاح نام و قیمت همان محصول؛ پروژه تأییدشده خودکار برای اصلاح باز می‌شود',
+            'عکس در پاسخ به کارت محصول — افزودن عکس به همان محصول',
+            '/projects — آخرین پروژه‌ها با وضعیت، فایل‌ها و مصرف، و انتخاب پروژه جاری',
             '/cancel — لغو پروژه جاری (با تأیید)',
             '/mybrand — مشاهده پروفایل برند',
             '/balance — موجودی اعتبار و آخرین کسرها',

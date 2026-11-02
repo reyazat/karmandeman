@@ -152,6 +152,29 @@ final class EloquentProductRepository implements ProductRepositoryInterface
         return $products->toBase();
     }
 
+    public function citedImageIds(Workspace $workspace, Project $project, ?Product $except = null): array
+    {
+        // One query for the batch: every /product, card photo and extraction quote reads this.
+        $revisions = ProductRevision::query()
+            ->select('product_revisions.*')
+            ->join('products', fn ($join) => $join->on('products.id', '=', 'product_revisions.product_id')
+                ->on('products.current_revision', '=', 'product_revisions.revision'))
+            ->where('product_revisions.workspace_id', $workspace->id)
+            ->where('products.workspace_id', $workspace->id)
+            ->where('products.project_id', $project->id)
+            ->where('products.status', '!=', ProductStatus::Archived->value)
+            ->when($except !== null, fn ($query) => $query->where('products.id', '!=', $except?->id))
+            ->get();
+        $cited = [];
+        foreach ($revisions as $revision) {
+            // The payload decrypts with this workspace's key without one lookup per row.
+            $revision->setRelation('workspace', $workspace);
+            array_push($cited, ...($revision->payload['image_asset_ids'] ?? []));
+        }
+
+        return array_values(array_unique($cited));
+    }
+
     public function summaryForProject(Workspace $workspace, Project $project): array
     {
         $archived = ProductStatus::Archived->value;

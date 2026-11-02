@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Repositories\Eloquents\Project;
 
+use App\Data\Project\ProjectActivity;
+use App\Enums\CreditLedgerType;
+use App\Enums\ProductStatus;
 use App\Enums\ProjectState;
+use App\Models\CreditLedgerEntry;
 use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 
 final class EloquentProjectRepository implements ProjectRepositoryInterface
 {
@@ -44,14 +49,14 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->orderByDesc('bot_selected_at')->orderByDesc('id')->first();
 
         return $selected ?? Project::query()->where('workspace_id', $workspace->id)
-            ->whereIn('state', [ProjectState::CollectingInput->value, ProjectState::ReviewRequired->value])
+            ->whereIn('state', array_map(fn (ProjectState $state): string => $state->value, ProjectState::OPEN_FOR_INPUT))
             ->orderByDesc('id')->first();
     }
 
     public function openForBot(Workspace $workspace, int $limit): array
     {
         return Project::query()->where('workspace_id', $workspace->id)
-            ->whereIn('state', [ProjectState::CollectingInput->value, ProjectState::ReviewRequired->value])
+            ->whereIn('state', array_map(fn (ProjectState $state): string => $state->value, ProjectState::OPEN_FOR_INPUT))
             ->orderByDesc('id')->limit($limit)->get()->all();
     }
 
@@ -98,5 +103,42 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
         $page->getCollection()->each->setRelation('workspace', $workspace);
 
         return $page;
+    }
+
+    public function activityFor(Workspace $workspace, array $projects): array
+    {
+        $ids = array_map(fn (Project $project): int => $project->id, $projects);
+        if ($ids === []) {
+            return [];
+        }
+        $count = fn (string $table, ?callable $scope = null): array => DB::table($table)
+            ->where('workspace_id', $workspace->id)->whereIn('project_id', $ids)
+            ->when($scope !== null, $scope)
+            ->groupBy('project_id')->selectRaw('project_id, count(*) AS n')
+            ->pluck('n', 'project_id')->all();
+        $photos = $count('assets');
+        $tables = $count('product_tables');
+        $products = $count('products', fn ($query) => $query->where('status', '!=', ProductStatus::Archived->value));
+        // A capture is the charge itself (ADR-039, ADR-042): only the workspace's own wallet and runs.
+        $used = DB::table('credit_ledger')
+            ->join('wallets', 'wallets.id', '=', 'credit_ledger.wallet_id')
+            ->join('ai_workflow_runs', 'ai_workflow_runs.id', '=', 'credit_ledger.related_id')
+            ->where('wallets.workspace_id', $workspace->id)
+            ->where('ai_workflow_runs.workspace_id', $workspace->id)
+            ->where('credit_ledger.related_type', CreditLedgerEntry::RELATED_RUN)
+            ->where('credit_ledger.type', CreditLedgerType::Capture->value)
+            ->whereIn('ai_workflow_runs.project_id', $ids)
+            ->groupBy('ai_workflow_runs.project_id')
+            ->selectRaw('ai_workflow_runs.project_id, -sum(credit_ledger.amount) AS n')
+            ->pluck('n', 'project_id')->all();
+
+        $activity = [];
+        foreach ($ids as $id) {
+            $activity[$id] = new ProjectActivity(
+                (int) ($photos[$id] ?? 0), (int) ($tables[$id] ?? 0), (int) ($products[$id] ?? 0), (int) ($used[$id] ?? 0),
+            );
+        }
+
+        return $activity;
     }
 }

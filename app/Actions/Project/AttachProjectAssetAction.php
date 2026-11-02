@@ -6,7 +6,6 @@ namespace App\Actions\Project;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
-use App\Enums\ProjectState;
 use App\Exceptions\ImageMetadataUnparseable;
 use App\Models\Asset;
 use App\Models\User;
@@ -29,11 +28,6 @@ use Throwable;
  */
 final readonly class AttachProjectAssetAction
 {
-    private const OPEN_PROJECT_STATES = [
-        // Open until approval, extraction included (ADR-041): the next /done reads new photos.
-        ProjectState::CollectingInput, ProjectState::NeedsClarification, ProjectState::Extracting, ProjectState::ReviewRequired,
-    ];
-
     private const IMAGE_TYPES = [
         IMAGETYPE_JPEG => 'image/jpeg',
         IMAGETYPE_PNG => 'image/png',
@@ -67,7 +61,7 @@ final readonly class AttachProjectAssetAction
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);
-                if (! in_array($project->state, self::OPEN_PROJECT_STATES, true)) {
+                if (! $project->state->isOpenForInput()) {
                     throw new DomainException('PROJECT_NOT_ACCEPTING_INPUT');
                 }
 
