@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Project;
 
+use App\Actions\Privacy\EnsureVoiceIntakeAllowedAction;
 use App\Actions\Product\AttachTelegramPhotoToProductAction;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\BotReply;
@@ -36,6 +37,7 @@ final readonly class ImportTelegramPhotoAction
         private ProjectRepositoryInterface $projects,
         private AttachProjectAssetAction $attach,
         private AttachProjectVoiceAction $attachVoice,
+        private EnsureVoiceIntakeAllowedAction $voiceAllowed,
         private AttachProductTableAction $attachTable,
         private TelegramProductTablePreview $tablePreview,
         private AttachTelegramPhotoToProductAction $attachToProduct,
@@ -73,6 +75,16 @@ final readonly class ImportTelegramPhotoAction
             $this->finish($intake, null);
 
             return;
+        }
+        // Switched off or consent withdrawn since the voice was queued: nothing is downloaded.
+        if ($voice) {
+            try {
+                $this->voiceAllowed->execute($workspace);
+            } catch (DomainException $e) {
+                $this->finish($intake, $this->voiceRefusal($e, $project));
+
+                return;
+            }
         }
         // A batch takes files until approval (ADR-041); a photo for a card reopens an approved one.
         $notice = null;
@@ -153,19 +165,24 @@ final readonly class ImportTelegramPhotoAction
         } catch (AuthorizationException) {
             return null;
         } catch (DomainException $e) {
-            return match ($e->getMessage()) {
-                'VOICE_UNSUPPORTED', 'VOICE_DAMAGED' => 'ویس سالم Ogg/Opus لازم است؛ این فایل پذیرفته نشد.',
-                'VOICE_TOO_LARGE', 'VOICE_TOO_LONG' => 'ویس باید حداکثر دو دقیقه و دو مگابایت باشد.',
-                'VOICE_INTAKE_DISABLED' => 'دریافت ویس هنوز فعال نیست؛ برای پیگیری /support را بفرست.',
-                'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر ویس نمی‌پذیرد.",
-                'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال ویس، شرایط و سیاست داده را با /start بپذیر.',
-                default => null,
-            };
+            return $this->voiceRefusal($e, $project);
         }
 
         return $replayed || $voice->wasRecentlyCreated
             ? "ویس در پروژه «{$project->name}» ذخیره شد؛ تبدیل به متن هنوز فعال نیست."
             : "این ویس قبلاً در پروژه «{$project->name}» ثبت شده بود.";
+    }
+
+    private function voiceRefusal(DomainException $e, Project $project): string
+    {
+        return match ($e->getMessage()) {
+            'VOICE_UNSUPPORTED', 'VOICE_DAMAGED' => 'ویس سالم Ogg/Opus لازم است؛ این فایل پذیرفته نشد.',
+            'VOICE_TOO_LARGE', 'VOICE_TOO_LONG' => 'ویس باید حداکثر دو دقیقه و دو مگابایت باشد.',
+            'VOICE_INTAKE_DISABLED' => 'دریافت ویس هنوز فعال نیست؛ برای پیگیری /support را بفرست.',
+            'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر ویس نمی‌پذیرد.",
+            'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال ویس، شرایط و سیاست داده را با /start بپذیر.',
+            default => 'این ویس ثبت نشد؛ دوباره بفرست.',
+        };
     }
 
     /** The CSV through the API's path; the reply is its mapping for the seller to confirm (ADR-040). */

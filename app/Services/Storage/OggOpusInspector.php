@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Storage;
 
+use App\Helpers\OggCrc;
 use DomainException;
 use finfo;
 
@@ -49,7 +50,7 @@ final class OggOpusInspector
             }
             $page = substr($bytes, $offset, $pageSize);
             $expected = unpack('V', substr($page, 22, 4))[1];
-            if ($expected !== $this->crc(substr_replace($page, "\0\0\0\0", 22, 4))) {
+            if ($expected !== OggCrc::of(substr_replace($page, "\0\0\0\0", 22, 4))) {
                 throw new DomainException('VOICE_DAMAGED');
             }
             $payload = substr($page, 27 + $segments);
@@ -132,27 +133,5 @@ final class OggOpusInspector
         }
 
         return $samples * $frames;
-    }
-
-    /** Ogg's CRC-32: polynomial 0x04C11DB7, not reflected, zero start and no final XOR. */
-    private function crc(string $page): int
-    {
-        static $table = null;
-        if ($table === null) {
-            $table = [];
-            for ($byte = 0; $byte < 256; $byte++) {
-                $crc = $byte << 24;
-                for ($bit = 0; $bit < 8; $bit++) {
-                    $crc = (($crc & 0x80000000) !== 0 ? ($crc << 1) ^ 0x04C11DB7 : $crc << 1) & 0xFFFFFFFF;
-                }
-                $table[$byte] = $crc;
-            }
-        }
-        $crc = 0;
-        for ($i = 0, $size = strlen($page); $i < $size; $i++) {
-            $crc = (($crc << 8) & 0xFFFFFFFF) ^ $table[(($crc >> 24) ^ ord($page[$i])) & 0xFF];
-        }
-
-        return $crc;
     }
 }

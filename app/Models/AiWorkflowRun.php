@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string $workflow_version
  * @property AiRunStatus $status
  * @property list<string> $input_asset_ids
+ * @property list<string>|null $input_voice_ids
  * @property int $dispatch_attempts
  * @property Carbon $deadline_at
  * @property Carbon|null $dispatched_at
@@ -43,7 +44,7 @@ class AiWorkflowRun extends Model
 
     protected $fillable = [
         'workspace_id', 'project_id', 'requested_by', 'workflow', 'workflow_version', 'status',
-        'input_asset_ids', 'deadline_at',
+        'input_asset_ids', 'input_voice_ids', 'deadline_at',
     ];
 
     protected $hidden = ['result_mac'];
@@ -77,6 +78,7 @@ class AiWorkflowRun extends Model
         return [
             'status' => AiRunStatus::class,
             'input_asset_ids' => 'array',
+            'input_voice_ids' => 'array',
             'usage' => 'array',
             'dispatch_attempts' => 'integer',
             'candidate_count' => 'integer',

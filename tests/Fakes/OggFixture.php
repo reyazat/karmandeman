@@ -37,6 +37,29 @@ final class OggFixture
             .self::page(0x05, $granule, $serial, 3, chr(45).$lengths, substr($packet, 255).$audio);
     }
 
+    /**
+     * The same voice with a comment header over two pages that names a title
+     * and the recording app, as a phone recorder might write.
+     */
+    public static function withLongTags(): string
+    {
+        $voice = self::make();
+        $first = substr($voice, 0, 47);
+        $serial = substr($voice, 14, 4);
+        $audio = substr($voice, 47 + 90);
+        $comments = ['TITLE=Seller private note', 'ENCODER=PhoneRecorder 9.1', 'COMMENT='.str_repeat('x', 400)];
+        $tags = 'OpusTags'.pack('V', 7).'Vendor1'.pack('V', count($comments));
+        foreach ($comments as $comment) {
+            $tags .= pack('V', strlen($comment)).$comment;
+        }
+        $rest = strlen($tags) - 255;
+
+        return $first
+            .self::page(0x00, 0, $serial, 1, chr(255), substr($tags, 0, 255))
+            .self::page(0x01, 0, $serial, 2, str_repeat(chr(255), intdiv($rest, 255)).chr($rest % 255), substr($tags, 255))
+            .self::page(ord($audio[5]), unpack('P', substr($audio, 6, 8))[1], $serial, 3, substr($audio, 27, ord($audio[26])), substr($audio, 27 + ord($audio[26])));
+    }
+
     private static function page(int $flags, int $granule, string $serial, int $sequence, string $lengths, string $payload): string
     {
         $page = 'OggS'."\0".chr($flags).pack('P', $granule).$serial.pack('V', $sequence)

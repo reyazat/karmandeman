@@ -118,6 +118,11 @@ final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryIn
         ])->save();
     }
 
+    public function recordLateUsage(AiWorkflowRun $run, array $usage): void
+    {
+        $run->forceFill(['usage' => $usage])->save();
+    }
+
     public function overdueIds(CarbonImmutable $now, int $limit): array
     {
         return AiWorkflowRun::query()

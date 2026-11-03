@@ -15,9 +15,9 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\ProductIntake\ProductTableParser;
 use App\Services\Storage\PrivateAssetStore;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Throwable;
 
 /**
  * A seller's CSV of products into an open batch, from the API or the bot
@@ -70,21 +70,18 @@ final readonly class AttachProductTableAction
 
                 $publicId = Str::uuid()->toString();
                 $storageKey = $this->store->put($workspace, $publicId, $bytes, PrivateAssetStore::KIND_TABLE);
-                try {
-                    return $this->tables->create($project, $user, $publicId, [
-                        'storage_key' => $storageKey,
-                        'content_mac' => $contentMac,
-                        'size_bytes' => strlen($bytes),
-                        'row_count' => count($parsed->rows),
-                        'source' => $source,
-                        'source_message_key' => $sourceMessageKey,
-                    ]);
-                } catch (Throwable $e) {
-                    // A failed cleanup is reported, never allowed to hide the original error.
-                    rescue(fn () => $this->store->delete($storageKey));
+                // Whatever undoes the row, here or in the idempotency record and commit, removes the object.
+                // A failed cleanup is reported, never allowed to hide the original error.
+                DB::afterRollBack(fn () => rescue(fn () => $this->store->delete($storageKey)));
 
-                    throw $e;
-                }
+                return $this->tables->create($project, $user, $publicId, [
+                    'storage_key' => $storageKey,
+                    'content_mac' => $contentMac,
+                    'size_bytes' => strlen($bytes),
+                    'row_count' => count($parsed->rows),
+                    'source' => $source,
+                    'source_message_key' => $sourceMessageKey,
+                ]);
             },
         );
 

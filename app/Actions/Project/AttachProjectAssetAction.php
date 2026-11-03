@@ -15,9 +15,9 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Services\Storage\ImageMetadataStripper;
 use App\Services\Storage\PrivateAssetStore;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Throwable;
 
 /**
  * A product photo into an open batch (FR-025, ADR-022), from the API or
@@ -73,24 +73,20 @@ final readonly class AttachProjectAssetAction
 
                 $publicId = Str::uuid()->toString();
                 $storageKey = $this->store->put($workspace, $publicId, $bytes);
-                try {
-                    $asset = $this->assets->create($workspace, $project, $user, $publicId, [
-                        'storage_key' => $storageKey,
-                        'content_mac' => $contentMac,
-                        'mime' => $image['mime'],
-                        'size_bytes' => strlen($bytes),
-                        'width' => $image['width'],
-                        'height' => $image['height'],
-                        'source' => $source,
-                        'source_message_key' => $sourceMessageKey,
-                    ]);
-                    $this->projects->bumpVersion($workspace, $project->id);
-                } catch (Throwable $e) {
-                    // A failed cleanup is reported, never allowed to hide the original error.
-                    rescue(fn () => $this->store->delete($storageKey));
-
-                    throw $e;
-                }
+                // Whatever undoes the row, here or in the idempotency record and commit, removes the object.
+                // A failed cleanup is reported, never allowed to hide the original error.
+                DB::afterRollBack(fn () => rescue(fn () => $this->store->delete($storageKey)));
+                $asset = $this->assets->create($workspace, $project, $user, $publicId, [
+                    'storage_key' => $storageKey,
+                    'content_mac' => $contentMac,
+                    'mime' => $image['mime'],
+                    'size_bytes' => strlen($bytes),
+                    'width' => $image['width'],
+                    'height' => $image['height'],
+                    'source' => $source,
+                    'source_message_key' => $sourceMessageKey,
+                ]);
+                $this->projects->bumpVersion($workspace, $project->id);
 
                 return $asset;
             },

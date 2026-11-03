@@ -547,12 +547,17 @@ class AIExtractionRunTest extends TestCase
         $this->seller(911);
         $foreign = $this->photo($this->project(), 99);
 
-        $this->sendCallback($mutate($this->runResult($run, [$this->candidate('کیف', [$photos[0]])]), $photos, $foreign))
-            ->assertStatus(422)->assertJsonPath('error.code', 'WORKFLOW_OUTPUT_INVALID');
+        $body = $mutate($this->runResult($run, [$this->candidate('کیف', [$photos[0]])]), $photos, $foreign);
+        $this->sendCallback($body)->assertStatus(422)->assertJsonPath('error.code', 'WORKFLOW_OUTPUT_INVALID');
 
         $this->assertSame(0, Product::query()->count());
         $this->assertSame('failed', $run->fresh()->status->value);
         $this->assertSame('OUTPUT_INVALID', $run->fresh()->error_code);
+        // A refused answer keeps its billed usage when that part is well formed (ADR-042).
+        $usage = $body['usage'] ?? null;
+        $wellFormed = is_array($usage) && array_keys($usage) === ['model_requests', 'input_tokens', 'output_tokens', 'provider', 'model']
+            && array_filter([$usage['model_requests'], $usage['input_tokens'], $usage['output_tokens']], fn (mixed $count): bool => ! is_int($count) || $count < 0) === [];
+        $this->assertSame($wellFormed ? $usage : null, $run->fresh()->usage);
         $this->assertSame('collecting_input', $this->state($project));
     }
 
@@ -582,6 +587,12 @@ class AIExtractionRunTest extends TestCase
             ->assertOk()->assertJsonPath('data.state', 'cancelled');
         $this->assertSame('cancelled', $run->fresh()->status->value);
         $this->sendCallback($this->runResult($run, [$this->candidate('کیف', [$photos[0]])]))->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        // The provider was paid even so: the usage is kept for reconciliation, once.
+        $this->assertSame(1200, $run->fresh()->usage['input_tokens']);
+        $this->sendCallback($this->runResult($run, [], ['usage' => ['model_requests' => 9, 'input_tokens' => 9, 'output_tokens' => 9, 'provider' => 'openai', 'model' => 'fixture-1']]))
+            ->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        $this->assertSame(1200, $run->fresh()->usage['input_tokens']);
+        $this->assertSame('cancelled', $run->fresh()->status->value);
 
         [$second, $secondPhotos, $late] = $this->extracting(914);
         $this->travel(16)->minutes();
@@ -589,6 +600,7 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame('timed_out', $late->fresh()->status->value);
         $this->assertSame('collecting_input', $this->state($second));
         $this->sendCallback($this->runResult($late, [$this->candidate('کیف', [$secondPhotos[0]])]))->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        $this->assertSame(['timed_out', 300], [$late->fresh()->status->value, $late->fresh()->usage['output_tokens']]);
 
         $this->finish($second)->assertStatus(202);
         $third = AiWorkflowRun::query()->latest('id')->firstOrFail();

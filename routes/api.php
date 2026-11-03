@@ -15,6 +15,7 @@ use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunAssetController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunCallbackController;
 use App\Http\Controllers\Webhooks\Internal\N8nRunClaimController;
+use App\Http\Controllers\Webhooks\Internal\N8nRunVoiceController;
 use App\Http\Controllers\Webhooks\Telegram\TelegramWebhookController;
 use App\Http\Responses\ApiResponse;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,11 @@ Route::get('/webhooks/internal/n8n/runs/{run}/assets/{asset}', N8nRunAssetContro
     ->whereUuid(['run', 'asset'])
     ->middleware('throttle:n8n-run-asset')
     ->name('webhooks.n8n.run-assets');
+// One voice of an open run for n8n, under the same rules and budget as its photos (ADR-047).
+Route::get('/webhooks/internal/n8n/runs/{run}/voices/{voice}', N8nRunVoiceController::class)
+    ->whereUuid(['run', 'voice'])
+    ->middleware('throttle:n8n-run-asset')
+    ->name('webhooks.n8n.run-voices');
 
 // API v1: thin controllers -> FormRequest -> Action -> Repository contract.
 Route::prefix('v1')->group(function (): void {

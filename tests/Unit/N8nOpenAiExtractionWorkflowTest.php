@@ -29,6 +29,12 @@ final class N8nOpenAiExtractionWorkflowTest extends N8nExtractionWorkflowTestCas
         return ['httpHeaderAuth' => ['id' => 'kmOpenAiApiKey', 'name' => 'KM OpenAI API key']];
     }
 
+    /** A retry would pay again for a request OpenAI may already have billed (ADR-046). */
+    protected function modelRetried(): bool
+    {
+        return false;
+    }
+
     protected function modelAddress(): array
     {
         return ["const OPENAI_HOST = 'https://api.openai.com';", 'url: `${OPENAI_HOST}/v1/responses`'];

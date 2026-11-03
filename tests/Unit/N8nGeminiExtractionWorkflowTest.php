@@ -30,6 +30,11 @@ final class N8nGeminiExtractionWorkflowTest extends N8nExtractionWorkflowTestCas
         return ['httpHeaderAuth' => ['id' => 'kmGeminiApiKey', 'name' => 'KM Gemini API key']];
     }
 
+    protected function modelRetried(): bool
+    {
+        return true;
+    }
+
     protected function modelAddress(): array
     {
         return [

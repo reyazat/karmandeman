@@ -36,6 +36,9 @@ abstract class N8nExtractionWorkflowTestCase extends TestCase
     /** @return list<string> the lines that fix the model address in the request node */
     abstract protected function modelAddress(): array;
 
+    /** Whether the paid model request is retried after a failure. */
+    abstract protected function modelRetried(): bool;
+
     /** @return array<string, mixed> */
     protected function workflow(): array
     {
@@ -145,8 +148,8 @@ abstract class N8nExtractionWorkflowTestCase extends TestCase
         foreach ($this->modelAddress() as $line) {
             $this->assertStringContainsString($line, $this->nodes()['Build '.$this->provider().' request']['parameters']['jsCode']);
         }
-        // The claim, the single model request and the callback are retried; photos are not.
-        $this->assertSame([true, false, true, true], array_values(array_map(fn (array $node): bool => $node['retryOnFail'] ?? false, $http)));
+        // The claim and the callback are retried; photos are not, and the paid model request only where stated.
+        $this->assertSame([true, false, $this->modelRetried(), true], array_values(array_map(fn (array $node): bool => $node['retryOnFail'] ?? false, $http)));
         $send = $this->nodes()['Send callback']['parameters'];
         // The claim is sent like the callback, and its answer is read even when it is a refusal.
         $claim = $this->nodes()['Claim run'];

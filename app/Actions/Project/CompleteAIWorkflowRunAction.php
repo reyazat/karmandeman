@@ -89,7 +89,8 @@ final readonly class CompleteAIWorkflowRunAction
             $this->checkSources($run, $result);
         } catch (WorkflowOutputRejected $e) {
             Log::warning('ai.run_output_rejected', ['run_id' => $run->public_id, 'fields' => array_slice($e->fields, 0, 20)]);
-            $this->fail->execute($run->id, 'OUTPUT_INVALID');
+            // A refused answer was still billed: its usage is kept when well formed (ADR-042, ADR-043).
+            $this->fail->execute($run->id, 'OUTPUT_INVALID', $this->validator->usage($body));
 
             throw $e;
         }
@@ -105,6 +106,12 @@ final readonly class CompleteAIWorkflowRunAction
             $mac = $this->cipher->mac($run->workspace, 'ai_workflow_runs.result', $rawBody);
             if (! $run->status->isOpen()) {
                 if ($run->status !== AiRunStatus::Succeeded) {
+                    // A run closed before its answer (timeout, cancel) still paid the provider:
+                    // the first reported usage is kept for reconciliation; nothing is charged.
+                    if ($run->usage === null) {
+                        $this->runs->recordLateUsage($run, $result->usage);
+                    }
+
                     return self::DISCARDED;
                 }
                 if (hash_equals((string) $run->result_mac, $mac)) {

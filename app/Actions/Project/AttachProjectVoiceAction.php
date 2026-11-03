@@ -14,9 +14,9 @@ use App\Repositories\Contracts\VoiceAssetRepositoryInterface;
 use App\Services\Storage\OggOpusInspector;
 use App\Services\Storage\PrivateAssetStore;
 use DomainException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Throwable;
 
 /** Store a checked, untranscribed voice in the seller's open batch. */
 final readonly class AttachProjectVoiceAction
@@ -59,22 +59,19 @@ final readonly class AttachProjectVoiceAction
                 }
                 $publicId = Str::uuid()->toString();
                 $storageKey = $this->store->put($workspace, $publicId, $bytes, PrivateAssetStore::KIND_VOICE);
-                try {
-                    $voice = $this->voices->create($workspace, $project, $user, $publicId, [
-                        'storage_key' => $storageKey,
-                        'content_mac' => $mac,
-                        'mime' => $metadata['mime'],
-                        'size_bytes' => strlen($bytes),
-                        'duration_ms' => $metadata['duration_ms'],
-                        'source' => $source,
-                        'source_message_key' => $sourceMessageKey,
-                    ]);
-                    $this->projects->bumpVersion($workspace, $project->id);
-                } catch (Throwable $e) {
-                    rescue(fn () => $this->store->delete($storageKey));
-
-                    throw $e;
-                }
+                // Whatever undoes the row, here or in the idempotency record and commit, removes the object.
+                // A failed cleanup is reported, never allowed to hide the original error.
+                DB::afterRollBack(fn () => rescue(fn () => $this->store->delete($storageKey)));
+                $voice = $this->voices->create($workspace, $project, $user, $publicId, [
+                    'storage_key' => $storageKey,
+                    'content_mac' => $mac,
+                    'mime' => $metadata['mime'],
+                    'size_bytes' => strlen($bytes),
+                    'duration_ms' => $metadata['duration_ms'],
+                    'source' => $source,
+                    'source_message_key' => $sourceMessageKey,
+                ]);
+                $this->projects->bumpVersion($workspace, $project->id);
 
                 return $voice;
             },

@@ -25,12 +25,19 @@ ADR-045 مالک را به OpenAI رساند و export Gemini را بازنشس�
 - PHP: آزمون قرارداد export به `N8nExtractionWorkflowTestCase` مشترک منتقل شد و برای هر دو export اجرا می‌شود (مسیر webhook، ترتیب گره‌ها، credentialها، نبود `$env`، HTTP فقط به لینک‌های بررسی‌شده و نشانی ثابت مدل، retry، بدون تاریخچه اجرا). `N8nOpenAiExtractionWorkflowTest` نسخه، provider، نبود نام Gemini/Google و جدا بودن شناسه‌ها را نیز می‌سنجد.
 - vitest: کد گره‌ها همان‌طور که در n8n اجرا می‌شود با `n8n/tests/harness.ts` مشترک. `product-extraction.openai.workflow.spec.ts` بدنه دقیق درخواست، strict بودن schema، `store: false`، حدها، شکست‌ها و usage را می‌سنجد. spec قدیمی Gemini بدون تغییر رفتار پاس است.
 - هیچ درخواست شبکه به OpenAI در این آزمون‌ها نیست؛ پاسخ‌ها نمونه ساختگی با شکل مستند Responses API هستند.
+- **اجرای سرتاسری (۳ نوامبر ۲۰۲۶)** روی n8n 2.44.6 موقت در شبکه Docker داخلی بدون اینترنت. export با `import:workflow` و سه credential با `import:credentials` وارد و منتشر شد. یک stub نقش Laravel را داشت و HMAC را بررسی می‌کرد. stub دیگری با گواهی TLS آزمایشی نقش `api.openai.com` را داشت (`NODE_EXTRA_CA_CERTS` فقط در همان کانتینر).
+  - شروع امضاشده ۲۰۲ گرفت. اجرا claim کرد، دو عکس را از لینک run خواند و یک `POST /v1/responses` با `Authorization: Bearer` از credential فرستاد. بدنه همان کلیدهای مورد انتظار را داشت، با `store: false`، schema سخت‌گیر و بایت‌های دقیق عکس. هیچ شناسه run، پروژه، عکس یا لینک امضاشده در آن نبود.
+  - callback امضاشده با امضای معتبر رسید. `ProductExtractionOutputValidator` خود Laravel آن را پذیرفت: یک کاندید «پیشنهادی»، ارجاع به هر دو عکس و usage با provider `openai`.
+  - شروع دوباره همان run ۲۰۲ گرفت ولی claim آن ۴۰۹ شد: نه عکس خواند، نه مدل، نه callback. شروعی با `workflow_version` قدیمی ۴۰۱ گرفت.
+  - پاسخ ۴۰۰ از OpenAI به callback `failed` با `MODEL_REQUEST_FAILED` و token صفر تبدیل شد.
+  - کانتینرها، volume و شبکه پس از آزمون پاک شدند. این اجرا با API واقعی OpenAI یا Laravel واقعی نیست.
 
 ## گیت‌های باز
 
-- export در n8n محلی یا `ai.smartystudio.co.uk` import نشده و اجرای سرتاسری روی n8n واقعی ندارد.
+- export روی `ai.smartystudio.co.uk` import نشده است. فقط روی n8n موقت محلی با stub اجرا شده است.
 - `karmandeman.ai.workflow_version` هنوز `product-extraction.v1` است، پس `extractionEnabled()` false می‌ماند. تغییر آن فقط پس از آزمون API واقعی، credential در n8n، بسته سیاست مصوب نام‌برنده OpenAI و رضایت تازه فروشنده انجام می‌شود.
 - متن بسته سیاست باید نگهداری داده نزد OpenAI را بگوید: `store: false` نگهداری برای پایش سوءاستفاده را حذف نمی‌کند، مگر توافق Zero Data Retention جدا. این باید با QA-19…21 سازگار شود.
-- گره «Call OpenAI» مثل export قدیمی حداکثر دو بار تلاش می‌کند. اگر تلاش اول پس از پردازش در OpenAI timeout شود، هزینه آن در usage گزارش نمی‌شود. این باید در تطبیق usage با صورت‌حساب provider دیده شود (ADR-045 §۴).
+- گره «Call OpenAI» در نسخه اول مثل export قدیمی دو بار تلاش می‌کرد، حتی برای خطای قطعی ۴۰۰ (در اجرای سرتاسری دیده شد). پس از بازبینی ۳ نوامبر retry آن برداشته شد: تلاش دوم ممکن بود درخواستی را که OpenAI یک بار حساب کرده دوباره بخرد. شکست اکنون run را می‌بندد، رزرو آزاد می‌شود و فروشنده `/done` را دوباره می‌فرستد. timeout پس از پردازش در OpenAI همچنان usage گزارش‌شده ندارد و باید در تطبیق با صورت‌حساب provider دیده شود (ADR-045 §۴). `Claim run` پاسخ ۴۰۹ را سه بار تلاش می‌کند؛ بی‌خطر است چون هر claim همه بررسی‌ها را دوباره اجرا می‌کند.
+- Laravel پس از همان بازبینی usage خروجی ردشده و callback دیررس run بسته‌شده را هم ثبت می‌کند، بدون کسر.
 - ESLint، Prettier و `vue-tsc` پروژه فقط `resources/js` را می‌پوشانند؛ `n8n/tests` از پیش بیرون از این دامنه است.
-- ویس و متن آزاد همچنان workflow، quote و نرخ ندارند.
+- ویس و متن آزاد همچنان workflow، quote و نرخ ندارند. طبق [ADR-047](ADR-047-voice-in-extraction-run.md) export بعدی `openai.v2` ویس را به همین run اضافه می‌کند و جای این نسخه را می‌گیرد.

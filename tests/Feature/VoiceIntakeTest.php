@@ -6,9 +6,12 @@ namespace Tests\Feature;
 
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Data\Telegram\TelegramUserData;
+use App\Models\ApiIdempotencyRecord;
 use App\Models\User;
 use App\Models\VoiceAsset;
+use App\Models\Workspace;
 use App\Repositories\Contracts\AccountErasureRepositoryInterface;
+use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Storage\PrivateAssetStore;
 use Illuminate\Http\UploadedFile;
@@ -16,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
+use RuntimeException;
 use Tests\Concerns\UsesApprovedPilotPolicy;
 use Tests\Fakes\OggFixture;
 use Tests\TestCase;
@@ -120,6 +124,36 @@ final class VoiceIntakeTest extends TestCase
         $this->assertDatabaseCount('voice_assets', 1);
         $this->assertCount(1, Storage::disk('assets')->allFiles());
         $this->assertSame($user->id, VoiceAsset::query()->sole()->created_by);
+    }
+
+    public function test_a_failed_idempotency_record_leaves_no_encrypted_object(): void
+    {
+        $this->seller(6116);
+        $project = $this->project();
+        $this->app->extend(ApiIdempotencyRepositoryInterface::class, fn (ApiIdempotencyRepositoryInterface $real) => new class($real) implements ApiIdempotencyRepositoryInterface
+        {
+            public function __construct(private ApiIdempotencyRepositoryInterface $real) {}
+
+            public function find(Workspace $workspace, int $userId, string $operation, string $key): ?ApiIdempotencyRecord
+            {
+                return $this->real->find($workspace, $userId, $operation, $key);
+            }
+
+            public function record(Workspace $workspace, int $userId, string $operation, string $key, string $hash, array $attributes): void
+            {
+                throw new RuntimeException('record failed');
+            }
+        });
+
+        $this->withoutExceptionHandling();
+        try {
+            $this->upload($project, OggFixture::make());
+            $this->fail('The failed record was not reported.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('record failed', $e->getMessage());
+        }
+        $this->assertDatabaseCount('voice_assets', 0);
+        $this->assertSame([], Storage::disk('assets')->allFiles());
     }
 
     public function test_another_workspace_cannot_read_list_or_attach_to_the_sellers_batch(): void

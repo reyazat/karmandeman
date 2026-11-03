@@ -66,6 +66,13 @@ interface AiWorkflowRunRepositoryInterface
     public function close(AiWorkflowRun $run, AiRunStatus $status, CarbonImmutable $at, ?string $errorCode = null, ?string $resultMac = null, ?int $candidates = null, ?array $usage = null): void;
 
     /**
+     * The provider usage a closed run reported after it closed; never changes its status or charge.
+     *
+     * @param  array<string, int|string>  $usage
+     */
+    public function recordLateUsage(AiWorkflowRun $run, array $usage): void;
+
+    /**
      * Open runs past their deadline in active workspaces, oldest first. Runs
      * of an account being erased wait for the purge (FR-086).
      *

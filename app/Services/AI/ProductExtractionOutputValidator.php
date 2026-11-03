@@ -29,6 +29,38 @@ final readonly class ProductExtractionOutputValidator
     public function __construct(private ValidationFactory $validation, private ProductDraftRules $draftRules) {}
 
     /**
+     * The usage of a callback that is otherwise refused, so its billed tokens
+     * are still recorded (ADR-042); null when the usage itself is malformed.
+     *
+     * @param  array<mixed>  $body  decoded JSON of a verified callback
+     * @return array<string, int|string>|null
+     */
+    public function usage(array $body): ?array
+    {
+        if ($this->validation->make($body, self::usageRules())->fails()) {
+            return null;
+        }
+
+        /** @var array<string, int|string> $usage */
+        $usage = $body['usage'];
+
+        return $usage;
+    }
+
+    /** @return array<string, list<string>> */
+    private static function usageRules(): array
+    {
+        return [
+            'usage' => ['required', 'array:'.implode(',', self::USAGE_KEYS)],
+            'usage.model_requests' => ['required', 'integer:strict', 'min:0'],
+            'usage.input_tokens' => ['required', 'integer:strict', 'min:0'],
+            'usage.output_tokens' => ['required', 'integer:strict', 'min:0'],
+            'usage.provider' => ['required', 'string', 'regex:/^[a-z0-9][a-z0-9._-]{0,63}$/'],
+            'usage.model' => ['required', 'string', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,63}$/'],
+        ];
+    }
+
+    /**
      * @param  array<mixed>  $body  decoded JSON of a verified callback
      *
      * @throws WorkflowOutputRejected
@@ -41,12 +73,7 @@ final readonly class ProductExtractionOutputValidator
             'run_id' => ['required', 'string', 'uuid'],
             'status' => ['required', 'string', 'in:succeeded,failed'],
             'error_code' => ['nullable', 'required_if:status,failed', 'prohibited_if:status,succeeded', 'string', 'regex:/^[A-Z][A-Z0-9_]{0,63}$/'],
-            'usage' => ['required', 'array:'.implode(',', self::USAGE_KEYS)],
-            'usage.model_requests' => ['required', 'integer:strict', 'min:0'],
-            'usage.input_tokens' => ['required', 'integer:strict', 'min:0'],
-            'usage.output_tokens' => ['required', 'integer:strict', 'min:0'],
-            'usage.provider' => ['required', 'string', 'regex:/^[a-z0-9][a-z0-9._-]{0,63}$/'],
-            'usage.model' => ['required', 'string', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,63}$/'],
+            ...self::usageRules(),
             'candidates' => ['present', 'array', 'list', 'max:'.$maxCandidates],
             'candidates.*' => ['array:'.implode(',', self::CANDIDATE_KEYS)],
             'candidates.*.name' => ['present', 'nullable', 'string'],

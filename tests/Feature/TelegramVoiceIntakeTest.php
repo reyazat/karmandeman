@@ -6,7 +6,9 @@ namespace Tests\Feature;
 
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
+use App\Actions\Project\ImportTelegramPhotoAction;
 use App\Data\Telegram\TelegramUserData;
+use App\Jobs\Project\ImportTelegramPhoto;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\VoiceAsset;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
@@ -103,6 +105,23 @@ final class TelegramVoiceIntakeTest extends TestCase
 
         $this->message(6210, ['text' => '/projects'])->assertOk();
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '0 فایل CSV، 1 ویس، 0 محصول'));
+    }
+
+    public function test_a_voice_queued_before_intake_was_switched_off_is_never_downloaded(): void
+    {
+        $this->seller(6212);
+        $this->file = OggFixture::make();
+        Queue::fake([SendTelegramMessage::class, ImportTelegramPhoto::class]);
+        $this->message(6212, $this->voice())->assertOk();
+        $intake = DB::table('telegram_media_intakes')->sole();
+
+        config(['karmandeman.voice.intake_enabled' => false]);
+        app(ImportTelegramPhotoAction::class)->execute($intake->id);
+
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/getFile'));
+        $this->assertDatabaseCount('voice_assets', 0);
+        $this->assertDatabaseCount('telegram_media_intakes', 0);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'دریافت ویس هنوز فعال نیست'));
     }
 
     public function test_bot_rejects_declared_or_actual_oversized_and_damaged_voices(): void
