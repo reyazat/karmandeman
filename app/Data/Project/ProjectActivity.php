@@ -16,5 +16,6 @@ final readonly class ProjectActivity
         public int $tables,
         public int $products,
         public int $creditsUsed,
+        public int $voices = 0,
     ) {}
 }

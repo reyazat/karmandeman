@@ -18,7 +18,9 @@ run-scoped signed photo links that strip metadata, bot confirmation of
 suggested values that keeps their photo provenance, and a grouped bot
 question for suggested prices, a legacy n8n extraction workflow export with a
 Gemini model step (retired by ADR-045; the owner selected OpenAI for voice and
-text processing in n8n, but an OpenAI workflow is not yet implemented),
+text processing in n8n), an OpenAI photo-extraction workflow export (ADR-046;
+not imported into n8n, not called against the real API and not selected in
+config),
 a Laravel-owned run claim so only one n8n execution pays for the model,
 and a seller-accepted extraction quote whose cap is held before the run;
 on success the run's real usage is charged at the quote's tariff (at least
@@ -32,9 +34,9 @@ Laravel (no transcription, provider call or credit charge yet),
 and per-charge usage in the wallet API and /balance with a daily
 read-only ledger reconciliation, and one open-for-input rule shared by
 the bot and the API with /projects showing files and credit used
-(ADR-016 to ADR-045) with code and tests. These
-are partial foundations, not a completed MVP. A working OpenAI workflow and
-real API test, an approved policy naming OpenAI and voice intake, XLSX intake,
+(ADR-016 to ADR-046) with code and tests. These
+are partial foundations, not a completed MVP. An imported OpenAI workflow with a
+real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,
 the `text` and `file_output` charge classes and reconciling reported usage
 against the provider's bill are still missing. Read

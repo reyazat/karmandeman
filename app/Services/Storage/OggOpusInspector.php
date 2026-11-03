@@ -69,6 +69,7 @@ final class OggOpusInspector
                 throw new DomainException('VOICE_DAMAGED');
             }
             $payloadOffset = 0;
+            $packetsEnded = $packetIndex;
             for ($i = 0; $i < $segments; $i++) {
                 $length = ord($lengths[$i]);
                 $packet .= substr($payload, $payloadOffset, $length);
@@ -85,10 +86,17 @@ final class OggOpusInspector
                     $packet = '';
                 }
             }
+            // A page that ends no packet has no position: granule -1 (RFC 3533).
             $granule = unpack('Vlow/Vhigh', substr($page, 6, 8));
-            $lastGranule = $granule['low'] + $granule['high'] * 4294967296;
-            if ($lastGranule > ((int) config('karmandeman.voice.max_seconds') * 48000 + (int) $preSkip)) {
-                throw new DomainException('VOICE_TOO_LONG');
+            $unset = $granule['low'] === 0xFFFFFFFF && $granule['high'] === 0xFFFFFFFF;
+            if ($unset && $packetIndex !== $packetsEnded) {
+                throw new DomainException('VOICE_DAMAGED');
+            }
+            if (! $unset) {
+                $lastGranule = $granule['low'] + $granule['high'] * 4294967296;
+                if ($lastGranule > ((int) config('karmandeman.voice.max_seconds') * 48000 + (int) $preSkip)) {
+                    throw new DomainException('VOICE_TOO_LONG');
+                }
             }
             $offset += $pageSize;
             $sequence++;
@@ -126,14 +134,23 @@ final class OggOpusInspector
         return $samples * $frames;
     }
 
+    /** Ogg's CRC-32: polynomial 0x04C11DB7, not reflected, zero start and no final XOR. */
     private function crc(string $page): int
     {
+        static $table = null;
+        if ($table === null) {
+            $table = [];
+            for ($byte = 0; $byte < 256; $byte++) {
+                $crc = $byte << 24;
+                for ($bit = 0; $bit < 8; $bit++) {
+                    $crc = (($crc & 0x80000000) !== 0 ? ($crc << 1) ^ 0x04C11DB7 : $crc << 1) & 0xFFFFFFFF;
+                }
+                $table[$byte] = $crc;
+            }
+        }
         $crc = 0;
         for ($i = 0, $size = strlen($page); $i < $size; $i++) {
-            $crc ^= ord($page[$i]) << 24;
-            for ($bit = 0; $bit < 8; $bit++) {
-                $crc = (($crc & 0x80000000) !== 0 ? ($crc << 1) ^ 0x04C11DB7 : $crc << 1) & 0xFFFFFFFF;
-            }
+            $crc = (($crc << 8) & 0xFFFFFFFF) ^ $table[(($crc >> 24) ^ ord($page[$i])) & 0xFF];
         }
 
         return $crc;

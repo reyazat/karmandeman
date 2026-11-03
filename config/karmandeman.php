@@ -37,12 +37,12 @@ return [
     // again against the usage it reports (PRD §11 cost control).
     'ai' => [
         'extraction_enabled' => (bool) env('KM_AI_EXTRACTION_ENABLED', false),
-        // The checked-in v1 export still calls Gemini. No OpenAI workflow is
-        // selected until its signed replacement and quote path are verified.
+        // The v1 export still calls Gemini. The OpenAI export (ADR-046) is
+        // selected only after it is imported and tested against the real API.
         'workflow_version' => 'product-extraction.v1',
         'run_timeout_minutes' => (int) env('KM_AI_RUN_TIMEOUT_MINUTES', 15),
         'max_assets_per_run' => (int) env('KM_AI_MAX_ASSETS_PER_RUN', 20),
-        // All photos of a run travel inline in one Gemini request, limited to 20 MB with base64 (ADR-037).
+        // All photos of a run travel inline in one model request, near 20 MB with base64 (ADR-037, ADR-046).
         // The workflow refuses more than 14 MB, so a higher value would only send runs that fail.
         'max_input_bytes_per_run' => min((int) env('KM_AI_MAX_INPUT_BYTES_PER_RUN', 14 * 1024 * 1024), 14 * 1024 * 1024),
         // ADR-045 supersedes the Google provider decision. The approved policy

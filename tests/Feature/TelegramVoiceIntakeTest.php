@@ -100,6 +100,9 @@ final class TelegramVoiceIntakeTest extends TestCase
         $this->assertDatabaseCount('voice_assets', 1);
         $this->assertCount(1, Storage::disk('assets')->allFiles());
         $this->assertSame($this->file, $this->get("/api/v1/voices/{$asset->public_id}/download")->assertOk()->getContent());
+
+        $this->message(6210, ['text' => '/projects'])->assertOk();
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '0 فایل CSV، 1 ویس، 0 محصول'));
     }
 
     public function test_bot_rejects_declared_or_actual_oversized_and_damaged_voices(): void

@@ -32,6 +32,7 @@ final class ProjectResource extends JsonResource
             'activity' => $this->whenLoaded('activity', fn (): array => [
                 'photos' => $this->activity->photos,
                 'tables' => $this->activity->tables,
+                'voices' => $this->activity->voices,
                 'products' => $this->activity->products,
                 'credits_used' => $this->activity->creditsUsed,
             ]),

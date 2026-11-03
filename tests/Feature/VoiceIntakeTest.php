@@ -89,6 +89,12 @@ final class VoiceIntakeTest extends TestCase
         $this->assertDatabaseCount('ai_workflow_runs', 0);
         $this->assertSame(0, DB::table('credit_ledger')->where('type', 'capture')->count());
         $this->assertSame(2, (int) DB::table('projects')->where('public_id', $project)->value('version'));
+        $this->getJson('/api/v1/projects')->assertOk()->assertJsonPath('data.0.activity.voices', 1);
+
+        $this->postJson("/api/v1/projects/{$project}/cancel", ['version' => 2], ['Idempotency-Key' => 'cancel-voice'])->assertOk();
+        $this->upload($project, OggFixture::withPageEndingNoPacket())
+            ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_ACCEPTING_INPUT');
+        $this->assertDatabaseCount('voice_assets', 1);
     }
 
     public function test_invalid_replayed_or_unconsented_audio_has_no_partial_object(): void

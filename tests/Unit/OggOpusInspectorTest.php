@@ -16,6 +16,11 @@ final class OggOpusInspectorTest extends TestCase
         $this->assertSame(['mime' => 'audio/ogg', 'duration_ms' => 200], app(OggOpusInspector::class)->inspect(OggFixture::make()));
     }
 
+    public function test_a_page_that_ends_no_packet_is_not_read_as_a_long_voice(): void
+    {
+        $this->assertSame(['mime' => 'audio/ogg', 'duration_ms' => 220], app(OggOpusInspector::class)->inspect(OggFixture::withPageEndingNoPacket()));
+    }
+
     public function test_container_damage_and_non_audio_are_rejected(): void
     {
         $voice = OggFixture::make();

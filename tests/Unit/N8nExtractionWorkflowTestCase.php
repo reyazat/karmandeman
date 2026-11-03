@@ -7,28 +7,48 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * The exported n8n workflow keeps the run contract (ADR-032 to ADR-036): it
- * listens where Laravel starts it, checks before it answers or works, claims
- * the run before it reads a photo (ADR-038), keeps its HMAC secrets in n8n
- * credentials, talks only to the links Laravel signed and Gemini, and keeps
- * no execution history (ADR-037). Behaviour of its Code nodes is tested with
- * vitest.
+ * Each exported n8n extraction workflow keeps the run contract (ADR-032 to
+ * ADR-036): it listens where Laravel starts it, checks before it answers or
+ * works, claims the run before it reads a photo (ADR-038), keeps its HMAC
+ * secrets in n8n credentials, talks only to the links Laravel signed and its
+ * one model provider, and keeps no execution history. Behaviour of its Code
+ * nodes is tested with vitest.
  */
-class N8nExtractionWorkflowTest extends TestCase
+abstract class N8nExtractionWorkflowTestCase extends TestCase
 {
     private const NODE_TYPES = [
         'n8n-nodes-base.webhook', 'n8n-nodes-base.code', 'n8n-nodes-base.crypto', 'n8n-nodes-base.if',
         'n8n-nodes-base.respondToWebhook', 'n8n-nodes-base.httpRequest',
     ];
 
+    /** The export under n8n/workflows/. */
+    abstract protected function export(): string;
+
+    /** The webhook path Laravel starts this export's runs at. */
+    abstract protected function webhookPath(): string;
+
+    /** The provider word in its model node names, such as "OpenAI". */
+    abstract protected function provider(): string;
+
+    /** @return array{httpHeaderAuth: array{id: string, name: string}} */
+    abstract protected function modelCredential(): array;
+
+    /** @return list<string> the lines that fix the model address in the request node */
+    abstract protected function modelAddress(): array;
+
     /** @return array<string, mixed> */
-    private function workflow(): array
+    protected function workflow(): array
     {
-        return json_decode((string) file_get_contents(base_path('n8n/workflows/product-extraction.v1.json')), true, flags: JSON_THROW_ON_ERROR);
+        return json_decode($this->raw(), true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    protected function raw(): string
+    {
+        return (string) file_get_contents(base_path('n8n/workflows/'.$this->export()));
     }
 
     /** @return array<string, array<string, mixed>> */
-    private function nodes(): array
+    protected function nodes(): array
     {
         return array_column($this->workflow()['nodes'], null, 'name');
     }
@@ -38,7 +58,7 @@ class N8nExtractionWorkflowTest extends TestCase
         $webhook = $this->nodes()['Start run'];
 
         $this->assertSame('n8n-nodes-base.webhook', $webhook['type']);
-        $this->assertSame('/webhook/'.$webhook['parameters']['path'], config('services.n8n.extraction_webhook_path'));
+        $this->assertSame('/webhook/'.$webhook['parameters']['path'], $this->webhookPath());
         $this->assertSame('POST', $webhook['parameters']['httpMethod']);
         // The signature covers the exact bytes, and n8n answers only after checking it.
         $this->assertTrue($webhook['parameters']['options']['rawBody']);
@@ -59,37 +79,39 @@ class N8nExtractionWorkflowTest extends TestCase
             }
         }
 
-        // No path reaches a photo, Gemini or the callback without the signature check, 202 and Laravel's claim.
+        // No path reaches a photo, the model or the callback without the signature check, 202 and Laravel's claim.
         // A refused claim (output 1 of "Claimed?") leads nowhere.
+        $model = $this->provider();
         $this->assertSame([
             'Start run#0->Read request', 'Read request#0->Sign request', 'Sign request#0->Check envelope',
             'Check envelope#0->Valid start?', 'Valid start?#0->Accept', 'Valid start?#1->Reject', 'Accept#0->Build claim',
             'Build claim#0->Sign claim', 'Sign claim#0->Claim run', 'Claim run#0->Claimed?', 'Claimed?#0->List photos',
-            'List photos#0->Download photo', 'Download photo#0->Build Gemini request', 'Build Gemini request#0->Ready for model?',
-            'Ready for model?#0->Call Gemini', 'Ready for model?#1->Build callback', 'Call Gemini#0->Read Gemini answer',
-            'Read Gemini answer#0->Build callback', 'Build callback#0->Sign callback', 'Sign callback#0->Send callback',
+            'List photos#0->Download photo', "Download photo#0->Build {$model} request", "Build {$model} request#0->Ready for model?",
+            "Ready for model?#0->Call {$model}", 'Ready for model?#1->Build callback', "Call {$model}#0->Read {$model} answer",
+            "Read {$model} answer#0->Build callback", 'Build callback#0->Sign callback', 'Sign callback#0->Send callback',
         ], $edges);
     }
 
     public function test_secrets_sit_only_in_n8n_credentials(): void
     {
-        $raw = (string) file_get_contents(base_path('n8n/workflows/product-extraction.v1.json'));
+        $raw = $this->raw();
         $nodes = $this->nodes();
+        $call = 'Call '.$this->provider();
 
-        // HMAC secrets and the Gemini key come from n8n's encrypted credential store: no environment access is needed.
+        // HMAC secrets and the model key come from n8n's encrypted credential store: no environment access is needed.
         $this->assertStringNotContainsString('$env', $raw);
         $this->assertSame(['crypto' => ['id' => 'kmN8nStartToken', 'name' => 'KM extraction start token']], $nodes['Sign request']['credentials']);
         $this->assertSame(['crypto' => ['id' => 'kmN8nCallbackKey', 'name' => 'KM extraction callback secret']], $nodes['Sign callback']['credentials']);
         $this->assertSame($nodes['Sign callback']['credentials'], $nodes['Sign claim']['credentials']);
-        // The Gemini key travels in a header, never in the URL where an error message could carry it.
-        $this->assertSame(['httpHeaderAuth' => ['id' => 'kmGeminiApiKey', 'name' => 'KM Gemini API key']], $nodes['Call Gemini']['credentials']);
-        $this->assertSame(['genericCredentialType', 'httpHeaderAuth'], [$nodes['Call Gemini']['parameters']['authentication'], $nodes['Call Gemini']['parameters']['genericAuthType']]);
+        // The model key travels in a header, never in the URL where an error message could carry it.
+        $this->assertSame($this->modelCredential(), $nodes[$call]['credentials']);
+        $this->assertSame(['genericCredentialType', 'httpHeaderAuth'], [$nodes[$call]['parameters']['authentication'], $nodes[$call]['parameters']['genericAuthType']]);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.raw }}", $nodes['Sign request']['parameters']['value']);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.body }}", $nodes['Sign callback']['parameters']['value']);
         $this->assertSame($nodes['Sign callback']['parameters'], $nodes['Sign claim']['parameters']);
         foreach ($nodes as $node) {
             $this->assertContains($node['type'], self::NODE_TYPES, $node['name']);
-            if (! in_array($node['name'], ['Sign request', 'Sign claim', 'Sign callback', 'Call Gemini'], true)) {
+            if (! in_array($node['name'], ['Sign request', 'Sign claim', 'Sign callback', $call], true)) {
                 $this->assertArrayNotHasKey('credentials', $node, $node['name']);
             }
         }
@@ -118,11 +140,12 @@ class N8nExtractionWorkflowTest extends TestCase
         $workflow = $this->workflow();
         $http = array_filter($workflow['nodes'], fn (array $node): bool => $node['type'] === 'n8n-nodes-base.httpRequest');
 
-        $this->assertSame(['Claim run', 'Download photo', 'Call Gemini', 'Send callback'], array_values(array_column($http, 'name')));
-        // Gemini is the one address not checked against Laravel's; it is fixed in the workflow.
-        $this->assertStringContainsString("const GEMINI_HOST = 'https://generativelanguage.googleapis.com';", $this->nodes()['Build Gemini request']['parameters']['jsCode']);
-        $this->assertStringContainsString('url: `${GEMINI_HOST}/v1beta/models/${MODEL}:generateContent`', $this->nodes()['Build Gemini request']['parameters']['jsCode']);
-        // The claim, the single Gemini request and the callback are retried; photos are not.
+        $this->assertSame(['Claim run', 'Download photo', 'Call '.$this->provider(), 'Send callback'], array_values(array_column($http, 'name')));
+        // The model is the one address not checked against Laravel's; it is fixed in the workflow.
+        foreach ($this->modelAddress() as $line) {
+            $this->assertStringContainsString($line, $this->nodes()['Build '.$this->provider().' request']['parameters']['jsCode']);
+        }
+        // The claim, the single model request and the callback are retried; photos are not.
         $this->assertSame([true, false, true, true], array_values(array_map(fn (array $node): bool => $node['retryOnFail'] ?? false, $http)));
         $send = $this->nodes()['Send callback']['parameters'];
         // The claim is sent like the callback, and its answer is read even when it is a refusal.
@@ -160,7 +183,7 @@ class N8nExtractionWorkflowTest extends TestCase
      * @param  list<string>  $names
      * @return list<string>
      */
-    private function sorted(array $names): array
+    protected function sorted(array $names): array
     {
         $names = array_values(array_unique($names));
         sort($names);

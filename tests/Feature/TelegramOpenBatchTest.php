@@ -426,7 +426,7 @@ class TelegramOpenBatchTest extends TestCase
         Sanctum::actingAs($owner);
 
         $row = collect($this->getJson('/api/v1/projects')->assertOk()->json('data'))->firstWhere('id', $project->public_id);
-        $this->assertSame(['photos' => 1, 'tables' => 0, 'products' => 2, 'credits_used' => $used], $row['activity']);
+        $this->assertSame(['photos' => 1, 'tables' => 0, 'voices' => 0, 'products' => 2, 'credits_used' => $used], $row['activity']);
 
         $this->text('/projects', 7023);
         $this->assertStringContainsString("1 عکس، 0 فایل CSV، 2 محصول؛ مصرف {$used} اعتبار", $this->sent('آخرین پروژه‌ها')->text);

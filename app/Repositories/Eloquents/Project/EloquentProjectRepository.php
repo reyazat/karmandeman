@@ -118,6 +118,7 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->pluck('n', 'project_id')->all();
         $photos = $count('assets');
         $tables = $count('product_tables');
+        $voices = $count('voice_assets');
         $products = $count('products', fn ($query) => $query->where('status', '!=', ProductStatus::Archived->value));
         // A capture is the charge itself (ADR-039, ADR-042): only the workspace's own wallet and runs.
         $used = DB::table('credit_ledger')
@@ -136,6 +137,7 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
         foreach ($ids as $id) {
             $activity[$id] = new ProjectActivity(
                 (int) ($photos[$id] ?? 0), (int) ($tables[$id] ?? 0), (int) ($products[$id] ?? 0), (int) ($used[$id] ?? 0),
+                (int) ($voices[$id] ?? 0),
             );
         }
 

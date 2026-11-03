@@ -35,7 +35,8 @@ final readonly class TelegramProjectList
 
             return "• {$project->name} — ".self::label($project->state).' — '.$project->created_at?->format('Y-m-d')
                 .($project->id === $current?->id ? ' (جاری)' : '')
-                ."\n  {$used->photos} عکس، {$used->tables} فایل CSV، {$used->products} محصول؛ مصرف {$used->creditsUsed} اعتبار";
+                ."\n  {$used->photos} عکس، {$used->tables} فایل CSV، ".($used->voices > 0 ? "{$used->voices} ویس، " : '')
+                ."{$used->products} محصول؛ مصرف {$used->creditsUsed} اعتبار";
         }, $latest);
         // Open batches can be made current (ADR-028), beyond the newest few if needed.
         $buttons = array_values(array_map(
