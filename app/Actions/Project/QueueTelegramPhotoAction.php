@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Project;
 
 use App\Actions\Privacy\EnsurePolicyConsentAction;
+use App\Actions\Privacy\EnsureVoiceIntakeAllowedAction;
 use App\Enums\ProjectState;
 use App\Jobs\Project\ImportTelegramPhoto;
 use App\Models\TelegramMediaIntake;
@@ -33,6 +34,7 @@ final readonly class QueueTelegramPhotoAction
 
     public function __construct(
         private EnsurePolicyConsentAction $consent,
+        private EnsureVoiceIntakeAllowedAction $voiceConsent,
         private ProjectRepositoryInterface $projects,
         private ProductRepositoryInterface $products,
         private ResolveTelegramInputProjectAction $inputProject,
@@ -50,17 +52,23 @@ final readonly class QueueTelegramPhotoAction
     {
         $file = $this->pick($message);
         if ($file === null) {
-            return 'فقط عکس JPEG، PNG یا WebP یا فایل CSV محصولات پذیرفته می‌شود.';
+            return 'فقط عکس JPEG، PNG یا WebP، CSV محصولات یا ویس Ogg/Opus تا دو دقیقه پذیرفته می‌شود.';
         }
         $table = $file['kind'] === TelegramMediaIntake::KIND_TABLE;
-        $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : 'karmandeman.assets.max_kilobytes') * 1024;
+        $voice = $file['kind'] === TelegramMediaIntake::KIND_VOICE;
+        $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : ($voice ? 'karmandeman.voice.max_kilobytes' : 'karmandeman.assets.max_kilobytes')) * 1024;
         if ($file['size'] !== null && $file['size'] > $cap) {
-            return $table ? 'حجم فایل CSV بیش از '.intdiv($cap, 1024).' کیلوبایت است.' : 'حجم این عکس بیش از ۱۰ مگابایت است.';
+            return $table ? 'حجم فایل CSV بیش از '.intdiv($cap, 1024).' کیلوبایت است.'
+                : ($voice ? 'حجم ویس بیش از دو مگابایت است.' : 'حجم این عکس بیش از ۱۰ مگابایت است.');
         }
         try {
-            $this->consent->execute($workspace);
-        } catch (DomainException) {
-            return 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.';
+            ($voice ? $this->voiceConsent : $this->consent)->execute($workspace);
+        } catch (DomainException $e) {
+            if ($voice && $e->getMessage() === 'VOICE_INTAKE_DISABLED') {
+                return 'دریافت ویس هنوز فعال نیست؛ برای پیگیری /support را بفرست.';
+            }
+
+            return 'پیش از ارسال فایل، شرایط و سیاست داده را با /start بپذیر.';
         }
         // Same budget as the API upload route: each photo costs a download, encryption and storage.
         $limit = 'telegram-photo:'.$user->id;
@@ -76,7 +84,11 @@ final readonly class QueueTelegramPhotoAction
             $product = $this->products->findPublicForWorkspace($workspace, $target[0]);
             $project = $product === null || $file['kind'] !== TelegramMediaIntake::KIND_PHOTO ? null : $this->projects->findForWorkspace($workspace, (int) $product->project_id);
             if ($product === null || $project === null || Gate::forUser($user)->denies('update', $product)) {
-                return $file['kind'] === TelegramMediaIntake::KIND_PHOTO ? 'محصول این کارت یافت نشد.' : 'فایل CSV را بدون پاسخ به کارت بفرست.';
+                return match ($file['kind']) {
+                    TelegramMediaIntake::KIND_VOICE => 'ویس را بدون پاسخ به کارت بفرست.',
+                    TelegramMediaIntake::KIND_TABLE => 'فایل CSV را بدون پاسخ به کارت بفرست.',
+                    default => 'محصول این کارت یافت نشد.',
+                };
             }
             if ($project->state === ProjectState::Cancelled) {
                 return "پروژه «{$project->name}» لغو شده است و عکس تازه نمی‌گیرد.";
@@ -110,6 +122,21 @@ final readonly class QueueTelegramPhotoAction
      */
     private function pick(array $message): ?array
     {
+        $voice = $message['voice'] ?? null;
+        if (is_array($voice)) {
+            $mime = $voice['mime_type'] ?? 'audio/ogg';
+            $duration = $voice['duration'] ?? null;
+            if (! is_string($voice['file_id'] ?? null) || ! in_array($mime, ['audio/ogg', 'application/ogg'], true)
+                || (is_int($duration) && $duration > (int) config('karmandeman.voice.max_seconds'))) {
+                return null;
+            }
+
+            return [
+                'id' => $voice['file_id'],
+                'size' => is_int($voice['file_size'] ?? null) ? $voice['file_size'] : null,
+                'kind' => TelegramMediaIntake::KIND_VOICE,
+            ];
+        }
         $document = $message['document'] ?? null;
         if (is_array($document)) {
             if (! is_string($document['file_id'] ?? null)) {

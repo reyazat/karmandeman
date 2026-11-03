@@ -29,6 +29,8 @@ class TelegramMediaIntake extends Model
 
     public const KIND_TABLE = 'table';
 
+    public const KIND_VOICE = 'voice';
+
     public $timestamps = false;
 
     protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'target_product_id', 'target_revision', 'file_ref', 'declared_size', 'message_key', 'created_at'];

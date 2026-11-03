@@ -12,6 +12,7 @@ use App\Models\ProductRevision;
 use App\Models\ProductTable;
 use App\Models\Project;
 use App\Models\ProjectSnapshot;
+use App\Models\VoiceAsset;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
@@ -59,6 +60,7 @@ final readonly class RunIdempotentMutationAction
                     'project.create', 'project.finish_input', 'project.reopen', 'project.cancel', 'project.resolve_prices' => Project::class,
                     'project.approve_products' => ProjectSnapshot::class,
                     'project.attach_asset' => Asset::class,
+                    'project.attach_voice' => VoiceAsset::class,
                     'project.extraction_quote' => CreditQuote::class,
                     'project.attach_table', 'project.import_table' => ProductTable::class,
                     'brand.update' => Brand::class,

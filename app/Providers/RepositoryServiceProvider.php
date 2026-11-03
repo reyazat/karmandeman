@@ -25,6 +25,7 @@ use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Repositories\Contracts\TelegramOnboardingRepositoryInterface;
 use App\Repositories\Contracts\TelegramOutboxRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
+use App\Repositories\Contracts\VoiceAssetRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceConsentRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceDataKeyRepositoryInterface;
@@ -50,6 +51,7 @@ use App\Repositories\Eloquents\TelegramMediaIntake\EloquentTelegramMediaIntakeRe
 use App\Repositories\Eloquents\TelegramOnboarding\EloquentTelegramOnboardingRepository;
 use App\Repositories\Eloquents\TelegramOutbox\DatabaseTelegramOutboxRepository;
 use App\Repositories\Eloquents\User\EloquentUserRepository;
+use App\Repositories\Eloquents\VoiceAsset\EloquentVoiceAssetRepository;
 use App\Repositories\Eloquents\WalletLedger\EloquentWalletRepository;
 use App\Repositories\Eloquents\Workspace\EloquentWorkspaceRepository;
 use App\Repositories\Eloquents\WorkspaceConsent\EloquentWorkspaceConsentRepository;
@@ -76,6 +78,7 @@ final class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(ProductRepositoryInterface::class, EloquentProductRepository::class);
         $this->app->bind(ProjectSnapshotRepositoryInterface::class, EloquentProjectSnapshotRepository::class);
         $this->app->bind(AssetRepositoryInterface::class, EloquentAssetRepository::class);
+        $this->app->bind(VoiceAssetRepositoryInterface::class, EloquentVoiceAssetRepository::class);
         $this->app->bind(TelegramMediaIntakeRepositoryInterface::class, EloquentTelegramMediaIntakeRepository::class);
         $this->app->bind(AiWorkflowRunRepositoryInterface::class, EloquentAiWorkflowRunRepository::class);
         $this->app->bind(RetentionRepositoryInterface::class, EloquentRetentionRepository::class);

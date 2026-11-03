@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 trait UsesApprovedPilotPolicy
 {
     /** @param  list<string>  $aiProviders  AI providers the bundle names as photo processors (ADR-037) */
-    private function useApprovedPilotPolicy(string $version = 'test-policy-v1', array $aiProviders = []): void
+    private function useApprovedPilotPolicy(string $version = 'test-policy-v1', array $aiProviders = [], bool $voiceIntake = false): void
     {
         $path = storage_path('framework/testing/policy-'.Str::uuid());
         $files = new Filesystem;
@@ -34,6 +34,15 @@ trait UsesApprovedPilotPolicy
         ];
         if ($aiProviders !== []) {
             $manifest['ai_processing'] = ['providers' => $aiProviders];
+        }
+        if ($voiceIntake) {
+            $manifest['voice_intake'] = ['enabled' => true];
+            $privacy = $files->get($path.'/privacy.fa.txt');
+            $files->put($path.'/privacy.fa.txt', str_replace(
+                'AI و دریافت فایل در این نسخه غیرفعال‌اند.',
+                'ویس محصول پس از رضایت، از تلگرام دریافت و با کلید فضای کاری رمز‌شده ذخیره می‌شود؛ AI همچنان غیرفعال است.',
+                $privacy,
+            ));
         }
         foreach ($manifest['release_evidence'] as $key => $_) {
             $manifest['release_evidence'][$key] = 'Synthetic fixture; no production approval';

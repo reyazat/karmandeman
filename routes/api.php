@@ -8,6 +8,7 @@ use App\Http\Controllers\API\V1\Product\ProductController;
 use App\Http\Controllers\API\V1\Project\ProductTableController;
 use App\Http\Controllers\API\V1\Project\ProjectAssetController;
 use App\Http\Controllers\API\V1\Project\ProjectController;
+use App\Http\Controllers\API\V1\Project\ProjectVoiceController;
 use App\Http\Controllers\API\V1\Project\ProjectWorkflowController;
 use App\Http\Controllers\API\V1\Wallet\WalletLedgerController;
 use App\Http\Controllers\API\V1\Workspace\CurrentWorkspaceController;
@@ -52,6 +53,9 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/projects/{project}/products', [ProductController::class, 'index'])->whereUuid('project');
             Route::get('/projects/{project}/assets', [ProjectAssetController::class, 'index'])->whereUuid('project');
             Route::post('/projects/{project}/assets', [ProjectAssetController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
+            Route::get('/projects/{project}/voices', [ProjectVoiceController::class, 'index'])->whereUuid('project');
+            Route::post('/projects/{project}/voices', [ProjectVoiceController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
+            Route::get('/voices/{voice}/download', [ProjectVoiceController::class, 'download'])->whereUuid('voice');
             Route::post('/projects/{project}/tables', [ProductTableController::class, 'store'])->whereUuid('project')->middleware('throttle:asset-upload');
             Route::get('/tables/{table}', [ProductTableController::class, 'show'])->whereUuid('table');
             Route::post('/tables/{table}/import', [ProductTableController::class, 'import'])->whereUuid('table');

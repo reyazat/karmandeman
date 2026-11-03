@@ -25,6 +25,8 @@ final readonly class PrivateAssetStore
 
     public const KIND_TABLE = 'table';
 
+    public const KIND_VOICE = 'voice';
+
     public function __construct(private WorkspaceFieldCipher $cipher) {}
 
     /**
@@ -80,7 +82,12 @@ final readonly class PrivateAssetStore
 
     public function contentMac(Workspace $workspace, #[\SensitiveParameter] string $bytes, string $kind = self::KIND_PHOTO): string
     {
-        return $this->cipher->mac($workspace, $kind === self::KIND_PHOTO ? 'assets.content' : 'product_tables.content', hash('sha256', $bytes, true));
+        return $this->cipher->mac($workspace, match ($kind) {
+            self::KIND_PHOTO => 'assets.content',
+            self::KIND_TABLE => 'product_tables.content',
+            self::KIND_VOICE => 'voice_assets.content',
+            default => throw new \InvalidArgumentException('Unknown private asset kind.'),
+        }, hash('sha256', $bytes, true));
     }
 
     private function prefix(Workspace $workspace): string
@@ -90,7 +97,12 @@ final readonly class PrivateAssetStore
 
     private function context(string $publicId, string $kind): string
     {
-        return $kind === self::KIND_PHOTO ? "assets.original:{$publicId}" : "product_tables.original:{$publicId}";
+        return match ($kind) {
+            self::KIND_PHOTO => "assets.original:{$publicId}",
+            self::KIND_TABLE => "product_tables.original:{$publicId}",
+            self::KIND_VOICE => "voice_assets.original:{$publicId}",
+            default => throw new \InvalidArgumentException('Unknown private asset kind.'),
+        };
     }
 
     /** Production fails closed unless the files go to the private S3-compatible bucket. */

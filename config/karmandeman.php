@@ -23,6 +23,14 @@ return [
         'uploads_per_minute' => (int) env('KM_ASSET_UPLOADS_PER_MINUTE', 20),
     ],
 
+    // Temporary voice intake cap pending pricing and policy approval; no AI
+    // processing is enabled by storing a file.
+    'voice' => [
+        'intake_enabled' => (bool) env('KM_VOICE_INTAKE_ENABLED', false),
+        'max_kilobytes' => 2048,
+        'max_seconds' => 120,
+    ],
+
     // n8n product extraction runs (Step 4, ADR-032). Off by default and always
     // off in production until an AI provider is approved and Step 5 reserves
     // credit before the run. The caps go to n8n with each run and are checked

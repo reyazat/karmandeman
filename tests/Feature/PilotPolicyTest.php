@@ -124,6 +124,26 @@ final class PilotPolicyTest extends TestCase
         $this->assertSame([], $policy->aiProviders);
     }
 
+    public function test_voice_intake_requires_a_new_signed_policy_and_old_bundle_hash_is_unchanged(): void
+    {
+        $this->useApprovedPilotPolicy();
+        $old = app(PilotPolicyService::class)->current();
+        $this->assertFalse($old->allowsVoiceIntake());
+
+        $this->useApprovedPilotPolicy('test-voice-v1', voiceIntake: true);
+        $voice = app(PilotPolicyService::class)->current();
+        $this->assertTrue($voice->allowsVoiceIntake());
+        $this->assertNotSame($old->digest, $voice->digest);
+
+        $manifest = $this->manifest();
+        $manifest['voice_intake'] = ['enabled' => false];
+        $this->writeManifest($manifest);
+        $changed = app(PilotPolicyService::class)->current();
+        $this->assertFalse($changed->allowsVoiceIntake());
+        $this->assertContains('VOICE_INTAKE_INVALID', $changed->blockers);
+        $this->assertContains('APPROVAL_DIGEST_MISMATCH', $changed->blockers);
+    }
+
     public function test_future_approval_and_invalid_bundle_fail_closed(): void
     {
         $this->useApprovedPilotPolicy();

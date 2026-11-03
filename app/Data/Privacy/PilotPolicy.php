@@ -18,7 +18,13 @@ final readonly class PilotPolicy
         public string $retention,
         public array $blockers,
         public array $aiProviders = [],
+        public bool $voiceIntake = false,
     ) {}
+
+    public function allowsVoiceIntake(): bool
+    {
+        return $this->isApproved() && $this->voiceIntake;
+    }
 
     /** Whether a seller who accepted this bundle was told photos go to this AI provider. */
     public function allowsAiProvider(string $provider): bool

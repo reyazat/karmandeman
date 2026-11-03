@@ -13,6 +13,7 @@ use App\Models\Asset;
 use App\Models\ProductTable;
 use App\Models\Project;
 use App\Models\TelegramMediaIntake;
+use App\Models\VoiceAsset;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
@@ -34,6 +35,7 @@ final readonly class ImportTelegramPhotoAction
         private TelegramMediaIntakeRepositoryInterface $intakes,
         private ProjectRepositoryInterface $projects,
         private AttachProjectAssetAction $attach,
+        private AttachProjectVoiceAction $attachVoice,
         private AttachProductTableAction $attachTable,
         private TelegramProductTablePreview $tablePreview,
         private AttachTelegramPhotoToProductAction $attachToProduct,
@@ -65,7 +67,13 @@ final readonly class ImportTelegramPhotoAction
         }
 
         $table = $intake->kind === TelegramMediaIntake::KIND_TABLE;
+        $voice = $intake->kind === TelegramMediaIntake::KIND_VOICE;
         $toCard = $intake->target_product_id !== null;
+        if ($voice && $toCard) {
+            $this->finish($intake, null);
+
+            return;
+        }
         // A batch takes files until approval (ADR-041); a photo for a card reopens an approved one.
         $notice = null;
         if (! $project->state->isOpenForInput() && ! ($toCard && $project->state === ProjectState::ProductApproved)) {
@@ -78,7 +86,7 @@ final readonly class ImportTelegramPhotoAction
             [$project, $notice] = DB::transaction(fn (): array => $this->inputProject->execute($workspace));
         }
 
-        $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : 'karmandeman.assets.max_kilobytes') * 1024;
+        $cap = (int) config($table ? 'karmandeman.tables.max_kilobytes' : ($voice ? 'karmandeman.voice.max_kilobytes' : 'karmandeman.assets.max_kilobytes')) * 1024;
         try {
             $file = $this->bot->getFile($this->cipher->decrypt($workspace, 'telegram_media_intakes.file_ref', $intake->file_ref));
             if ($file['size'] !== null && $file['size'] > $cap) {
@@ -86,12 +94,18 @@ final readonly class ImportTelegramPhotoAction
             }
             $bytes = $this->bot->downloadFile($file['path'], $cap);
         } catch (TelegramFileTooLarge) {
-            $this->finish($intake, $table ? 'حجم فایل CSV بیش از '.intdiv($cap, 1024).' کیلوبایت است.' : 'حجم این عکس بیش از ۱۰ مگابایت است.');
+            $this->finish($intake, $table ? 'حجم فایل CSV بیش از '.intdiv($cap, 1024).' کیلوبایت است.'
+                : ($voice ? 'حجم ویس بیش از دو مگابایت است.' : 'حجم این عکس بیش از ۱۰ مگابایت است.'));
 
             return;
         }
         if ($table) {
             $this->finish($intake, $this->attachTable($intake, $project, $bytes), $notice);
+
+            return;
+        }
+        if ($voice) {
+            $this->finish($intake, $this->attachVoice($intake, $project, $bytes), $notice);
 
             return;
         }
@@ -127,6 +141,31 @@ final readonly class ImportTelegramPhotoAction
         $this->finish($intake, $replayed || $asset->wasRecentlyCreated
             ? "عکس به پروژه «{$project->name}» اضافه شد."
             : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.", $notice);
+    }
+
+    private function attachVoice(TelegramMediaIntake $intake, Project $project, #[\SensitiveParameter] string $bytes): ?string
+    {
+        try {
+            [$voice, $replayed] = $this->attachVoice->execute(
+                $intake->workspace, $intake->user, 'telegram-'.substr($intake->message_key, 0, 48),
+                $project->public_id, $bytes, VoiceAsset::SOURCE_TELEGRAM, $intake->message_key,
+            );
+        } catch (AuthorizationException) {
+            return null;
+        } catch (DomainException $e) {
+            return match ($e->getMessage()) {
+                'VOICE_UNSUPPORTED', 'VOICE_DAMAGED' => 'ویس سالم Ogg/Opus لازم است؛ این فایل پذیرفته نشد.',
+                'VOICE_TOO_LARGE', 'VOICE_TOO_LONG' => 'ویس باید حداکثر دو دقیقه و دو مگابایت باشد.',
+                'VOICE_INTAKE_DISABLED' => 'دریافت ویس هنوز فعال نیست؛ برای پیگیری /support را بفرست.',
+                'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر ویس نمی‌پذیرد.",
+                'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال ویس، شرایط و سیاست داده را با /start بپذیر.',
+                default => null,
+            };
+        }
+
+        return $replayed || $voice->wasRecentlyCreated
+            ? "ویس در پروژه «{$project->name}» ذخیره شد؛ تبدیل به متن هنوز فعال نیست."
+            : "این ویس قبلاً در پروژه «{$project->name}» ثبت شده بود.";
     }
 
     /** The CSV through the API's path; the reply is its mapping for the seller to confirm (ADR-040). */
@@ -168,7 +207,11 @@ final readonly class ImportTelegramPhotoAction
         $intake = $this->intakes->find($intakeId);
         if ($intake !== null) {
             $this->finish($intake, $intake->workspace->status === 'active'
-                ? ($intake->kind === TelegramMediaIntake::KIND_TABLE ? 'دریافت فایل از تلگرام ناموفق بود؛ دوباره بفرست.' : 'دریافت عکس از تلگرام ناموفق بود؛ دوباره بفرست.')
+                ? match ($intake->kind) {
+                    TelegramMediaIntake::KIND_TABLE => 'دریافت فایل از تلگرام ناموفق بود؛ دوباره بفرست.',
+                    TelegramMediaIntake::KIND_VOICE => 'دریافت ویس از تلگرام ناموفق بود؛ دوباره بفرست.',
+                    default => 'دریافت عکس از تلگرام ناموفق بود؛ دوباره بفرست.',
+                }
                 : null);
         }
     }

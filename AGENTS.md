@@ -27,12 +27,14 @@ output, and failure, timeout or cancel release the hold,
 and a simple seller CSV intake mapped once and imported as cited drafts,
 and bot batches that stay open for input until approval, with approved
 batches corrected and reopened from a reply to a product card,
+and a disabled-by-default, tenant-scoped encrypted Ogg/Opus voice intake in
+Laravel (no transcription, provider call or credit charge yet),
 and per-charge usage in the wallet API and /balance with a daily
 read-only ledger reconciliation, and one open-for-input rule shared by
 the bot and the API with /projects showing files and credit used
 (ADR-016 to ADR-045) with code and tests. These
 are partial foundations, not a completed MVP. A working OpenAI workflow and
-real API test, an approved policy naming OpenAI, voice and XLSX intake,
+real API test, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,
 the `text` and `file_output` charge classes and reconciling reported usage
 against the provider's bill are still missing. Read

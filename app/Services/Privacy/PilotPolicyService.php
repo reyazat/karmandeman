@@ -38,7 +38,14 @@ final class PilotPolicyService
             if (array_key_exists('ai_processing', $manifest)) {
                 $signed['ai_processing'] = $manifest['ai_processing'];
             }
+            if (array_key_exists('voice_intake', $manifest)) {
+                $signed['voice_intake'] = $manifest['voice_intake'];
+            }
             $digest = hash('sha256', json_encode($signed, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $voiceIntake = $manifest['voice_intake'] ?? null;
+            if ($voiceIntake !== null && $voiceIntake !== ['enabled' => true]) {
+                $blockers[] = 'VOICE_INTAKE_INVALID';
+            }
             $providers = $manifest['ai_processing']['providers'] ?? [];
             if (! is_array($providers) || ! array_is_list($providers)
                 || array_filter($providers, fn (mixed $provider): bool => ! is_string($provider) || preg_match('/^[a-z0-9-]{1,32}$/D', $provider) !== 1) !== []) {
@@ -99,7 +106,7 @@ final class PilotPolicyService
                 $blockers[] = 'RETENTION_SCHEDULE_EMPTY';
             }
 
-            return new PilotPolicy($version, $digest, $terms, $privacy, implode("\n\n", $rows), $blockers, $providers);
+            return new PilotPolicy($version, $digest, $terms, $privacy, implode("\n\n", $rows), $blockers, $providers, $voiceIntake === ['enabled' => true]);
         } catch (Throwable) {
             return new PilotPolicy('unavailable', '', '', '', '', ['POLICY_BUNDLE_INVALID']);
         }

@@ -409,7 +409,7 @@ class ProductTableTest extends TestCase
 
         // A document that is not a CSV is refused at once.
         $this->botMessage(['document' => ['file_id' => 'doc-3', 'file_name' => 'products.xlsx', 'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']], 6009);
-        $this->sent('یا فایل CSV محصولات پذیرفته می‌شود');
+        $this->sent('CSV محصولات یا ویس Ogg/Opus');
         $this->assertSame($user->id, $table->created_by);
     }
 

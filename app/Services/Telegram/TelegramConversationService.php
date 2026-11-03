@@ -113,8 +113,8 @@ final readonly class TelegramConversationService
             return;
         }
 
-        // A caption is ignored: the photo or CSV is batch input, not a command (ADR-024, ADR-040).
-        if (isset($message['photo']) || isset($message['document'])) {
+        // A caption is ignored: media is batch input, not a command (ADR-024, ADR-040, ADR-045).
+        if (isset($message['photo']) || isset($message['document']) || isset($message['voice'])) {
             $this->handlePhoto($message, $chatId);
 
             return;
