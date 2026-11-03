@@ -12,6 +12,7 @@ use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\AiWorkflowRun;
 use App\Models\CreditLedgerEntry;
 use App\Models\CreditQuote;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Repositories\Contracts\AccountErasureRepositoryInterface;
@@ -546,6 +547,32 @@ class ExtractionCreditTest extends TestCase
 
         $this->botText('/balance', 5008);
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار، که 5 اعتبار آن'));
+    }
+
+    public function test_stored_voices_are_never_priced_or_sent_and_the_bot_says_so(): void
+    {
+        $user = $this->seller(5009);
+        $this->completeOnboarding($user);
+        $project = $this->batch(1, 1);
+        // A voice stored while intake was on (ADR-045); no run reads voices yet (ADR-047).
+        $row = Project::query()->where('public_id', $project)->sole();
+        DB::table('voice_assets')->insert([
+            'public_id' => (string) Str::uuid7(), 'workspace_id' => $row->workspace_id, 'project_id' => $row->id,
+            'storage_key' => 'voice.bin', 'content_mac' => str_repeat('a', 64), 'mime' => 'audio/ogg',
+            'size_bytes' => 10, 'duration_ms' => 1000, 'source' => 'api_upload', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->botText('/done', 5009);
+        $offer = Queue::pushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => $job->buttons !== [] && str_starts_with($job->buttons[0][0]['callback_data'], 'quote:accept:'))->sole();
+        $this->assertStringContainsString('استخراج محصولات از 1 عکس تازه', $offer->text);
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '1 ویس این پروژه ذخیره است')
+            && str_contains($job->text, 'در پیش‌فاکتور و استخراج نیست'));
+        $quote = CreditQuote::query()->sole();
+        $this->assertSame(['product_extraction_photo'], array_column($quote->lines, 'type'));
+        $this->assertCount(1, $quote->input_asset_ids);
+
+        $this->botPress($offer->buttons[0][0]['callback_data'], 5009, 'cb-voice');
+        $this->assertNull(AiWorkflowRun::query()->sole()->input_voice_ids);
     }
 
     public function test_the_ledger_and_balance_tie_each_charge_to_its_run_project_and_output(): void

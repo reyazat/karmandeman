@@ -45,8 +45,9 @@ final readonly class ExtractionInputSelector
     public function photos(Workspace $workspace, Project $project): array
     {
         $used = [...$this->runs->extractedAssetIds($project), ...$this->products->citedImageIds($workspace, $project)];
+        // The scan grows with what is filtered out, or a batch with many used photos would hide its new ones.
         $photos = array_values(array_filter(
-            $this->assets->unclaimedInProject($project, self::PHOTO_SCAN_LIMIT),
+            $this->assets->unclaimedInProject($project, self::PHOTO_SCAN_LIMIT + count($used)),
             fn (Asset $asset): bool => ! in_array($asset->public_id, $used, true),
         ));
 
@@ -63,7 +64,8 @@ final readonly class ExtractionInputSelector
     /**
      * Stored voices not yet consumed by a succeeded run, in intake order.
      * This is preparation for ADR-047; no quote, run or model uses this list
-     * until the voice tariff and v2 input/output contracts are approved.
+     * until the voice tariff and v2 input/output contracts are approved. The
+     * bot only counts it to tell the seller the voices are not processed.
      *
      * @return list<VoiceAsset>
      *
@@ -74,13 +76,16 @@ final readonly class ExtractionInputSelector
         if ($project->workspace_id !== $workspace->id) {
             throw new DomainException('PROJECT_NOT_FOUND');
         }
-        $voices = $this->voices->forProject($workspace, $project, self::VOICE_SCAN_LIMIT + 1);
+        // Only new voices count toward the limit; voices a run already read never block the batch.
+        $used = $this->runs->extractedVoiceIds($project);
+        $voices = array_values(array_filter(
+            $this->voices->forProject($workspace, $project, self::VOICE_SCAN_LIMIT + 1 + count($used)),
+            fn (VoiceAsset $voice): bool => ! in_array($voice->public_id, $used, true),
+        ));
         if (count($voices) > self::VOICE_SCAN_LIMIT) {
             throw new DomainException('EXTRACTION_TOO_MANY_VOICES');
         }
 
-        $used = $this->runs->extractedVoiceIds($project);
-
-        return array_values(array_filter($voices, fn (VoiceAsset $voice): bool => ! in_array($voice->public_id, $used, true)));
+        return $voices;
     }
 }

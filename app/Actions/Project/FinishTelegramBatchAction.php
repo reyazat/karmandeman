@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
+use App\Services\ProductIntake\ExtractionInputSelector;
 use App\Services\Telegram\TelegramBatchReview;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -20,7 +21,8 @@ use Illuminate\Auth\Access\AuthorizationException;
  * (ADR-039), or shows it again once in review (TelegramBatchReview): a
  * grouped price question, one card per product still waiting for Gate A or,
  * when none is, the batch approval button for the version shown. Refusals are
- * answered.
+ * answered. Stored voices are not read by any run yet: each outcome says so
+ * (ADR-047 owner decision 2).
  */
 final readonly class FinishTelegramBatchAction
 {
@@ -29,6 +31,7 @@ final readonly class FinishTelegramBatchAction
         private FinishProjectInputAction $finish,
         private CreateExtractionQuoteAction $quote,
         private TelegramBatchReview $review,
+        private ExtractionInputSelector $inputs,
     ) {}
 
     /**
@@ -65,15 +68,17 @@ final readonly class FinishTelegramBatchAction
                     // In review the seller also gets the cards of the products already there (ADR-041).
                     $quote = $this->quoteReply($workspace, $user, $messageKey, $project);
 
-                    return $inReview ? [$quote, ...$this->review->replies($workspace, $project)] : [$quote];
+                    return $this->withVoiceNotice($workspace, $project, $inReview ? [$quote, ...$this->review->replies($workspace, $project)] : [$quote]);
                 }
                 // In review with nothing new: show the review again.
                 if ($inReview && $e->getMessage() === 'PROJECT_STATE_CONFLICT') {
-                    return $this->review->replies($workspace, $project);
+                    return $this->withVoiceNotice($workspace, $project, $this->review->replies($workspace, $project));
+                }
+                if ($e->getMessage() === 'PROJECT_HAS_NO_PRODUCTS') {
+                    return $this->withVoiceNotice($workspace, $project, [new BotReply("پروژه «{$project->name}» هنوز محصولی ندارد؛ اول با /product محصول ثبت کن.")]);
                 }
 
                 return [new BotReply(match ($e->getMessage()) {
-                    'PROJECT_HAS_NO_PRODUCTS' => "پروژه «{$project->name}» هنوز محصولی ندارد؛ اول با /product محصول ثبت کن.",
                     'EXTRACTION_PHOTOS_TOO_LARGE' => 'حجم عکس‌های این پروژه برای یک استخراج بیش از حد است؛ عکس‌های کم‌حجم‌تر را در پروژه تازه‌ای با /new بفرست یا محصول را با /product ثبت کن.',
                     'EXTRACTION_TOO_MANY_PHOTOS' => 'عکس‌های این پروژه برای یک استخراج بیش از '.config('karmandeman.ai.max_assets_per_run').' تاست؛ پروژه تازه‌ای با /new بساز.',
                     'POLICY_CONSENT_REQUIRED' => 'پیش از ادامه، شرایط و سیاست داده را با /start بپذیر.',
@@ -86,10 +91,33 @@ final readonly class FinishTelegramBatchAction
 
         // The photos went to an n8n run (ADR-032); its callback sends the next message.
         if ($project->state === ProjectState::Extracting) {
-            return [new BotReply("محصولات پروژه «{$project->name}» از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. عکسی که در این مدت بفرستی برای /done بعدی می‌ماند.")];
+            return $this->withVoiceNotice($workspace, $project, [new BotReply("محصولات پروژه «{$project->name}» از عکس‌ها استخراج می‌شوند. پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. عکسی که در این مدت بفرستی برای /done بعدی می‌ماند.")]);
         }
 
-        return $this->review->replies($workspace, $project);
+        return $this->withVoiceNotice($workspace, $project, $this->review->replies($workspace, $project));
+    }
+
+    /**
+     * Voices are stored but no quote or run reads them until the owner sets
+     * the voice rate and the v2 contracts exist (ADR-047): the seller is told
+     * after the summary, so a spoken price is not assumed to be in the batch.
+     *
+     * @param  list<BotReply>  $replies
+     * @return list<BotReply>
+     */
+    private function withVoiceNotice(Workspace $workspace, Project $project, array $replies): array
+    {
+        try {
+            $count = (string) count($this->inputs->voices($workspace, $project));
+        } catch (DomainException) {
+            $count = 'بیش از 1000';
+        }
+        if ($count === '0') {
+            return $replies;
+        }
+        $notice = new BotReply("{$count} ویس این پروژه ذخیره است ولی هنوز به متن یا محصول تبدیل نمی‌شود و در پیش‌فاکتور و استخراج نیست. مشخصاتی را که در ویس گفتی با /product یا پاسخ به کارت محصول بنویس.");
+
+        return [...array_slice($replies, 0, 1), $notice, ...array_slice($replies, 1)];
     }
 
     /**

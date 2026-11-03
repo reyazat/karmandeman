@@ -107,6 +107,31 @@ final class TelegramVoiceIntakeTest extends TestCase
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '0 فایل CSV، 1 ویس، 0 محصول'));
     }
 
+    public function test_done_tells_the_seller_stored_voices_are_not_processed(): void
+    {
+        $this->seller(6213);
+        $this->message(6213, ['text' => '/done'])->assertOk();
+        Queue::assertNotPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'ویس این پروژه'));
+
+        $this->file = OggFixture::make();
+        $this->message(6213, $this->voice())->assertOk();
+        $this->message(6213, ['text' => '/done'])->assertOk();
+        $notice = fn (SendTelegramMessage $job): bool => str_contains($job->text, '1 ویس این پروژه ذخیره است ولی هنوز به متن یا محصول تبدیل نمی‌شود');
+        $this->assertCount(1, Queue::pushed(SendTelegramMessage::class, $notice));
+        Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'هنوز محصولی ندارد'));
+
+        // The manual path still reaches review; the notice follows the summary, before the cards.
+        $this->message(6213, ['text' => '/product کیف چرم'])->assertOk();
+        $before = count(Queue::pushed(SendTelegramMessage::class));
+        $this->message(6213, ['text' => '/done'])->assertOk();
+        $sent = array_slice(array_values(Queue::pushed(SendTelegramMessage::class)->all()), $before);
+        $this->assertGreaterThanOrEqual(2, count($sent));
+        $this->assertTrue($notice($sent[1]));
+        $this->assertCount(2, Queue::pushed(SendTelegramMessage::class, $notice));
+        $this->assertDatabaseCount('ai_workflow_runs', 0);
+        $this->assertDatabaseCount('credit_quotes', 0);
+    }
+
     public function test_a_voice_queued_before_intake_was_switched_off_is_never_downloaded(): void
     {
         $this->seller(6212);

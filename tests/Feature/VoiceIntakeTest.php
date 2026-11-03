@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\ApiIdempotencyRecord;
+use App\Models\Asset;
 use App\Models\Project;
 use App\Models\User;
 use App\Models\VoiceAsset;
@@ -22,6 +23,7 @@ use DomainException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use RuntimeException;
@@ -139,6 +141,42 @@ final class VoiceIntakeTest extends TestCase
             $this->assertSame('PROJECT_NOT_FOUND', $e->getMessage());
         }
         $this->assertSame([], $selector->voices($foreignWorkspace, Project::query()->where('public_id', $this->project())->firstOrFail()));
+    }
+
+    public function test_inputs_a_succeeded_run_read_never_hide_or_block_new_ones(): void
+    {
+        $seller = $this->seller(6119);
+        $project = Project::query()->where('public_id', $this->project())->firstOrFail();
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($seller);
+        $rows = function (string $table, int $count, array $extra) use ($project): array {
+            $ids = [];
+            foreach (array_chunk(range(1, $count), 250) as $chunk) {
+                DB::table($table)->insert(array_map(function () use ($project, $extra, &$ids): array {
+                    $ids[] = $id = (string) Str::uuid7();
+
+                    return ['public_id' => $id, 'workspace_id' => $project->workspace_id, 'project_id' => $project->id,
+                        'storage_key' => "{$id}.bin", 'content_mac' => hash('sha256', $id), 'size_bytes' => 10,
+                        'source' => 'api_upload', 'created_at' => now(), 'updated_at' => now()] + $extra;
+                }, $chunk));
+            }
+
+            return $ids;
+        };
+        $read = $rows('voice_assets', 1000, ['mime' => 'audio/ogg', 'duration_ms' => 1000]);
+        $readPhotos = $rows('assets', 1000, ['mime' => 'image/jpeg', 'width' => 1, 'height' => 1]);
+        $run = app(AiWorkflowRunRepositoryInterface::class)->create($project, $seller, 'product_extraction', 'product-extraction.v1', $readPhotos, CarbonImmutable::now()->addMinutes(15));
+        $run->forceFill(['input_voice_ids' => $read, 'status' => 'succeeded'])->save();
+        $newVoice = $rows('voice_assets', 1, ['mime' => 'audio/ogg', 'duration_ms' => 1000]);
+        $newPhoto = $rows('assets', 1, ['mime' => 'image/jpeg', 'width' => 1, 'height' => 1]);
+
+        $selector = app(ExtractionInputSelector::class);
+        $this->assertSame($newVoice, array_map(fn (VoiceAsset $voice): string => $voice->public_id, $selector->voices($workspace, $project)));
+        $this->assertSame($newPhoto, array_map(fn (Asset $asset): string => $asset->public_id, $selector->photos($workspace, $project)));
+
+        // The memory bound still refuses a batch whose new voices alone pass it.
+        $rows('voice_assets', 1000, ['mime' => 'audio/ogg', 'duration_ms' => 1000]);
+        $this->expectExceptionObject(new DomainException('EXTRACTION_TOO_MANY_VOICES'));
+        $selector->voices($workspace, $project);
     }
 
     public function test_invalid_replayed_or_unconsented_audio_has_no_partial_object(): void
