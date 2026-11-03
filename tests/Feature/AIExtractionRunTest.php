@@ -614,6 +614,30 @@ class AIExtractionRunTest extends TestCase
         $this->assertSame(0, Product::query()->count());
     }
 
+    public function test_a_late_refused_answer_keeps_its_usage_and_another_provider_does_not(): void
+    {
+        [$project, $photos, $run] = $this->extracting(916);
+        $this->postJson("/api/v1/projects/{$project}/cancel", ['version' => $this->version($project)], ['Idempotency-Key' => 'cancel-late'])
+            ->assertOk();
+
+        // Another provider's usage is not this run's bill, even on a well-formed body.
+        $foreign = ['model_requests' => 1, 'input_tokens' => 50, 'output_tokens' => 5, 'provider' => 'gemini', 'model' => 'fixture-1'];
+        $this->sendCallback($this->runResult($run, [$this->candidate('کیف', [$photos[0]])], ['usage' => $foreign]))
+            ->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        $this->sendCallback($this->runResult($run, [$this->candidate('کیف', [$photos[0]])], ['usage' => $foreign, 'candidates' => 'x']))
+            ->assertStatus(422);
+        $this->assertNull($run->fresh()->usage);
+
+        // A refused answer to a cancelled run was still paid for: its usage is kept, once.
+        $this->sendCallback($this->runResult($run, [$this->candidate('کیف', ['00000000-0000-4000-8000-000000000000'])]))
+            ->assertStatus(422)->assertJsonPath('error.code', 'WORKFLOW_OUTPUT_INVALID');
+        $this->assertSame(['cancelled', 'PROJECT_CANCELLED', 1200], [$run->fresh()->status->value, $run->fresh()->error_code, $run->fresh()->usage['input_tokens']]);
+        $this->sendCallback($this->runResult($run, [], ['usage' => ['model_requests' => 9, 'input_tokens' => 9, 'output_tokens' => 9, 'provider' => 'openai', 'model' => 'fixture-1']]))
+            ->assertOk()->assertJsonPath('data.outcome', 'discarded');
+        $this->assertSame(1200, $run->fresh()->usage['input_tokens']);
+        $this->assertSame(0, Product::query()->count());
+    }
+
     public function test_a_suggested_sku_never_takes_one_already_held(): void
     {
         $this->seller(915);

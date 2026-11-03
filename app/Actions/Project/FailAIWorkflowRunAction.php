@@ -56,8 +56,26 @@ final readonly class FailAIWorkflowRunAction
             $run = $this->runs->lock($run);
             if ($run->status->isOpen()) {
                 $this->closeLocked($run, $errorCode, $usage);
+            } else {
+                $this->keepLateUsage($run, $usage);
             }
         });
+    }
+
+    /**
+     * A run closed before its answer (timeout, cancel) still paid the provider:
+     * the first usage reported for it is kept for reconciliation (ADR-043) and
+     * nothing is charged. Only the run's own provider counts, so a callback
+     * naming another one cannot stand in for the bill. The caller holds the
+     * workspace and run locks.
+     *
+     * @param  array<string, int|string>|null  $usage
+     */
+    public function keepLateUsage(AiWorkflowRun $run, ?array $usage): void
+    {
+        if ($usage !== null && $usage['provider'] === 'openai' && $run->status !== AiRunStatus::Succeeded && $run->usage === null) {
+            $this->runs->recordLateUsage($run, $usage);
+        }
     }
 
     /**
