@@ -7,13 +7,18 @@ namespace Tests\Feature;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\ApiIdempotencyRecord;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\VoiceAsset;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AccountErasureRepositoryInterface;
+use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\ApiIdempotencyRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
+use App\Services\ProductIntake\ExtractionInputSelector;
 use App\Services\Storage\PrivateAssetStore;
+use Carbon\CarbonImmutable;
+use DomainException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -99,6 +104,41 @@ final class VoiceIntakeTest extends TestCase
         $this->upload($project, OggFixture::withPageEndingNoPacket())
             ->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_NOT_ACCEPTING_INPUT');
         $this->assertDatabaseCount('voice_assets', 1);
+    }
+
+    public function test_voice_selection_is_tenant_scoped_and_excludes_only_successfully_processed_voices(): void
+    {
+        $seller = $this->seller(6117);
+        $projectId = $this->project();
+        $first = $this->upload($projectId, OggFixture::make())->assertCreated()->json('data.id');
+        $second = $this->upload($projectId, OggFixture::withLongTags())->assertCreated()->json('data.id');
+        $otherProjectId = $this->project();
+        $this->upload($otherProjectId, OggFixture::withPageEndingNoPacket())->assertCreated();
+        $workspace = app(WorkspaceRepositoryInterface::class)->currentFor($seller);
+        $project = Project::query()->where('public_id', $projectId)->firstOrFail();
+        $selector = app(ExtractionInputSelector::class);
+        $ids = fn (): array => array_map(fn (VoiceAsset $voice): string => $voice->public_id, $selector->voices($workspace, $project));
+        $this->assertSame([$first, $second], $ids());
+        $this->assertDatabaseCount('ai_workflow_runs', 0);
+
+        // A failed run may be retried; only an accepted result consumes its inputs.
+        $runs = app(AiWorkflowRunRepositoryInterface::class);
+        $failed = $runs->create($project, $seller, 'product_extraction', 'product-extraction.openai.v2', [], CarbonImmutable::now()->addMinutes(15));
+        $failed->forceFill(['input_voice_ids' => [$first], 'status' => 'failed'])->save();
+        $this->assertSame([$first, $second], $ids());
+        $succeeded = $runs->create($project, $seller, 'product_extraction', 'product-extraction.openai.v2', [], CarbonImmutable::now()->addMinutes(15));
+        $succeeded->forceFill(['input_voice_ids' => [$first], 'status' => 'succeeded'])->save();
+        $this->assertSame([$second], $ids());
+
+        $foreignUser = $this->seller(6118);
+        $foreignWorkspace = app(WorkspaceRepositoryInterface::class)->currentFor($foreignUser);
+        try {
+            $selector->voices($foreignWorkspace, $project);
+            $this->fail('A foreign workspace selected the seller voice.');
+        } catch (DomainException $e) {
+            $this->assertSame('PROJECT_NOT_FOUND', $e->getMessage());
+        }
+        $this->assertSame([], $selector->voices($foreignWorkspace, Project::query()->where('public_id', $this->project())->firstOrFail()));
     }
 
     public function test_invalid_replayed_or_unconsented_audio_has_no_partial_object(): void

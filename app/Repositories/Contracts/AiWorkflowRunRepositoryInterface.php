@@ -49,6 +49,9 @@ interface AiWorkflowRunRepositoryInterface
      */
     public function extractedAssetIds(Project $project): array;
 
+    /** @return list<string> Public voice ids from succeeded runs of this batch. */
+    public function extractedVoiceIds(Project $project): array;
+
     /** Record a dispatch attempt; the first successful one marks the run dispatched. */
     public function markDispatched(AiWorkflowRun $run, CarbonImmutable $at): void;
 

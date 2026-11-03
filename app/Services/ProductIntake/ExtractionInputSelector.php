@@ -6,10 +6,12 @@ namespace App\Services\ProductIntake;
 
 use App\Models\Asset;
 use App\Models\Project;
+use App\Models\VoiceAsset;
 use App\Models\Workspace;
 use App\Repositories\Contracts\AiWorkflowRunRepositoryInterface;
 use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProductRepositoryInterface;
+use App\Repositories\Contracts\VoiceAssetRepositoryInterface;
 use DomainException;
 
 /**
@@ -21,10 +23,13 @@ final readonly class ExtractionInputSelector
     /** Far above any batch the upload throttle allows; the run cap is checked after filtering. */
     private const PHOTO_SCAN_LIMIT = 1000;
 
+    private const VOICE_SCAN_LIMIT = 1000;
+
     public function __construct(
         private AiWorkflowRunRepositoryInterface $runs,
         private ProductRepositoryInterface $products,
         private AssetRepositoryInterface $assets,
+        private VoiceAssetRepositoryInterface $voices,
     ) {}
 
     /**
@@ -53,5 +58,29 @@ final readonly class ExtractionInputSelector
         }
 
         return $photos;
+    }
+
+    /**
+     * Stored voices not yet consumed by a succeeded run, in intake order.
+     * This is preparation for ADR-047; no quote, run or model uses this list
+     * until the voice tariff and v2 input/output contracts are approved.
+     *
+     * @return list<VoiceAsset>
+     *
+     * @throws DomainException EXTRACTION_TOO_MANY_VOICES
+     */
+    public function voices(Workspace $workspace, Project $project): array
+    {
+        if ($project->workspace_id !== $workspace->id) {
+            throw new DomainException('PROJECT_NOT_FOUND');
+        }
+        $voices = $this->voices->forProject($workspace, $project, self::VOICE_SCAN_LIMIT + 1);
+        if (count($voices) > self::VOICE_SCAN_LIMIT) {
+            throw new DomainException('EXTRACTION_TOO_MANY_VOICES');
+        }
+
+        $used = $this->runs->extractedVoiceIds($project);
+
+        return array_values(array_filter($voices, fn (VoiceAsset $voice): bool => ! in_array($voice->public_id, $used, true)));
     }
 }

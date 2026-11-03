@@ -90,6 +90,17 @@ final class EloquentAiWorkflowRunRepository implements AiWorkflowRunRepositoryIn
             ->unique()->values()->all();
     }
 
+    public function extractedVoiceIds(Project $project): array
+    {
+        return AiWorkflowRun::query()
+            ->where('workspace_id', $project->workspace_id)
+            ->where('project_id', $project->id)
+            ->where('status', AiRunStatus::Succeeded->value)
+            ->get(['input_voice_ids'])
+            ->flatMap(fn (AiWorkflowRun $run): array => $run->input_voice_ids ?? [])
+            ->unique()->values()->all();
+    }
+
     public function markDispatched(AiWorkflowRun $run, CarbonImmutable $at): void
     {
         AiWorkflowRun::query()->whereKey($run->id)->where('status', AiRunStatus::Queued->value)

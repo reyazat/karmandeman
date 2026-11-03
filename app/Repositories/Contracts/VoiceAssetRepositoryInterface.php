@@ -21,6 +21,9 @@ interface VoiceAssetRepositoryInterface
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?VoiceAsset;
 
+    /** @return list<VoiceAsset> oldest first, bounded so a large batch cannot exhaust the worker */
+    public function forProject(Workspace $workspace, Project $project, int $limit): array;
+
     /** @return LengthAwarePaginator<int, VoiceAsset> */
     public function paginateForProject(Workspace $workspace, Project $project, int $perPage = 20): LengthAwarePaginator;
 }

@@ -38,6 +38,12 @@ final class EloquentVoiceAssetRepository implements VoiceAssetRepositoryInterfac
         return VoiceAsset::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->first();
     }
 
+    public function forProject(Workspace $workspace, Project $project, int $limit): array
+    {
+        return VoiceAsset::query()->where('workspace_id', $workspace->id)->where('project_id', $project->id)
+            ->orderBy('id')->limit($limit)->get()->all();
+    }
+
     public function paginateForProject(Workspace $workspace, Project $project, int $perPage = 20): LengthAwarePaginator
     {
         return VoiceAsset::query()->where('workspace_id', $workspace->id)->where('project_id', $project->id)
