@@ -75,14 +75,29 @@ class CreditTariffTest extends TestCase
     public function test_an_empty_environment_value_keeps_the_default_instead_of_zero(): void
     {
         $keys = ['KM_CREDIT_QUOTE_CAP_PERCENT' => '', 'KM_CREDITS_PER_MILLION_INPUT_TOKENS' => '', 'KM_CREDITS_PER_MILLION_OUTPUT_TOKENS' => '0', 'KM_CREDITS_PER_MODEL_REQUEST' => '7'];
+        // env() reads $_SERVER and $_ENV before getenv(), and Dotenv fills them
+        // from .env (CI copies .env.example), so set and restore all three.
+        $saved = [];
         foreach ($keys as $key => $value) {
+            $saved[$key] = [getenv($key), $_ENV[$key] ?? null, $_SERVER[$key] ?? null];
             putenv("{$key}={$value}");
+            $_ENV[$key] = $_SERVER[$key] = $value;
         }
         try {
             $credits = (require base_path('config/karmandeman.php'))['credits'];
         } finally {
-            foreach (array_keys($keys) as $key) {
-                putenv($key);
+            foreach ($saved as $key => [$process, $env, $server]) {
+                putenv($process === false ? $key : "{$key}={$process}");
+                if ($env === null) {
+                    unset($_ENV[$key]);
+                } else {
+                    $_ENV[$key] = $env;
+                }
+                if ($server === null) {
+                    unset($_SERVER[$key]);
+                } else {
+                    $_SERVER[$key] = $server;
+                }
             }
         }
 
