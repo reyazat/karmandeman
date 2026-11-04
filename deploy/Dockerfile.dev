@@ -2,9 +2,12 @@
 # Local PHP lacks pgsql; the prod image runs php-fpm with --no-dev.
 # NOT for production. Build via compose.dev.yaml service `workspace`.
 FROM php:8.4-cli-alpine
-RUN apk add --no-cache icu-libs libpq libzip \
+# gd matches the app image: the catalogue PDF re-encodes photos as JPEG (ADR-052).
+RUN apk add --no-cache icu-libs libpq libzip freetype libjpeg-turbo libpng libwebp \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev postgresql-dev libzip-dev oniguruma-dev \
-    && docker-php-ext-install -j$(nproc) bcmath intl mbstring opcache pcntl pdo_pgsql zip \
+       freetype-dev libjpeg-turbo-dev libpng-dev libwebp-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j$(nproc) bcmath gd intl mbstring opcache pcntl pdo_pgsql zip \
     && pecl install redis \
     && docker-php-ext-enable redis \
     && apk del .build-deps \

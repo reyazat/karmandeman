@@ -51,6 +51,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Catalogue files (ADR-052): generated from a snapshot after the hold
+        // commits, on their own worker so a slow render never delays the bot.
+        'export' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'jobs',
+            'queue' => 'export',
+            'retry_after' => 180,
+            'after_commit' => false,
+        ],
+
         'sync' => [
             'driver' => 'sync',
         ],

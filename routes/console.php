@@ -20,6 +20,9 @@ Schedule::command('sanctum:prune-expired', ['--hours' => 1])->hourly()->onOneSer
 // Step 4 run deadlines (ADR-032): a run n8n never answers reopens its batch.
 Schedule::command('ai:expire-runs')->everyMinute()->withoutOverlapping(5)->onOneServer();
 
+// A catalogue file whose job was lost fails without charge (ADR-052).
+Schedule::command('catalogue:expire')->everyFiveMinutes()->withoutOverlapping(10)->onOneServer();
+
 // Ledger invariants of ADR-039/042 (FR-073, ADR-043): a failed run means a
 // mismatch was logged as credit.reconcile_mismatch for an operator.
 Schedule::command('credits:reconcile')->dailyAt('03:40')->withoutOverlapping(60)->onOneServer();

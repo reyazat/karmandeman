@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
- * Private object storage for batch input files (PRD FR-025, ADR-022). Every
+ * Private object storage for batch input and output files (PRD FR-025, ADR-022, ADR-052). Every
  * object is AES-256-GCM ciphertext under the workspace data key, bound to the
  * asset's public id, under a per-workspace prefix that erasure deletes whole.
  * Keys are random: no file name, user or content is visible in the store.
@@ -26,6 +26,9 @@ final readonly class PrivateAssetStore
     public const KIND_TABLE = 'table';
 
     public const KIND_VOICE = 'voice';
+
+    /** A generated output file, such as the catalogue PDF (ADR-052). */
+    public const KIND_ARTIFACT = 'artifact';
 
     public function __construct(private WorkspaceFieldCipher $cipher) {}
 
@@ -86,6 +89,7 @@ final readonly class PrivateAssetStore
             self::KIND_PHOTO => 'assets.content',
             self::KIND_TABLE => 'product_tables.content',
             self::KIND_VOICE => 'voice_assets.content',
+            self::KIND_ARTIFACT => 'artifacts.content',
             default => throw new \InvalidArgumentException('Unknown private asset kind.'),
         }, hash('sha256', $bytes, true));
     }
@@ -101,6 +105,7 @@ final readonly class PrivateAssetStore
             self::KIND_PHOTO => "assets.original:{$publicId}",
             self::KIND_TABLE => "product_tables.original:{$publicId}",
             self::KIND_VOICE => "voice_assets.original:{$publicId}",
+            self::KIND_ARTIFACT => "artifacts.file:{$publicId}",
             default => throw new \InvalidArgumentException('Unknown private asset kind.'),
         };
     }

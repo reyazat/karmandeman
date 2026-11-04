@@ -132,6 +132,21 @@ final class EloquentProjectRepository implements ProjectRepositoryInterface
             ->groupBy('ai_workflow_runs.project_id')
             ->selectRaw('ai_workflow_runs.project_id, -sum(credit_ledger.amount) AS n')
             ->pluck('n', 'project_id')->all();
+        // Catalogue files of the project (ADR-052), on the same terms.
+        $files = DB::table('credit_ledger')
+            ->join('wallets', 'wallets.id', '=', 'credit_ledger.wallet_id')
+            ->join('artifacts', 'artifacts.id', '=', 'credit_ledger.related_id')
+            ->where('wallets.workspace_id', $workspace->id)
+            ->where('artifacts.workspace_id', $workspace->id)
+            ->where('credit_ledger.related_type', CreditLedgerEntry::RELATED_ARTIFACT)
+            ->where('credit_ledger.type', CreditLedgerType::Capture->value)
+            ->whereIn('artifacts.project_id', $ids)
+            ->groupBy('artifacts.project_id')
+            ->selectRaw('artifacts.project_id, -sum(credit_ledger.amount) AS n')
+            ->pluck('n', 'project_id')->all();
+        foreach ($files as $id => $credits) {
+            $used[$id] = (int) ($used[$id] ?? 0) + (int) $credits;
+        }
 
         $activity = [];
         foreach ($ids as $id) {

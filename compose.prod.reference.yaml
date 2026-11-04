@@ -36,6 +36,8 @@ x-app-common: &app-common
     KM_CREDIT_TARIFF_VERSION: ${KM_CREDIT_TARIFF_VERSION:-usage-v2}
     KM_CREDIT_QUOTE_CAP_PERCENT: ${KM_CREDIT_QUOTE_CAP_PERCENT:-50}
     KM_CREDIT_MARKUP_PERCENT: ${KM_CREDIT_MARKUP_PERCENT:-10}
+    # Provisional fixed price of one catalogue file (ADR-052).
+    KM_CREDITS_CATALOGUE_PACK: ${KM_CREDITS_CATALOGUE_PACK:-2}
     KM_CREDITS_MIN_TEXT: ${KM_CREDITS_MIN_TEXT:-1}
     KM_CREDITS_MIN_FILE_TO_TEXT: ${KM_CREDITS_MIN_FILE_TO_TEXT:-1}
     KM_CREDITS_MIN_FILE_OUTPUT: ${KM_CREDITS_MIN_FILE_OUTPUT:-1}
@@ -114,6 +116,13 @@ services:
     networks:
       - app_db
       - workflow
+  # Renders catalogue files from approved snapshots (ADR-052).
+  export_worker:
+    <<: *app-common
+    # A 40-megapixel photo decodes to about 200 MB before it is scaled down.
+    command: ["php", "-d", "memory_limit=512M", "artisan", "queue:work", "export", "--queue=export", "--sleep=3", "--timeout=120", "--tries=3"]
+    networks:
+      - app_db
   scheduler:
     <<: *app-common
     command: ["php", "artisan", "schedule:work"]

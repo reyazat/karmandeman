@@ -168,9 +168,13 @@ final class EloquentWalletRepository implements WalletRepositoryInterface
             ->leftJoin('ai_workflow_runs AS run', function ($join): void {
                 $join->on('run.id', '=', 'hold.related_id')->where('hold.related_type', '=', CreditLedgerEntry::RELATED_RUN);
             })
+            ->leftJoin('artifacts AS artifact', function ($join): void {
+                $join->on('artifact.id', '=', 'hold.related_id')->where('hold.related_type', '=', CreditLedgerEntry::RELATED_ARTIFACT);
+            })
             ->where('hold.type', CreditLedgerType::Reserve->value)
             ->select([
-                'hold.public_id AS hold_id', 'hold.wallet_id', 'hold.held_amount AS held', 'hold.related_type', 'hold.related_id',
+                'hold.id AS hold_row', 'artifact.status AS artifact_status', 'artifact.workspace_id AS artifact_workspace_id',
+                'artifact.hold_entry_id AS artifact_hold', 'artifact.generated_at AS artifact_generated_at', 'hold.public_id AS hold_id', 'hold.wallet_id', 'hold.held_amount AS held', 'hold.related_type', 'hold.related_id',
                 'settled.type AS settlement', 'settled.amount AS settled_amount', 'settled.held_amount AS settled_held',
                 'settled.related_type AS settled_related_type', 'settled.related_id AS settled_related_id',
                 'run.status AS run_status', 'run.workspace_id AS run_workspace_id', 'wallets.workspace_id AS wallet_workspace_id',
@@ -193,6 +197,12 @@ final class EloquentWalletRepository implements WalletRepositoryInterface
                 'run_workspace_id' => $nullable($row->run_workspace_id),
                 'wallet_workspace_id' => (int) $row->wallet_workspace_id,
                 'related_run' => $row->related_type === CreditLedgerEntry::RELATED_RUN,
+                'related_artifact' => $row->related_type === CreditLedgerEntry::RELATED_ARTIFACT,
+                'artifact_status' => $row->artifact_status === null ? null : (string) $row->artifact_status,
+                'artifact_workspace_id' => $nullable($row->artifact_workspace_id),
+                // A file asked for again after a failure has a newer hold; this one must be released.
+                'artifact_current_hold' => $nullable($row->artifact_hold) === (int) $row->hold_row,
+                'artifact_paid' => $row->artifact_generated_at !== null,
             ];
         }
     }

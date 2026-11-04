@@ -42,11 +42,14 @@ and for the test phase (ADR-048) voice kept off, new input refused without
 spendable credit, and a configurable markup percent (default 10) on the
 usage charge, with no charge when Karmandeman fails,
 and correction of any product field from a reply to its card with
-"label: value" lines, the card showing every value Gate A approves (ADR-051)
-(ADR-016 to ADR-051) with code and tests. These
+"label: value" lines, the card showing every value Gate A approves (ADR-051),
+and a Persian catalogue PDF of an approved snapshot from the bot at a
+provisional fixed price, made and charged once, resent free, with no charge
+when generation fails (ADR-052)
+(ADR-016 to ADR-052) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
-CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,
+CSV/ZIP/online-catalogue exports, story images, export quotes, refunds, operator adjustments,
 the `text` and `file_output` charge classes and reconciling reported usage
 against the provider's bill are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

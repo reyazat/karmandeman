@@ -850,6 +850,14 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 شواهد: PostgreSQL موقت **۴۴۹ تست / ۶۲۸۳ assertion**، SQLite **۴۲۲ پاس / ۲۷ skip**، Pint و PHPStan بدون خطا. بدون migration یا تغییر قرارداد n8n. آزموده نشده: ربات زنده و موبایل.
 
+### برش اول PZ-05: کاتالوگ PDF و قاعده هزینه فایل (۴ نوامبر ۲۰۲۶)
+
+[ADR-052](adr/ADR-052-catalogue-pdf-and-file-charge.md). تصمیم مالک: قیمت موقت کوچک، دریافت دوباره رایگان مگر پس از ویرایش، و بدون کسر در خطای ساخت. دکمه «کاتالوگ PDF» در پیام تأیید پروژه: فایل اول هر snapshot با `KM_CREDITS_CATALOGUE_PACK` (پیش‌فرض ۲) hold می‌شود، در worker تازه `export` با TCPDF (LGPL) و فونت Vazirmatn (OFL) ساخته، رمزشده ذخیره و هم‌زمان با «ready» کسر می‌شود. فشار دوباره همان فایل را رایگان می‌فرستد. شکست ساخت، snapshot عوض‌شده یا job گم‌شده hold را آزاد می‌کند. migration تازه: جدول `artifacts`. gd با WebP به image برنامه و workspace اضافه شد؛ سرویس `export_worker` و schedule `catalogue:expire` اضافه شدند. تطبیق ledger اکنون hold فایل را هم با وضعیت فایل می‌سنجد.
+
+بازبین مستقل مورد بحرانی نیافت؛ ده ریسک آن اصلاح و با آزمون پوشش داده شد (فهرست در ADR-052).
+
+شواهد: PostgreSQL موقت **۴۶۱ تست / ۶۴۲۳ assertion**، SQLite **۴۳۴ پاس / ۲۷ skip**، Pint و PHPStan بدون خطا، preflight env و `docker compose config` موفق، image برنامه با lockfile تازه ساخته شد و در آن TCPDF، فونت و gd با WebP بارگذاری شدند. نمونه سه‌صفحه‌ای با poppler دیده شد. آزموده نشده: گوشی واقعی، ربات و worker زنده، جهت EXIF عکس اصلی.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

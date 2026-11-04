@@ -6,6 +6,7 @@ namespace App\Actions\Wallet;
 
 use App\Data\Telegram\BotReply;
 use App\Data\Wallet\CreditUsageLine;
+use App\Models\CreditLedgerEntry;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Repositories\Contracts\WalletRepositoryInterface;
@@ -34,7 +35,7 @@ final readonly class ShowTelegramBalanceAction
         }
         // Held credit is still the seller's until its run succeeds (ADR-039).
         $text = $wallet->reserved_cached > 0
-            ? "موجودی اعتبار تو: {$wallet->balance_cached} اعتبار، که {$wallet->reserved_cached} اعتبار آن برای استخراج در حال اجرا رزرو شده است."
+            ? "موجودی اعتبار تو: {$wallet->balance_cached} اعتبار، که {$wallet->reserved_cached} اعتبار آن برای کار در حال اجرا (استخراج یا ساخت فایل) رزرو شده است."
             : "موجودی اعتبار تو: {$wallet->balance_cached} اعتبار.";
 
         $charges = $this->usage->execute($wallet)->charges(self::CHARGES_SHOWN);
@@ -48,11 +49,12 @@ final readonly class ShowTelegramBalanceAction
     private function chargeLine(CreditUsageLine $line): string
     {
         $credits = -$line->entry->amount;
-        $output = match ($line->outputClass) {
-            CreditTariff::CLASS_FILE_TO_TEXT => 'استخراج محصول از '.count($line->run->input_asset_ids ?? []).' عکس',
+        $output = match (true) {
+            $line->outputClass === CreditTariff::CLASS_FILE_TO_TEXT => 'استخراج محصول از '.count($line->run->input_asset_ids ?? []).' عکس',
+            $line->entry->related_type === CreditLedgerEntry::RELATED_ARTIFACT => 'کاتالوگ PDF',
             default => 'خروجی',
         };
-        $project = $line->run?->project;
+        $project = $line->run->project ?? $line->project;
 
         return $project === null
             ? "• {$credits} اعتبار: {$output}"

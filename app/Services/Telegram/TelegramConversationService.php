@@ -6,6 +6,7 @@ namespace App\Services\Telegram;
 
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
 use App\Actions\Brand\EnsureBrandAction;
+use App\Actions\Catalog\RequestTelegramCatalogueAction;
 use App\Actions\Identity\RegisterTelegramUserAction;
 use App\Actions\Privacy\ConfirmTelegramAccountDeletionAction;
 use App\Actions\Privacy\FindContainedTelegramAccountAction;
@@ -46,7 +47,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|keep:(name|unit|category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|keep:(name|unit|category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|pdf|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -64,6 +65,7 @@ final readonly class TelegramConversationService
         private ReviseTelegramProductAction $reviseProduct,
         private ReopenTelegramProjectAction $reopenProject,
         private RequestTelegramSnapshotAction $requestSnapshot,
+        private RequestTelegramCatalogueAction $requestCatalogue,
         private SelectTelegramProjectAction $selectProject,
         private TelegramProjectList $projectList,
         private FinishTelegramBatchAction $finishBatch,
@@ -434,6 +436,7 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage($chat['id'], match ($parts[1]) {
             'select' => $this->selectProject->execute($workspace, $user, $parts[2]),
             'cancel' => $this->cancelProject->execute($workspace, $user, $callbackId, $parts[2], (int) $parts[3]),
+            'pdf' => $this->requestCatalogue->execute($workspace, $user, $parts[2], (int) $parts[3]),
             default => $this->requestSnapshot->execute($workspace, $user, $parts[2], (int) $parts[3]),
         });
     }

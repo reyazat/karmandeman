@@ -24,10 +24,10 @@ final class WalletLedgerEntryResource extends JsonResource
             'amount' => $entry->amount,
             'held_amount' => $entry->held_amount,
             'reason' => $entry->reason,
-            // What the entry paid for (FR-073); null for a gift or other non-run entry.
+            // What the entry paid for (FR-073); null for a gift or other non-run entry. A catalogue file names its project (ADR-052).
             'output_class' => $this->outputClass,
             'run_id' => $this->run?->public_id,
-            'project_id' => $this->run?->project?->public_id,
+            'project_id' => $this->run->project->public_id ?? $this->project->public_id ?? null,
             'created_at' => $entry->created_at?->toIso8601String(),
         ];
     }

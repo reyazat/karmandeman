@@ -73,7 +73,9 @@ interface WalletRepositoryInterface
      * Every hold with its settlement, if any, and the run it was made for,
      * read in one statement, ordered by hold id.
      *
-     * @return iterable<array{hold_id: string, wallet_id: int, held: int, settlement: string|null, settled_amount: int|null, settled_held: int|null, same_target: bool, run_status: string|null, run_workspace_id: int|null, wallet_workspace_id: int, related_run: bool}>
+     * and the catalogue file it held for (ADR-052).
+     *
+     * @return iterable<array{hold_id: string, wallet_id: int, held: int, settlement: string|null, settled_amount: int|null, settled_held: int|null, same_target: bool, run_status: string|null, run_workspace_id: int|null, wallet_workspace_id: int, related_run: bool, related_artifact: bool, artifact_status: string|null, artifact_workspace_id: int|null, artifact_current_hold: bool, artifact_paid: bool}>
      */
     public function holdsWithSettlements(): iterable;
 

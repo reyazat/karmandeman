@@ -30,6 +30,9 @@ class CreditLedgerEntry extends Model
     /** related_type of an entry that holds or settles credit for an AI workflow run. */
     public const RELATED_RUN = 'ai_workflow_run';
 
+    /** A generated output file paid for with a fixed price (ADR-052). */
+    public const RELATED_ARTIFACT = 'artifact';
+
     protected $table = 'credit_ledger';
 
     public $timestamps = false;

@@ -128,7 +128,10 @@ class TelegramSnapshotDeliveryTest extends TestCase
         $project = $this->approvedBatch(1401, 'کیف');
         $button = "project:json:{$project->public_id}:1";
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job) => str_contains($job->text, 'پروژه تأیید شد')
-            && $job->buttons === [[['text' => 'دریافت فایل JSON', 'callback_data' => $button]]]);
+            && $job->buttons === [
+                [['text' => 'کاتالوگ PDF', 'callback_data' => "project:pdf:{$project->public_id}:1"]],
+                [['text' => 'دریافت فایل JSON', 'callback_data' => $button]],
+            ]);
 
         $this->press($button, 1401)->assertOk();
         $this->replied('فایل JSON نسخه نهایی شماره 1 پروژه «کیف» در حال آماده‌سازی است');

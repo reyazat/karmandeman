@@ -77,6 +77,9 @@ return [
         // Karmandeman's share on top of the usage cost of every charged output (ADR-048).
         'markup_percent' => max(0, $integer('KM_CREDIT_MARKUP_PERCENT', 10)),
         'quote_ttl_minutes' => max(1, $integer('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
+        // Fixed provisional price of one catalogue file per approved snapshot, set by the owner
+        // for pilot measurement before real pricing (ADR-052). Sending the same file again is free.
+        'catalogue_pack' => max(1, $integer('KM_CREDITS_CATALOGUE_PACK', 2)),
         'minimum' => [
             'text' => max(1, $integer('KM_CREDITS_MIN_TEXT', 1)),
             'file_to_text' => max(1, $integer('KM_CREDITS_MIN_FILE_TO_TEXT', 1)),

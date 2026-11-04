@@ -6,6 +6,7 @@ namespace App\Actions\Wallet;
 
 use App\Enums\AiRunStatus;
 use App\Enums\CreditLedgerType;
+use App\Models\Artifact;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use Illuminate\Support\Facades\Log;
 
@@ -58,12 +59,12 @@ final readonly class ReconcileCreditLedgerAction
      * spends nothing (ADR-039, ADR-042). Only a succeeded run captures, and a
      * settlement belongs to the same run as its hold.
      *
-     * @param  array{held: int, settlement: string|null, settled_amount: int|null, settled_held: int|null, same_target: bool, run_status: string|null, run_workspace_id: int|null, wallet_workspace_id: int, related_run: bool}  $hold
+     * @param  array{held: int, settlement: string|null, settled_amount: int|null, settled_held: int|null, same_target: bool, run_status: string|null, run_workspace_id: int|null, wallet_workspace_id: int, related_run: bool, related_artifact: bool, artifact_status: string|null, artifact_workspace_id: int|null, artifact_current_hold: bool, artifact_paid: bool}  $hold
      * @return list<string>
      */
     private function holdChecks(array $hold): array
     {
-        $checks = [];
+        $checks = $hold['related_artifact'] ? $this->artifactChecks($hold) : [];
         $run = $hold['run_status'] === null ? null : AiRunStatus::tryFrom($hold['run_status']);
         if ($hold['related_run'] && $hold['run_workspace_id'] !== null && $hold['run_workspace_id'] !== $hold['wallet_workspace_id']) {
             $checks[] = 'run_of_another_workspace';
@@ -98,5 +99,31 @@ final readonly class ReconcileCreditLedgerAction
         }
 
         return $checks;
+    }
+
+    /**
+     * A catalogue file's hold (ADR-052): captured only for the file it made,
+     * released when it failed or was replaced by a newer hold, and open only
+     * while its file is still queued for the first time.
+     *
+     * @param  array{settlement: string|null, wallet_workspace_id: int, artifact_status: string|null, artifact_workspace_id: int|null, artifact_current_hold: bool, artifact_paid: bool}  $hold
+     * @return list<string>
+     */
+    private function artifactChecks(array $hold): array
+    {
+        if ($hold['artifact_status'] === null) {
+            return $hold['settlement'] === null ? ['hold_without_artifact'] : [];
+        }
+        $checks = $hold['artifact_workspace_id'] !== $hold['wallet_workspace_id'] ? ['artifact_of_another_workspace'] : [];
+        // A file made once stays paid by this hold, also while it is made again after a loss.
+        $made = $hold['artifact_current_hold'] && $hold['artifact_paid'];
+        $open = $hold['artifact_current_hold'] && ! $made && $hold['artifact_status'] === Artifact::STATUS_QUEUED;
+
+        return [...$checks, ...match (true) {
+            $hold['settlement'] === null => $open ? [] : ['hold_unsettled'],
+            $open => ['settled_open_artifact'],
+            $made !== ($hold['settlement'] === CreditLedgerType::Capture->value) => ['settlement_disagrees_with_artifact'],
+            default => [],
+        }];
     }
 }

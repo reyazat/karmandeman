@@ -10,10 +10,11 @@ COPY . .
 RUN npm run build
 
 FROM php:8.4-fpm-alpine AS app
-RUN apk add --no-cache icu-libs libpq libzip freetype libjpeg-turbo libpng oniguruma \
+# WebP in gd: a WebP photo is re-encoded as JPEG for the catalogue PDF (ADR-052).
+RUN apk add --no-cache icu-libs libpq libzip freetype libjpeg-turbo libpng libwebp oniguruma \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev libpq-dev \
-       libzip-dev freetype-dev libjpeg-turbo-dev libpng-dev oniguruma-dev \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+       libzip-dev freetype-dev libjpeg-turbo-dev libpng-dev libwebp-dev oniguruma-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j2 bcmath exif gd intl mbstring opcache pcntl pdo_pgsql zip \
     && pecl install redis \
     && docker-php-ext-enable redis \

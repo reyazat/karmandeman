@@ -50,8 +50,12 @@ final readonly class ApproveTelegramBatchAction
 
         return new BotReply(
             'پروژه تأیید شد: '.count($snapshot->items)." محصول در نسخه نهایی شماره {$snapshot->number} ثبت شد.\n"
-            .'فایل JSON همین نسخه را با دکمه زیر بگیر؛ دریافت دوباره هزینه‌ای ندارد.',
-            [[['text' => 'دریافت فایل JSON', 'callback_data' => "project:json:{$projectPublicId}:{$snapshot->number}"]]],
+            .'کاتالوگ PDF همین نسخه '.(int) config('karmandeman.credits.catalogue_pack').' اعتبار است و فقط اگر ساخته شود کسر می‌شود؛ '
+            .'دریافت دوباره همان فایل رایگان است و فقط پس از اصلاح و تأیید دوباره، فایل تازه هزینه دارد. فایل JSON رایگان است.',
+            [
+                [['text' => 'کاتالوگ PDF', 'callback_data' => "project:pdf:{$projectPublicId}:{$snapshot->number}"]],
+                [['text' => 'دریافت فایل JSON', 'callback_data' => "project:json:{$projectPublicId}:{$snapshot->number}"]],
+            ],
         );
     }
 }
