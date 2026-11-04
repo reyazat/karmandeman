@@ -13,7 +13,7 @@ use Carbon\CarbonImmutable;
 interface CreditQuoteRepositoryInterface
 {
     /**
-     * @param  array{version: string, cap_percent: int, minimum: array<string, int>, rates: array<string, int>}  $tariff
+     * @param  array{version: string, cap_percent: int, markup_percent: int, minimum: array<string, int>, rates: array<string, int>}  $tariff
      * @param  list<string>  $inputAssetIds
      * @param  list<array{type: string, quantity: int, unit_credits: int, credits: int}>  $lines
      * @param  int  $capCredits  the most the final charge may reach; at least the lines' total

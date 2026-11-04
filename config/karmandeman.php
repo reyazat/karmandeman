@@ -68,18 +68,20 @@ return [
     // more than the cap the seller accepted. The numbers are not final (PRD
     // §20); a quote keeps the tariff it was made with.
     'credits' => [
-        // Change the version with any rate, minimum or cap change; each quote stores both.
-        'tariff_version' => filled(env('KM_CREDIT_TARIFF_VERSION')) ? (string) env('KM_CREDIT_TARIFF_VERSION') : 'usage-v1',
+        // Change the version with any rate, markup, minimum or cap change; each quote stores both.
+        'tariff_version' => filled(env('KM_CREDIT_TARIFF_VERSION')) ? (string) env('KM_CREDIT_TARIFF_VERSION') : 'usage-v2',
         // Estimate per photo for an extraction quote; the cap adds the headroom below.
         'extraction_per_photo' => max(1, $integer('KM_CREDITS_EXTRACTION_PER_PHOTO', 1)),
         'quote_cap_percent' => max(0, $integer('KM_CREDIT_QUOTE_CAP_PERCENT', 50)),
+        // Karmandeman's share on top of the usage cost of every charged output (ADR-048).
+        'markup_percent' => max(0, $integer('KM_CREDIT_MARKUP_PERCENT', 10)),
         'quote_ttl_minutes' => max(1, $integer('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
         'minimum' => [
             'text' => max(1, $integer('KM_CREDITS_MIN_TEXT', 1)),
             'file_to_text' => max(1, $integer('KM_CREDITS_MIN_FILE_TO_TEXT', 1)),
             'file_output' => max(1, $integer('KM_CREDITS_MIN_FILE_OUTPUT', 1)),
         ],
-        // Credits per million tokens and per model request; the provider's price plus margin.
+        // Credits per million tokens and per model request: the provider's price; markup_percent adds the margin.
         'rates' => [
             'input_tokens_per_million' => max(0, $integer('KM_CREDITS_PER_MILLION_INPUT_TOKENS', 100)),
             'output_tokens_per_million' => max(0, $integer('KM_CREDITS_PER_MILLION_OUTPUT_TOKENS', 400)),

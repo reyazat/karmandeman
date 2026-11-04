@@ -30,6 +30,8 @@
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
+        <!-- New input needs spendable credit (ADR-048); same gift as .env.example, not left to a local .env. -->
+        <env name="KM_GIFT_CREDITS" value="100"/>
         <env name="MAIL_MAILER" value="array" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync" force="true"/>
         <env name="SESSION_DRIVER" value="array" force="true"/>

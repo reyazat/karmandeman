@@ -44,11 +44,12 @@ final class ApiResponse
         ], $status);
     }
 
-    /** Envelope for the shared consent/erasure gates, or null for other domain errors. */
+    /** Envelope for the shared consent, erasure and input-credit gates, or null for other domain errors. */
     public static function fromPrivacyGate(\DomainException $exception): ?JsonResponse
     {
         return match ($exception->getMessage()) {
             'POLICY_CONSENT_REQUIRED' => self::error('POLICY_CONSENT_REQUIRED', 'پیش از این کار، پذیرش نسخه جاری شرایط و سیاست داده لازم است.', 403),
+            'CREDIT_REQUIRED' => self::error('CREDIT_REQUIRED', 'برای ورودی تازه اعتبار قابل استفاده لازم است.', 409),
             'ACCOUNT_DELETION_PENDING' => self::error('ACCOUNT_DELETION_PENDING', 'درخواست حذف این حساب ثبت شده و تغییر تازه پذیرفته نمی‌شود.', 409),
             'WORKSPACE_NOT_ACTIVE' => self::error('FORBIDDEN', 'امکان انجام درخواست وجود ندارد.', 403),
             default => null,

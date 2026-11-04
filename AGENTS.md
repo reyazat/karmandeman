@@ -35,8 +35,11 @@ and a disabled-by-default, tenant-scoped encrypted Ogg/Opus voice intake in
 Laravel (no transcription, provider call or credit charge yet),
 and per-charge usage in the wallet API and /balance with a daily
 read-only ledger reconciliation, and one open-for-input rule shared by
-the bot and the API with /projects showing files and credit used
-(ADR-016 to ADR-047) with code and tests. These
+the bot and the API with /projects showing files and credit used,
+and for the test phase (ADR-048) voice kept off, new input refused without
+spendable credit, and a configurable markup percent (default 10) on the
+usage charge, with no charge when Karmandeman fails
+(ADR-016 to ADR-048) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,

@@ -6,6 +6,7 @@ namespace App\Actions\Project;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsureVoiceIntakeAllowedAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Models\User;
 use App\Models\VoiceAsset;
 use App\Models\Workspace;
@@ -24,6 +25,7 @@ final readonly class AttachProjectVoiceAction
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsureVoiceIntakeAllowedAction $consent,
+        private EnsureInputCreditAction $credit,
         private ProjectRepositoryInterface $projects,
         private VoiceAssetRepositoryInterface $voices,
         private PrivateAssetStore $store,
@@ -46,6 +48,7 @@ final readonly class AttachProjectVoiceAction
             ['project' => $projectPublicId, 'sha256' => hash('sha256', $bytes)],
             function () use ($workspace, $user, $projectPublicId, $bytes, $metadata, $source, $sourceMessageKey): VoiceAsset {
                 $this->consent->execute($workspace);
+                $this->credit->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);

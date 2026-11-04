@@ -61,7 +61,9 @@ class ExtractionCreditTest extends TestCase
             'karmandeman.credits.extraction_per_photo' => 3,
             'karmandeman.credits.quote_cap_percent' => 50,
             'karmandeman.credits.minimum.file_to_text' => 1,
-            // The callback fixture's 10 input and 10 output tokens cost 1 + 2 = 3 credits.
+            // The callback fixture's 10 input and 10 output tokens cost 1 + 2 = 3 credits;
+            // the markup has its own test, so these sums stay those of ADR-042.
+            'karmandeman.credits.markup_percent' => 0,
             'karmandeman.credits.rates' => ['input_tokens_per_million' => 100_000, 'output_tokens_per_million' => 200_000, 'model_request' => 0],
         ]);
         Http::fake(['*' => Http::response(['ok' => true])]);
@@ -181,7 +183,7 @@ class ExtractionCreditTest extends TestCase
             ->assertJsonPath('data.cap_credits', 9)
             ->assertJsonPath('data.available_credits', 10)
             ->assertJsonPath('data.accepted', false)
-            ->assertJsonPath('data.tariff_version', 'usage-v1')
+            ->assertJsonPath('data.tariff_version', 'usage-v2')
             ->json('data');
         $this->assertCount(2, $quote['photo_ids']);
         $this->assertSame(now()->addMinutes(15)->getTimestamp(), strtotime($quote['expires_at']));
@@ -547,6 +549,37 @@ class ExtractionCreditTest extends TestCase
 
         $this->botText('/balance', 5008);
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, '5 اعتبار، که 5 اعتبار آن'));
+    }
+
+    public function test_an_answered_run_pays_its_usage_plus_the_markup_of_its_quote(): void
+    {
+        config(['karmandeman.credits.markup_percent' => 10]);
+        $this->seller(5010);
+        $project = $this->batch(2, 1);
+        $quote = $this->quote($project)->assertCreated()->json('data.id');
+        $this->assertSame(10, CreditQuote::query()->where('public_id', $quote)->sole()->tariff['markup_percent']);
+        // A later markup change does not reach an accepted quote.
+        config(['karmandeman.credits.markup_percent' => 90]);
+        $this->accept($project, $quote)->assertStatus(202);
+
+        $this->runCallback(AiWorkflowRun::query()->sole())->assertOk();
+        // 3 credits of usage plus 10 percent is 3.3, rounded up once to 4.
+        $this->assertSame(-4, CreditLedgerEntry::query()->where('type', 'capture')->sole()->amount);
+        $this->assertSame([6, 0], $this->wallet());
+        $this->assertLedgerReconciles();
+    }
+
+    public function test_the_bot_quote_names_the_markup_and_no_charge_for_our_errors(): void
+    {
+        config(['karmandeman.credits.markup_percent' => 10]);
+        $user = $this->seller(5011);
+        $this->completeOnboarding($user);
+        $this->batch(1, 1);
+
+        $this->botText('/done', 5011);
+        $offer = Queue::pushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => $job->buttons !== [] && str_starts_with($job->buttons[0][0]['callback_data'], 'quote:accept:'))->sole();
+        $this->assertStringContainsString('فقط مصرف واقعی به‌علاوه 10 درصد کارمزد کارمند من (حداقل 1 اعتبار) کسر می‌شود', $offer->text);
+        $this->assertStringContainsString('در صورت خطای کارمند من، شکست، توقف یا لغو چیزی کسر نمی‌شود', $offer->text);
     }
 
     public function test_stored_voices_are_never_priced_or_sent_and_the_bot_says_so(): void

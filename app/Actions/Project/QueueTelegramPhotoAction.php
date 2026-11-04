@@ -6,6 +6,7 @@ namespace App\Actions\Project;
 
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Actions\Privacy\EnsureVoiceIntakeAllowedAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Enums\ProjectState;
 use App\Jobs\Project\ImportTelegramPhoto;
 use App\Models\TelegramMediaIntake;
@@ -35,6 +36,7 @@ final readonly class QueueTelegramPhotoAction
     public function __construct(
         private EnsurePolicyConsentAction $consent,
         private EnsureVoiceIntakeAllowedAction $voiceConsent,
+        private EnsureInputCreditAction $credit,
         private ProjectRepositoryInterface $projects,
         private ProductRepositoryInterface $products,
         private ResolveTelegramInputProjectAction $inputProject,
@@ -69,6 +71,12 @@ final readonly class QueueTelegramPhotoAction
             }
 
             return 'پیش از ارسال فایل، شرایط و سیاست داده را با /start بپذیر.';
+        }
+        // Checked again when the file is stored; here so nothing is downloaded without credit (ADR-048).
+        try {
+            $this->credit->execute($workspace);
+        } catch (DomainException) {
+            return 'اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.';
         }
         // Same budget as the API upload route: each photo costs a download, encryption and storage.
         $limit = 'telegram-photo:'.$user->id;

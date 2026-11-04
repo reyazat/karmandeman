@@ -59,7 +59,7 @@ final readonly class AcceptTelegramExtractionQuoteAction
         // A fixed-price quote of ADR-039 is spent whole; a usage quote spends what the run used.
         $charge = $quote->minimumCredits() === null
             ? 'این مقدار فقط پس از استخراج موفق کسر می‌شود.'
-            : "فقط پس از استخراج موفق مصرف واقعی (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود و بقیه برمی‌گردد.";
+            : 'فقط پس از استخراج موفق مصرف واقعی'.($quote->markupPercent() > 0 ? " به‌علاوه {$quote->markupPercent()} درصد کارمزد کارمند من" : '')." (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود و بقیه برمی‌گردد.";
 
         return new BotReply("{$quote->capCredits()} اعتبار برای استخراج پروژه «{$project->name}» رزرو شد. محصولات از عکس‌ها استخراج می‌شوند و پس از پایان خبر می‌دهم؛ همه مقدارها پیشنهادی خواهند بود. {$charge}");
     }

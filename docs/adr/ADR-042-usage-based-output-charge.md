@@ -40,6 +40,8 @@
    charge = max(class_min, ceil(Σ usage_unit × unit_rate))
    ```
 
+   اصلاح [ADR-048](ADR-048-test-phase-credit-gate-and-markup.md): کارمزد درصدی `markup_percent` پیش از گرد کردن به مصرف اضافه می‌شود. نرخ‌ها قیمت provider هستند و تعرفه پیش‌فرض `usage-v2` است.
+
    - `usage_unit` همان usage است که run گزارش می‌کند و Laravel با سقف‌ها می‌سنجد (ADR-032): token ورودی، token خروجی و درخواست مدل. هزینه عکس در token ورودی provider آمده است و نرخ جدا ندارد. نرخ هر واحد به provider و مدل بستگی دارد و حاشیه سود در آن است.
    - خروجی بدون AI usage صفر دارد، پس حداقل کلاس `file_output` کم می‌شود.
    - تعرفه پیکربندی نسخه‌دار است (`KM_CREDIT_TARIFF_VERSION`، پیش‌فرض `usage-v1`). کل تعرفه (نسخه، نرخ‌ها، حداقل‌ها و درصد سقف) روی پیش‌فاکتور و usage خام روی run ذخیره می‌شود. کلاس از نوع workflow run معلوم است. پس هر کسر قابل حسابرسی و reconciliation است (FR-073). **به فروشنده فقط عدد نهایی نشان داده می‌شود.**

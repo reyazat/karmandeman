@@ -138,6 +138,7 @@ final readonly class FinishTelegramBatchAction
         $photos = count($quote->input_asset_ids);
         $minutes = (int) ceil(max(0, $quote->expires_at->getTimestamp() - time()) / 60);
         $cap = $quote->capCredits();
+        $markup = $quote->markupPercent() > 0 ? " به‌علاوه {$quote->markupPercent()} درصد کارمزد کارمند من" : '';
         $price = $quote->credits_total === $cap ? "حداکثر {$cap} اعتبار" : "حدود {$quote->credits_total} و حداکثر {$cap} اعتبار";
         $text = "استخراج محصولات از {$photos} عکس تازه پروژه «{$project->name}» {$price} هزینه دارد. موجودی قابل استفاده تو {$available} اعتبار است.";
         if ($available < $cap) {
@@ -145,7 +146,7 @@ final readonly class FinishTelegramBatchAction
         }
 
         return new BotReply(
-            $text." با تأیید تو {$cap} اعتبار رزرو می‌شود. پس از استخراج موفق فقط مصرف واقعی (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود، حتی اگر پیشنهادها را نپذیری، و بقیه برمی‌گردد. در صورت شکست، توقف یا لغو چیزی کسر نمی‌شود. این پیش‌فاکتور {$minutes} دقیقه معتبر است.",
+            $text." با تأیید تو {$cap} اعتبار رزرو می‌شود. پس از استخراج موفق فقط مصرف واقعی{$markup} (حداقل {$quote->minimumCredits()} اعتبار) کسر می‌شود، حتی اگر پیشنهادها را نپذیری، و بقیه برمی‌گردد. در صورت خطای کارمند من، شکست، توقف یا لغو چیزی کسر نمی‌شود. این پیش‌فاکتور {$minutes} دقیقه معتبر است.",
             [[['text' => "تأیید و شروع استخراج (حداکثر {$cap} اعتبار)", 'callback_data' => "quote:accept:{$quote->public_id}"]]],
         );
     }

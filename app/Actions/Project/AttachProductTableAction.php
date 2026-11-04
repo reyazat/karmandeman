@@ -6,6 +6,7 @@ namespace App\Actions\Project;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Data\Product\ParsedProductTable;
 use App\Models\ProductTable;
 use App\Models\User;
@@ -31,6 +32,7 @@ final readonly class AttachProductTableAction
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
+        private EnsureInputCreditAction $credit,
         private ProjectRepositoryInterface $projects,
         private ProductTableRepositoryInterface $tables,
         private ProductTableParser $parser,
@@ -55,6 +57,7 @@ final readonly class AttachProductTableAction
             $workspace, $user->id, 'project.attach_table', $key, ['project' => $projectPublicId, 'sha256' => hash('sha256', $bytes)],
             function () use ($workspace, $user, $projectPublicId, $bytes, $parsed, $source, $sourceMessageKey): ProductTable {
                 $this->consent->execute($workspace);
+                $this->credit->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);

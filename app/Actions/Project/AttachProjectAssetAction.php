@@ -6,6 +6,7 @@ namespace App\Actions\Project;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Exceptions\ImageMetadataUnparseable;
 use App\Models\Asset;
 use App\Models\User;
@@ -37,6 +38,7 @@ final readonly class AttachProjectAssetAction
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
+        private EnsureInputCreditAction $credit,
         private ProjectRepositoryInterface $projects,
         private AssetRepositoryInterface $assets,
         private PrivateAssetStore $store,
@@ -58,6 +60,7 @@ final readonly class AttachProjectAssetAction
             $workspace, $user->id, 'project.attach_asset', $key, ['project' => $projectPublicId, 'sha256' => hash('sha256', $bytes)],
             function () use ($workspace, $user, $projectPublicId, $bytes, $image, $source, $sourceMessageKey): Asset {
                 $this->consent->execute($workspace);
+                $this->credit->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);

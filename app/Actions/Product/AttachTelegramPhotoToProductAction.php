@@ -106,6 +106,7 @@ final readonly class AttachTelegramPhotoToProductAction
                 'PRODUCT_REVISION_CONFLICT', 'PROJECT_VERSION_CONFLICT', 'PRODUCT_NOT_FOUND' => 'این محصول پس از این کارت تغییر کرده است؛ عکس را در پاسخ به کارت نسخه تازه بفرست.',
                 'PROJECT_CANCELLED', 'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر عکس نمی‌گیرد.",
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.',
+                'CREDIT_REQUIRED' => 'اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.',
                 // Erasure or suspension: the account gets no new message.
                 'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => null,
                 default => 'افزودن عکس به محصول انجام نشد؛ دوباره بفرست.',

@@ -6,6 +6,7 @@ namespace App\Actions\Product;
 
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Actions\Project\ResolveTelegramInputProjectAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
 use App\Data\Telegram\BotReply;
 use App\Models\User;
@@ -31,6 +32,7 @@ final readonly class CreateTelegramProductDraftAction
 
     public function __construct(
         private EnsurePolicyConsentAction $consent,
+        private EnsureInputCreditAction $credit,
         private LockActiveWorkspaceAction $lockActive,
         private ResolveTelegramInputProjectAction $inputProject,
         private AiWorkflowRunRepositoryInterface $runs,
@@ -52,6 +54,11 @@ final readonly class CreateTelegramProductDraftAction
             $this->consent->execute($workspace);
         } catch (DomainException) {
             return new BotReply('پیش از ثبت محصول، شرایط و سیاست داده را با /start بپذیر.');
+        }
+        try {
+            $this->credit->execute($workspace);
+        } catch (DomainException) {
+            return new BotReply('اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.');
         }
         // Held to the end of the webhook transaction: two /product messages
         // never claim the same photo.

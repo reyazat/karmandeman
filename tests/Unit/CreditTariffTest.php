@@ -12,12 +12,13 @@ use Tests\TestCase;
 /** One number from real usage, never below the class minimum (ADR-042). */
 class CreditTariffTest extends TestCase
 {
-    /** @return array{version: string, cap_percent: int, minimum: array<string, int>, rates: array{input_tokens_per_million: int, output_tokens_per_million: int, model_request: int}} */
-    private function tariff(int $input = 100, int $output = 400, int $request = 0, int $minimum = 1, int $capPercent = 50): array
+    /** @return array{version: string, cap_percent: int, markup_percent: int, minimum: array<string, int>, rates: array{input_tokens_per_million: int, output_tokens_per_million: int, model_request: int}} */
+    private function tariff(int $input = 100, int $output = 400, int $request = 0, int $minimum = 1, int $capPercent = 50, int $markup = 0): array
     {
         return [
-            'version' => 'usage-v1',
+            'version' => 'usage-v2',
             'cap_percent' => $capPercent,
+            'markup_percent' => $markup,
             'minimum' => ['text' => $minimum, 'file_to_text' => $minimum, 'file_output' => $minimum],
             'rates' => ['input_tokens_per_million' => $input, 'output_tokens_per_million' => $output, 'model_request' => $request],
         ];
@@ -32,6 +33,21 @@ class CreditTariffTest extends TestCase
         $this->assertSame(307, $tariff->charge($this->tariff(request: 3), CreditTariff::CLASS_FILE_TO_TEXT, $usage));
         // An exact million is not rounded past.
         $this->assertSame(100, $tariff->charge($this->tariff(output: 0), CreditTariff::CLASS_TEXT, ['input_tokens' => 1_000_000]));
+    }
+
+    public function test_the_markup_is_added_to_the_usage_cost_and_rounded_up_once(): void
+    {
+        $tariff = new CreditTariff;
+
+        $this->assertSame(110, $tariff->charge($this->tariff(output: 0, markup: 10), CreditTariff::CLASS_FILE_TO_TEXT, ['input_tokens' => 1_000_000]));
+        // 0.3 + 0.3 credits are not rounded up apart: 0.6 × 1.1 is one credit, not two.
+        $this->assertSame(1, $tariff->charge($this->tariff(input: 300_000, output: 300_000, markup: 10, minimum: 0), CreditTariff::CLASS_TEXT, ['input_tokens' => 1, 'output_tokens' => 1]));
+        // A quote stored before the markup existed keeps its terms.
+        $old = $this->tariff(output: 0);
+        unset($old['markup_percent']);
+        $this->assertSame(100, $tariff->charge($old, CreditTariff::CLASS_FILE_TO_TEXT, ['input_tokens' => 1_000_000]));
+        // A negative markup is never a discount below the usage cost.
+        $this->assertSame(100, $tariff->charge($this->tariff(output: 0, markup: -50), CreditTariff::CLASS_FILE_TO_TEXT, ['input_tokens' => 1_000_000]));
     }
 
     public function test_the_class_minimum_holds_for_small_missing_or_negative_usage(): void
@@ -113,8 +129,9 @@ class CreditTariffTest extends TestCase
         config(['karmandeman.credits.rates' => ['input_tokens_per_million' => 7, 'output_tokens_per_million' => 8, 'model_request' => 9]]);
         $current = (new CreditTariff)->current();
 
-        $this->assertSame('usage-v1', $current['version']);
+        $this->assertSame('usage-v2', $current['version']);
         $this->assertSame(50, $current['cap_percent']);
+        $this->assertSame(10, $current['markup_percent']);
         $this->assertSame(['input_tokens_per_million' => 7, 'output_tokens_per_million' => 8, 'model_request' => 9], $current['rates']);
         $this->assertSame(['text', 'file_to_text', 'file_output'], array_keys($current['minimum']));
     }

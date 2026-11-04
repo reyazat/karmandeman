@@ -6,6 +6,7 @@ namespace App\Actions\Product;
 
 use App\Actions\Idempotency\RunIdempotentMutationAction;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
+use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Models\ProductRevision;
 use App\Models\User;
 use App\Models\Workspace;
@@ -26,6 +27,7 @@ final readonly class CreateManualProductDraftAction
     public function __construct(
         private RunIdempotentMutationAction $idempotency,
         private EnsurePolicyConsentAction $consent,
+        private EnsureInputCreditAction $credit,
         private ProjectRepositoryInterface $projects,
         private ProductRepositoryInterface $products,
         private ProductRevisionBuilder $builder,
@@ -43,6 +45,7 @@ final readonly class CreateManualProductDraftAction
             $workspace, $user->id, 'product.create', $key, ['project' => $projectPublicId, 'draft' => $draft],
             function () use ($workspace, $user, $projectPublicId, $draft): ProductRevision {
                 $this->consent->execute($workspace);
+                $this->credit->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
                     ?? throw new DomainException('PROJECT_NOT_FOUND');
                 Gate::forUser($user)->authorize('update', $project);

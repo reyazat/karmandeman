@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int $created_by
  * @property string $kind
  * @property string $tariff_version
- * @property array{version: string, cap_percent: int, minimum: array<string, int>, rates: array{input_tokens_per_million: int, output_tokens_per_million: int, model_request: int}}|null $tariff
+ * @property array{version: string, cap_percent: int, markup_percent?: int, minimum: array<string, int>, rates: array{input_tokens_per_million: int, output_tokens_per_million: int, model_request: int}}|null $tariff
  * @property int $project_version
  * @property list<string> $input_asset_ids
  * @property list<array{type: string, quantity: int, unit_credits: int, credits: int}> $lines
@@ -52,6 +52,12 @@ class CreditQuote extends Model
     public function minimumCredits(): ?int
     {
         return $this->tariff === null ? null : max(1, (int) ($this->tariff['minimum'][CreditTariff::CLASS_FILE_TO_TEXT] ?? 1));
+    }
+
+    /** Karmandeman's share on top of usage under this quote's tariff (ADR-048); none before it existed. */
+    public function markupPercent(): int
+    {
+        return max(0, (int) ($this->tariff['markup_percent'] ?? 0));
     }
 
     protected function casts(): array

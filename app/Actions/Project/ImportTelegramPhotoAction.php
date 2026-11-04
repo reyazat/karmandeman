@@ -143,6 +143,7 @@ final readonly class ImportTelegramPhotoAction
                 'ASSET_DAMAGED' => 'این عکس خراب است یا کامل نرسیده است؛ دوباره بفرست.',
                 'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر عکس نمی‌پذیرد.",
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال عکس، شرایط و سیاست داده را با /start بپذیر.',
+                'CREDIT_REQUIRED' => 'اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.',
                 // Erasure or suspension: the account gets no new message.
                 default => null,
             });
@@ -181,6 +182,7 @@ final readonly class ImportTelegramPhotoAction
             'VOICE_INTAKE_DISABLED' => 'دریافت ویس هنوز فعال نیست؛ برای پیگیری /support را بفرست.',
             'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر ویس نمی‌پذیرد.",
             'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال ویس، شرایط و سیاست داده را با /start بپذیر.',
+            'CREDIT_REQUIRED' => 'اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.',
             default => 'این ویس ثبت نشد؛ دوباره بفرست.',
         };
     }
@@ -208,6 +210,7 @@ final readonly class ImportTelegramPhotoAction
                 'TABLE_NOT_FOUND' => 'این فایل پیش‌تر کنار گذاشته شده بود؛ اگر لازم است دوباره بفرست.',
                 'PROJECT_NOT_ACCEPTING_INPUT' => "پروژه «{$project->name}» دیگر فایل نمی‌پذیرد.",
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ارسال فایل، شرایط و سیاست داده را با /start بپذیر.',
+                'CREDIT_REQUIRED' => 'اعتبار قابل استفاده‌ات تمام شده است و پیام تازه پذیرفته نمی‌شود. موجودی را با /balance ببین و برای افزایش اعتبار /support را بفرست.',
                 // Erasure or suspension: the account gets no new message.
                 default => null,
             };
