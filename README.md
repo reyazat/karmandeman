@@ -8,6 +8,14 @@ Read [the audit](docs/PROJECT_AUDIT_2026-10-26.md) and
 [the development plan](docs/DEVELOPMENT_PLAN.md) before choosing the next feature.
 The normative architecture is [ENGINEERING_STANDARDS](docs/ENGINEERING_STANDARDS.md).
 
+The current delivery path is the [small brand-to-catalogue pilot](docs/PILOT_ZERO_PLAN_2026-11-04.md),
+recorded in [ADR-049](docs/adr/ADR-049-small-catalogue-pilot-path.md): finish one
+product through brand setup, photo/text intake, correction, approval and PDF
+delivery, then complete the five-product pack and observe three invited sellers.
+Its PZ task list drives the next work. It is a limited learning stage, not full
+MVP acceptance or release approval; implementation gaps remain in the
+[4 November review](docs/PROJECT_ALIGNMENT_REVIEW_2026-11-04.md).
+
 ## Local verification
 
 PHP 8.4 runs through the development `workspace` container. Use the existing
