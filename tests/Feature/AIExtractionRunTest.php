@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Actions\Brand\AdvanceTelegramOnboardingAction;
+use App\Actions\Brand\EnsureBrandAction;
 use App\Actions\Project\DispatchExtractionRunAction;
 use App\Jobs\AI\DispatchProductExtraction;
 use App\Jobs\Telegram\SendTelegramMessage;
@@ -405,7 +406,7 @@ class AIExtractionRunTest extends TestCase
         $this->assertTrue((new WorkflowSignature)->verify(self::WORKFLOW_TOKEN, $request->header(WorkflowSignature::HEADER_TIMESTAMP)[0],
             $request->body(), $request->header(WorkflowSignature::HEADER_SIGNATURE)[0], time(), 300));
         $envelope = json_decode($request->body(), true);
-        $schema = json_decode((string) file_get_contents(base_path('n8n/schemas/product-extraction.input.v1.json')), true);
+        $schema = json_decode((string) file_get_contents(base_path('n8n/schemas/product-extraction.input.v2.json')), true);
         $this->assertEqualsCanonicalizing($schema['required'], array_keys($envelope));
         $this->assertEqualsCanonicalizing($schema['properties']['assets']['items']['required'], array_keys($envelope['assets'][0]));
         $this->assertSame($run->public_id, $envelope['run_id']);
@@ -415,6 +416,29 @@ class AIExtractionRunTest extends TestCase
         $this->assertStringNotContainsString('workspace', $request->body());
         $this->assertStringNotContainsString('Batch', $request->body());
         $this->assertSame('dispatched', $run->fresh()->status->value);
+    }
+
+    public function test_the_envelope_carries_each_photo_seller_text_and_the_tone_but_no_brand_name(): void
+    {
+        [, $photos, $run] = $this->extracting(913);
+        $first = Asset::query()->where('public_id', $photos[0])->sole();
+        $first->seller_text = 'کیف روزمره؛ جنس پارچه؛ ۳۵۰٬۰۰۰ تومان';
+        $first->save();
+        $brand = app(EnsureBrandAction::class)->execute(Workspace::query()->findOrFail($run->workspace_id));
+        $brand->name = 'فروشگاه نسترن';
+        $brand->tone = 'صمیمی و کوتاه';
+        $brand->save();
+
+        app(DispatchExtractionRunAction::class)->execute($run->id);
+
+        [$request] = Http::recorded(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'http://n8n.test/'))[0];
+        $envelope = json_decode($request->body(), true);
+        $this->assertSame('product-extraction.input.v2', $envelope['schema_version']);
+        $this->assertSame('صمیمی و کوتاه', $envelope['tone']);
+        $this->assertSame(['کیف روزمره؛ جنس پارچه؛ ۳۵۰٬۰۰۰ تومان', null], array_column($envelope['assets'], 'seller_text'));
+        $this->assertStringNotContainsString('نسترن', $request->body());
+        // At rest the text is ciphertext under the workspace key.
+        $this->assertStringNotContainsString('پارچه', (string) DB::table('assets')->where('id', $first->id)->value('seller_text'));
     }
 
     public function test_a_failed_start_retries_then_reopens_the_batch(): void

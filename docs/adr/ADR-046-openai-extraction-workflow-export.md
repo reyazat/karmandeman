@@ -34,6 +34,8 @@ ADR-045 مالک را به OpenAI رساند و export Gemini را بازنشس�
 
 ## گیت‌های باز
 
+> **به‌روزرسانی ۴ نوامبر ۲۰۲۶:** export `openai.v1` با `openai.v2` و `input.v2` جایگزین و حذف شد ([ADR-050](ADR-050-seller-text-in-extraction-run.md)). قواعد این ADR برای v2 برقرارند.
+
 - export روی `ai.smartystudio.co.uk` import نشده است. فقط روی n8n موقت محلی با stub اجرا شده است.
 - `karmandeman.ai.workflow_version` هنوز `product-extraction.v1` است، پس `extractionEnabled()` false می‌ماند. تغییر آن فقط پس از آزمون API واقعی، credential در n8n، بسته سیاست مصوب نام‌برنده OpenAI و رضایت تازه فروشنده انجام می‌شود.
 - متن بسته سیاست باید نگهداری داده نزد OpenAI را بگوید: `store: false` نگهداری برای پایش سوءاستفاده را حذف نمی‌کند، مگر توافق Zero Data Retention جدا. این باید با QA-19…21 سازگار شود.

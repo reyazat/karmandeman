@@ -50,7 +50,7 @@ final readonly class AttachProjectAssetAction
      */
     public function execute(
         Workspace $workspace, User $user, string $key, string $projectPublicId, #[\SensitiveParameter] string $bytes,
-        string $source = Asset::SOURCE_API_UPLOAD, ?string $sourceMessageKey = null,
+        string $source = Asset::SOURCE_API_UPLOAD, ?string $sourceMessageKey = null, #[\SensitiveParameter] ?string $sellerText = null,
     ): array {
         $image = $this->inspect($bytes);
 
@@ -58,7 +58,7 @@ final readonly class AttachProjectAssetAction
         $result = $this->idempotency->execute(
             // The fingerprint is MACed by the wrapper; the plain digest is never stored.
             $workspace, $user->id, 'project.attach_asset', $key, ['project' => $projectPublicId, 'sha256' => hash('sha256', $bytes)],
-            function () use ($workspace, $user, $projectPublicId, $bytes, $image, $source, $sourceMessageKey): Asset {
+            function () use ($workspace, $user, $projectPublicId, $bytes, $image, $source, $sourceMessageKey, $sellerText): Asset {
                 $this->consent->execute($workspace);
                 $this->credit->execute($workspace);
                 $project = $this->projects->findPublicForWorkspace($workspace, $projectPublicId)
@@ -88,6 +88,8 @@ final readonly class AttachProjectAssetAction
                     'height' => $image['height'],
                     'source' => $source,
                     'source_message_key' => $sourceMessageKey,
+                    // Only a new photo takes the text; the same bytes again keep the first photo's (ADR-050).
+                    'seller_text' => $sellerText,
                 ]);
                 $this->projects->bumpVersion($workspace, $project->id);
 

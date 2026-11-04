@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
 use App\Models\Project;
+use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 
 /**
@@ -17,16 +18,18 @@ use App\Services\Privacy\PilotPolicyService;
  */
 final readonly class AIWorkflowService
 {
-    public const INPUT_SCHEMA_VERSION = 'product-extraction.input.v1';
+    /** v2 adds the seller's text per photo and the brand tone (ADR-050). */
+    public const INPUT_SCHEMA_VERSION = 'product-extraction.input.v2';
 
-    public const OPENAI_WORKFLOW_VERSION = 'product-extraction.openai.v1';
+    public const OPENAI_WORKFLOW_VERSION = 'product-extraction.openai.v2';
 
-    public const OPENAI_WEBHOOK_PATH = '/webhook/km-product-extraction-openai-v1';
+    public const OPENAI_WEBHOOK_PATH = '/webhook/km-product-extraction-openai-v2';
 
     public function __construct(
         private N8nWorkflowClient $client,
         private RunAssetUrlSigner $urls,
         private PilotPolicyService $policies,
+        private BrandRepositoryInterface $brands,
     ) {}
 
     /**
@@ -53,6 +56,9 @@ final readonly class AIWorkflowService
      */
     public function extractionEnvelope(AiWorkflowRun $run, Project $project, array $assets): array
     {
+        // Only the confirmed tone: never the brand name, chat or account (ADR-050).
+        $tone = $this->brands->forWorkspace($project->workspace)?->tone;
+
         return [
             'schema_version' => self::INPUT_SCHEMA_VERSION,
             'workflow_version' => $run->workflow_version,
@@ -60,6 +66,7 @@ final readonly class AIWorkflowService
             'project_id' => $project->public_id,
             'attempt' => $run->dispatch_attempts,
             'locale' => 'fa-IR',
+            'tone' => $tone,
             'assets' => array_map(fn (Asset $asset): array => [
                 'id' => $asset->public_id,
                 'mime' => $asset->mime,
@@ -68,6 +75,7 @@ final readonly class AIWorkflowService
                 'height' => $asset->height,
                 // Signed for this run only; the bytes come without metadata (ADR-033).
                 'download_url' => $this->urls->url($run, $asset->public_id),
+                'seller_text' => $asset->seller_text,
             ], $assets),
             'limits' => [
                 'max_candidates' => (int) config('karmandeman.ai.max_candidates_per_run'),

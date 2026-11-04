@@ -13,7 +13,7 @@ use Carbon\CarbonImmutable;
 
 final class EloquentTelegramMediaIntakeRepository implements TelegramMediaIntakeRepositoryInterface
 {
-    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey, string $kind = TelegramMediaIntake::KIND_PHOTO, ?array $target = null): ?TelegramMediaIntake
+    public function createOnce(Workspace $workspace, Project $project, User $user, string $fileRef, ?int $declaredSize, string $messageKey, string $kind = TelegramMediaIntake::KIND_PHOTO, ?array $target = null, ?string $sellerText = null): ?TelegramMediaIntake
     {
         $created = TelegramMediaIntake::query()->insertOrIgnore([
             'workspace_id' => $workspace->id,
@@ -25,6 +25,7 @@ final class EloquentTelegramMediaIntakeRepository implements TelegramMediaIntake
             'file_ref' => $fileRef,
             'declared_size' => $declaredSize,
             'message_key' => $messageKey,
+            'seller_text' => $sellerText,
             'created_at' => now(),
         ]);
 
@@ -39,6 +40,11 @@ final class EloquentTelegramMediaIntakeRepository implements TelegramMediaIntake
     public function pendingForProject(Project $project): bool
     {
         return TelegramMediaIntake::query()->where('workspace_id', $project->workspace_id)->where('project_id', $project->id)->exists();
+    }
+
+    public function pendingForMessage(Workspace $workspace, string $messageKey): bool
+    {
+        return TelegramMediaIntake::query()->where('workspace_id', $workspace->id)->where('message_key', $messageKey)->exists();
     }
 
     public function delete(TelegramMediaIntake $intake): void

@@ -131,6 +131,7 @@ final readonly class ImportTelegramPhotoAction
             [$asset, $replayed] = $this->attach->execute(
                 $workspace, $intake->user, 'telegram-'.substr($intake->message_key, 0, 48), $project->public_id, $bytes,
                 Asset::SOURCE_TELEGRAM, $intake->message_key,
+                $intake->seller_text === null ? null : $this->cipher->decrypt($workspace, 'telegram_media_intakes.seller_text', $intake->seller_text),
             );
         } catch (AuthorizationException) {
             $this->finish($intake, null);
@@ -152,8 +153,12 @@ final readonly class ImportTelegramPhotoAction
         }
 
         $this->finish($intake, $replayed || $asset->wasRecentlyCreated
-            ? "عکس به پروژه «{$project->name}» اضافه شد."
-            : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.", $notice);
+            ? "عکس به پروژه «{$project->name}» اضافه شد.".($asset->seller_text === null
+                ? ' مشخصات این محصول را می‌توانی با Reply روی همین عکس بنویسی.'
+                : ' متن همراه آن هم برای همین عکس ثبت شد.')
+            : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.".($intake->seller_text === null ? ''
+                // The first photo keeps its text (ADR-050); say so rather than drop this one silently.
+                : ' متن همراه این پیام ثبت نشد؛ برای افزودن آن، روی پیام اول همان عکس Reply کن.'), $notice);
     }
 
     private function attachVoice(TelegramMediaIntake $intake, Project $project, #[\SensitiveParameter] string $bytes): ?string

@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string $file_ref
  * @property int|null $declared_size
  * @property string $message_key
+ * @property string|null $seller_text the photo's caption, encrypted like file_ref (ADR-050)
  * @property Carbon $created_at
  */
 class TelegramMediaIntake extends Model
@@ -33,9 +34,9 @@ class TelegramMediaIntake extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'target_product_id', 'target_revision', 'file_ref', 'declared_size', 'message_key', 'created_at'];
+    protected $fillable = ['workspace_id', 'project_id', 'user_id', 'kind', 'target_product_id', 'target_revision', 'file_ref', 'declared_size', 'message_key', 'seller_text', 'created_at'];
 
-    protected $hidden = ['file_ref'];
+    protected $hidden = ['file_ref', 'seller_text'];
 
     /**
      * @return BelongsTo<Workspace, $this>

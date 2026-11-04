@@ -61,6 +61,11 @@ interface AssetRepositoryInterface
 
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset;
 
+    /** The bot photo stored from this message, row-locked (ADR-050). */
+    public function lockBySourceMessage(Workspace $workspace, string $messageKey): ?Asset;
+
+    public function updateSellerText(Asset $asset, #[\SensitiveParameter] string $text): void;
+
     /**
      * @return LengthAwarePaginator<int, Asset>
      */

@@ -16,7 +16,9 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
 {
     public function create(Workspace $workspace, Project $project, User $uploader, string $publicId, array $attributes): Asset
     {
-        $asset = new Asset([
+        // The owner first: an encrypted attribute needs workspace_id when it is set.
+        $asset = new Asset(['workspace_id' => $workspace->id]);
+        $asset->fill([
             ...$attributes,
             'workspace_id' => $workspace->id,
             'project_id' => $project->id,
@@ -114,6 +116,18 @@ final class EloquentAssetRepository implements AssetRepositoryInterface
     public function findPublicForWorkspace(Workspace $workspace, string $publicId): ?Asset
     {
         return Asset::query()->where('workspace_id', $workspace->id)->where('public_id', $publicId)->first();
+    }
+
+    public function lockBySourceMessage(Workspace $workspace, string $messageKey): ?Asset
+    {
+        return Asset::query()->where('workspace_id', $workspace->id)->where('source', Asset::SOURCE_TELEGRAM)
+            ->where('source_message_key', $messageKey)->lockForUpdate()->first();
+    }
+
+    public function updateSellerText(Asset $asset, #[\SensitiveParameter] string $text): void
+    {
+        $asset->seller_text = $text;
+        $asset->save();
     }
 
     public function paginateForProject(Workspace $workspace, Project $project, int $perPage = 20): LengthAwarePaginator

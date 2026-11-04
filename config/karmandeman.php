@@ -41,7 +41,8 @@ return [
         // selected only after it is imported and tested against the real API.
         'workflow_version' => 'product-extraction.v1',
         'run_timeout_minutes' => (int) env('KM_AI_RUN_TIMEOUT_MINUTES', 15),
-        'max_assets_per_run' => (int) env('KM_AI_MAX_ASSETS_PER_RUN', 20),
+        // The workflow and input schema take at most 20 photos; a higher value would only send runs that fail.
+        'max_assets_per_run' => min((int) env('KM_AI_MAX_ASSETS_PER_RUN', 20), 20),
         // All photos of a run travel inline in one model request, near 20 MB with base64 (ADR-037, ADR-046).
         // The workflow refuses more than 14 MB, so a higher value would only send runs that fail.
         'max_input_bytes_per_run' => min((int) env('KM_AI_MAX_INPUT_BYTES_PER_RUN', 14 * 1024 * 1024), 14 * 1024 * 1024),

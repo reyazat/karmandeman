@@ -18,9 +18,11 @@ run-scoped signed photo links that strip metadata, bot confirmation of
 suggested values that keeps their photo provenance, and a grouped bot
 question for suggested prices, a legacy n8n extraction workflow export with a
 Gemini model step (retired by ADR-045; the owner selected OpenAI for voice and
-text processing in n8n), an OpenAI photo-extraction workflow export (ADR-046;
-not imported into n8n, not called against the real API and not selected in
-config), a run-scoped signed voice link that strips the Ogg comment
+text processing in n8n), an OpenAI photo-extraction workflow export (ADR-046,
+now `openai.v2` with input.v2 by ADR-050: each photo's caption or the seller's
+reply to it is stored encrypted and sent as that photo's text, with the brand
+tone; not imported into n8n, not called against the real API and not selected
+in config), a run-scoped signed voice link that strips the Ogg comment
 header (ADR-047; the owner chose one run for photos and voices and no
 default voice rate; no run is given voices yet),
 a Laravel-owned run claim so only one n8n execution pays for the model,
@@ -39,7 +41,7 @@ the bot and the API with /projects showing files and credit used,
 and for the test phase (ADR-048) voice kept off, new input refused without
 spendable credit, and a configurable markup percent (default 10) on the
 usage charge, with no charge when Karmandeman fails
-(ADR-016 to ADR-048) with code and tests. These
+(ADR-016 to ADR-050) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Casts\WorkspaceEncrypted;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property int $height
  * @property string $source
  * @property string|null $source_message_key
+ * @property string|null $seller_text the seller's caption and replies about this photo (ADR-050)
  * @property int|null $claimed_by_product_id
  * @property Carbon|null $created_at
  */
@@ -36,12 +38,15 @@ class Asset extends Model
 
     public const SOURCE_TELEGRAM = 'telegram';
 
+    /** Characters of seller text one photo carries into a run (ADR-050); below Telegram's caption limit. */
+    public const SELLER_TEXT_MAX = 1000;
+
     protected $fillable = [
         'workspace_id', 'project_id', 'storage_key', 'content_mac', 'mime',
-        'size_bytes', 'width', 'height', 'source', 'source_message_key', 'created_by',
+        'size_bytes', 'width', 'height', 'source', 'source_message_key', 'seller_text', 'created_by',
     ];
 
-    protected $hidden = ['storage_key', 'content_mac', 'source_message_key', 'claimed_by_product_id'];
+    protected $hidden = ['storage_key', 'content_mac', 'source_message_key', 'seller_text', 'claimed_by_product_id'];
 
     /**
      * @return BelongsTo<Project, $this>
@@ -57,6 +62,7 @@ class Asset extends Model
             'size_bytes' => 'integer',
             'width' => 'integer',
             'height' => 'integer',
+            'seller_text' => WorkspaceEncrypted::class,
         ];
     }
 }

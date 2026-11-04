@@ -19,8 +19,12 @@ export function readSchema(name: string): Record<string, any> {
     return JSON.parse(readFileSync(new URL(`../schemas/${name}`, import.meta.url), 'utf8'));
 }
 
-/** @param file an export in n8n/workflows; @param version the workflow_version Laravel starts it with */
-export function harness(file: string, version: string) {
+/**
+ * @param file an export in n8n/workflows; @param version the workflow_version Laravel starts it with;
+ * @param input the input schema version the export reads (v2 adds seller text and tone, ADR-050)
+ */
+export function harness(file: string, version: string, input = 'product-extraction.input.v1') {
+    const v2 = input === 'product-extraction.input.v2';
     const workflow = JSON.parse(readFileSync(new URL(`../workflows/${file}`, import.meta.url), 'utf8'));
 
     function source(name: string, base: string | null = BASE): string {
@@ -39,15 +43,17 @@ export function harness(file: string, version: string) {
 
     function envelope(overrides: Record<string, any> = {}): Record<string, any> {
         return {
-            schema_version: 'product-extraction.input.v1',
+            schema_version: input,
             workflow_version: version,
             run_id: RUN,
             project_id: '99999999-2222-4333-8444-555555555555',
             attempt: 1,
             locale: 'fa-IR',
+            ...(v2 ? { tone: null } : {}),
             assets: PHOTOS.map((id) => ({
                 id, mime: 'image/jpeg', size_bytes: 160, width: 1, height: 1,
                 download_url: `${BASE}/api/webhooks/internal/n8n/runs/${RUN}/assets/${id}?expires=1&signature=s`,
+                ...(v2 ? { seller_text: null } : {}),
             })),
             limits: { max_candidates: 30, max_model_requests: 40, max_input_tokens: 400000, max_output_tokens: 60000 },
             deadline_at: new Date(NOW + 15 * 60 * 1000).toISOString(),

@@ -43,6 +43,8 @@ final class TelegramWebhookRequest extends FormRequest
             'message.photo.*.width' => ['sometimes', 'integer', 'min:0'],
             'message.photo.*.height' => ['sometimes', 'integer', 'min:0'],
             'message.photo.*.file_size' => ['sometimes', 'integer', 'min:0'],
+            // A batch photo's caption is its seller text (ADR-050); Telegram allows 1024 characters.
+            'message.caption' => ['sometimes', 'string', 'max:1024'],
             'message.voice' => ['sometimes', 'array'],
             'message.voice.file_id' => ['required_with:message.voice', 'string', 'max:255'],
             'message.voice.mime_type' => ['sometimes', 'string', 'max:100'],
@@ -60,6 +62,10 @@ final class TelegramWebhookRequest extends FormRequest
             'message.reply_to_message.from.id' => ['sometimes'],
             'message.reply_to_message.from.is_bot' => ['sometimes'],
             'message.reply_to_message.reply_markup.inline_keyboard.*.*.callback_data' => ['sometimes'],
+            // A reply to the seller's own photo (ADR-050): which message, and that it had a file.
+            'message.reply_to_message.message_id' => ['sometimes'],
+            'message.reply_to_message.photo' => ['sometimes'],
+            'message.reply_to_message.document' => ['sometimes'],
             'callback_query' => ['sometimes', 'array'],
             'callback_query.id' => ['required_with:callback_query', 'string', 'max:128'],
             'callback_query.from' => ['required_with:callback_query', 'array'],

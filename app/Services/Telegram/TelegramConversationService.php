@@ -17,6 +17,7 @@ use App\Actions\Product\CreateTelegramProductDraftAction;
 use App\Actions\Product\RejectTelegramProductAction;
 use App\Actions\Product\ReviseTelegramProductAction;
 use App\Actions\Project\AcceptTelegramExtractionQuoteAction;
+use App\Actions\Project\AddTelegramPhotoTextAction;
 use App\Actions\Project\AnswerTelegramPriceQuestionAction;
 use App\Actions\Project\ApproveTelegramBatchAction;
 use App\Actions\Project\CancelTelegramProjectAction;
@@ -55,6 +56,7 @@ final readonly class TelegramConversationService
         private AdvanceTelegramOnboardingAction $onboarding,
         private CreateProjectAction $createProject,
         private QueueTelegramPhotoAction $queuePhoto,
+        private AddTelegramPhotoTextAction $photoText,
         private CreateTelegramProductDraftAction $createProduct,
         private ApproveTelegramProductAction $approveProduct,
         private ConfirmTelegramProductAction $confirmProduct,
@@ -113,7 +115,7 @@ final readonly class TelegramConversationService
             return;
         }
 
-        // A caption is ignored: media is batch input, not a command (ADR-024, ADR-040, ADR-045).
+        // Media is batch input, never a command; a batch photo's caption is its text (ADR-024, ADR-040, ADR-050).
         if (isset($message['photo']) || isset($message['document']) || isset($message['voice'])) {
             $this->handlePhoto($message, $chatId);
 
@@ -128,6 +130,13 @@ final readonly class TelegramConversationService
         $card = str_starts_with($text, '/') ? null : $this->repliedCard($message);
         if ($card !== null) {
             $this->handleProductEdit($message, $chatId, $card, $text);
+
+            return;
+        }
+        // A reply to the seller's own photo is that photo's text (ADR-050).
+        $photo = str_starts_with($text, '/') ? null : $this->repliedOwnPhoto($message);
+        if ($photo !== null) {
+            $this->handlePhotoText($message, $chatId, $photo, $text);
 
             return;
         }
@@ -282,6 +291,32 @@ final readonly class TelegramConversationService
         }
 
         return null;
+    }
+
+    /** The id of the seller's own photo message this text replies to. */
+    private function repliedOwnPhoto(array $message): ?int
+    {
+        $replied = $message['reply_to_message'] ?? null;
+        if (! is_array($replied) || ($replied['from']['id'] ?? null) !== $message['from']['id']
+            || ($replied['from']['is_bot'] ?? false) === true || ! is_int($replied['message_id'] ?? null)
+            || (! isset($replied['photo']) && ! isset($replied['document']))) {
+            return null;
+        }
+
+        return $replied['message_id'];
+    }
+
+    private function handlePhotoText(array $message, int|string $chatId, int $photoMessageId, string $text): void
+    {
+        $user = $this->resolveUser($message);
+        // Before onboarding ends, a reply is an onboarding answer like any other text.
+        if (! $this->onboarding->isReady($this->workspaceFor($user))) {
+            $this->replyOnboarding($message, $chatId, 'input', $text);
+
+            return;
+        }
+        $reply = $this->photoText->execute($this->workspaceFor($user), $user, $this->subjects->message($chatId, $photoMessageId), $text);
+        $this->bot->sendMessage($chatId, $reply ?? 'این عکس در هیچ پروژه‌ای ثبت نشده است؛ عکس را دوباره با مشخصات در کپشن بفرست.');
     }
 
     private function handleProjects(array $message, int|string $chatId): void
@@ -591,6 +626,7 @@ final readonly class TelegramConversationService
             '/done — بررسی محصولات و تأیید پروژه؛ تا تأیید پروژه، ورودی تازه هم پذیرفته می‌شود',
             'پاسخ (Reply) به کارت محصول — اصلاح نام و قیمت همان محصول؛ پروژه تأییدشده خودکار برای اصلاح باز می‌شود',
             'عکس در پاسخ به کارت محصول — افزودن عکس به همان محصول',
+            'کپشن عکس یا پاسخ (Reply) به عکس خودت — مشخصات همان محصول برای استخراج',
             '/projects — آخرین پروژه‌ها با وضعیت، فایل‌ها و مصرف، و انتخاب پروژه جاری',
             '/cancel — لغو پروژه جاری (با تأیید)',
             '/mybrand — مشاهده پروفایل برند',

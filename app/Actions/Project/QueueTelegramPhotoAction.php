@@ -9,6 +9,7 @@ use App\Actions\Privacy\EnsureVoiceIntakeAllowedAction;
 use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Enums\ProjectState;
 use App\Jobs\Project\ImportTelegramPhoto;
+use App\Models\Asset;
 use App\Models\TelegramMediaIntake;
 use App\Models\User;
 use App\Models\Workspace;
@@ -55,6 +56,12 @@ final readonly class QueueTelegramPhotoAction
         $file = $this->pick($message);
         if ($file === null) {
             return 'فقط عکس JPEG، PNG یا WebP، CSV محصولات یا ویس Ogg/Opus تا دو دقیقه پذیرفته می‌شود.';
+        }
+        // A batch photo's caption is the seller's text about that product (ADR-050); elsewhere it is ignored.
+        $caption = $file['kind'] === TelegramMediaIntake::KIND_PHOTO && $target === null
+            ? trim((string) ($message['caption'] ?? '')) : '';
+        if (mb_strlen($caption) > Asset::SELLER_TEXT_MAX) {
+            return 'متن همراه عکس باید حداکثر '.Asset::SELLER_TEXT_MAX.' نویسه باشد؛ عکس را با متن کوتاه‌تر دوباره بفرست.';
         }
         $table = $file['kind'] === TelegramMediaIntake::KIND_TABLE;
         $voice = $file['kind'] === TelegramMediaIntake::KIND_VOICE;
@@ -114,6 +121,7 @@ final readonly class QueueTelegramPhotoAction
             $this->subjects->message($message['chat']['id'], $message['message_id']),
             $file['kind'],
             $cardTarget,
+            $caption === '' ? null : $this->cipher->encrypt($workspace, 'telegram_media_intakes.seller_text', $caption),
         );
         if ($intake !== null) {
             ImportTelegramPhoto::dispatch($intake->id)->afterCommit();

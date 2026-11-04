@@ -123,6 +123,11 @@ final readonly class AdvanceTelegramOnboardingAction
                 }
             }
 
+            if ($event === 'input' && $state->step === 'ready') {
+                // Free text has no product to go to; it is never attached by guess (ADR-050).
+                return new OnboardingReply('این پیام به محصولی وصل نشد. مشخصات هر محصول را در کپشن عکس همان محصول بنویس یا روی آن عکس Reply کن. برای اصلاح برند /brand را بفرست.');
+            }
+
             return $this->prompt($state);
         });
     }

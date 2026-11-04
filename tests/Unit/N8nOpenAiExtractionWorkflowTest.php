@@ -6,12 +6,12 @@ namespace Tests\Unit;
 
 use App\Services\AI\AIWorkflowService;
 
-/** The OpenAI export Laravel starts extraction runs for (ADR-045, ADR-046). */
+/** The OpenAI export Laravel starts extraction runs for (ADR-045, ADR-046, ADR-050). */
 final class N8nOpenAiExtractionWorkflowTest extends N8nExtractionWorkflowTestCase
 {
     protected function export(): string
     {
-        return 'product-extraction.openai.v1.json';
+        return 'product-extraction.openai.v2.json';
     }
 
     protected function webhookPath(): string
@@ -44,11 +44,16 @@ final class N8nOpenAiExtractionWorkflowTest extends N8nExtractionWorkflowTestCas
     {
         $nodes = $this->nodes();
 
-        $this->assertSame('km-product-extraction-openai-v1', $this->workflow()['name']);
+        $this->assertSame('km-product-extraction-openai-v2', $this->workflow()['name']);
         $this->assertStringContainsString(
             "e.workflow_version !== '".AIWorkflowService::OPENAI_WORKFLOW_VERSION."'", $nodes['Check envelope']['parameters']['jsCode'],
         );
+        $this->assertStringContainsString(
+            "e.schema_version !== '".AIWorkflowService::INPUT_SCHEMA_VERSION."'", $nodes['Check envelope']['parameters']['jsCode'],
+        );
         $this->assertStringNotContainsString("'product-extraction.v1'", $nodes['Check envelope']['parameters']['jsCode']);
+        // It replaced the unpublished v1 export (ADR-050); the legacy Gemini export keeps input.v1.
+        $this->assertFileDoesNotExist(base_path('n8n/workflows/product-extraction.openai.v1.json'));
         // The callback names the provider ADR-045 requires; anything else makes no product or charge.
         $this->assertStringContainsString("provider: 'openai'", $nodes['Read OpenAI answer']['parameters']['jsCode']);
         $this->assertStringContainsString("provider: 'openai'", $nodes['Build OpenAI request']['parameters']['jsCode']);

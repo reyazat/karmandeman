@@ -14,6 +14,8 @@ ADR-045 دریافت امن ویس را ساخت و گفت متن ویس پیش 
 
 ## قرارداد برنامه‌ریزی‌شده
 
+> **به‌روزرسانی ۴ نوامبر ۲۰۲۶:** [ADR-050](ADR-050-seller-text-in-extraction-run.md) نسخه v2 را برای متن فروشنده گرفت. نسخه‌های زیر اکنون `input.v3`، `output.v3` و `openai.v3` هستند و همه فیلدهای v2 را نگه می‌دارند.
+
 - `product-extraction.input.v2`: مثل v1 به‌علاوه `voices` (شناسه، `mime`، `size_bytes`، `duration_ms`، `download_url`). فهرست خالی مجاز است.
 - `product-extraction.output.v2`: مثل v1 به‌علاوه `transcripts` (شناسه ویس و متن) و `source_voice_ids` در هر کاندید. هر کاندید دست‌کم یک منبع عکس یا ویس از همان run دارد. usage مصرف تبدیل گفتار و مدل متن را با هم و بدون دوبار شمردن retry گزارش می‌کند.
 - workflow تازه `product-extraction.openai.v2` با webhook جدا. `claim.v1` تغییر نمی‌کند. export `openai.v1` (ADR-046) با جایگزینی آن بازنشسته می‌شود؛ هیچ‌جا منتشر نشده است.
