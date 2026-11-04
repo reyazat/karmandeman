@@ -170,6 +170,68 @@ final class TelegramOnboardingTest extends TestCase
         $this->assertStringContainsString('نام برندتان', $this->lastReply()->text);
     }
 
+    public function test_returning_seller_keeps_the_brand_and_changes_only_one_preference(): void
+    {
+        $this->finishOnboarding();
+        $this->send('/new مجموعه آبان')->assertOk();
+        $this->assertStringContainsString('برند «کیف آوا» با قیمت به تومان', $this->lastReply()->text);
+
+        $this->send('/mybrand')->assertOk();
+        $this->assertStringContainsString("دسته: کیف\nلحن: صمیمی", $this->lastReply()->text);
+        $this->assertSame('onboard:edit', $this->lastReply()->buttons[0][0]['callback_data']);
+        $this->pressButton('onboard:edit')->assertOk();
+        $this->assertStringContainsString('مقدار فعلی: کیف آوا', $this->lastReply()->text);
+        $this->assertSame('onboard:keep:name', $this->lastReply()->buttons[0][0]['callback_data']);
+        $this->pressButton('onboard:keep:name')->assertOk();
+        $this->assertStringContainsString('مقدار فعلی: تومان', $this->lastReply()->text);
+        $keepUnitMessage = $this->updateId + 1;
+        $this->send('/keep')->assertOk();
+        $this->send('/keep', 555, ['message_id' => $keepUnitMessage])
+            ->assertOk()->assertJsonPath('data.status', 'duplicate');
+        $this->pressButton('onboard:keep:category')->assertOk();
+        // A stale keep button for an earlier step cannot skip the current question.
+        $this->pressButton('onboard:keep:category')->assertOk();
+        $this->assertSame('tone', TelegramOnboarding::sole()->step);
+        $this->send('رسمی و کوتاه')->assertOk();
+        $this->assertStringContainsString("نام: کیف آوا\nواحد قیمت: تومان\nدسته: کیف\nلحن: رسمی و کوتاه", $this->lastReply()->text);
+        $this->pressButton($this->lastReply()->buttons[0][0]['callback_data'])->assertOk();
+
+        $brand = Brand::sole();
+        $this->assertSame(['کیف آوا', 'toman', 'کیف', 'رسمی و کوتاه'], [$brand->name, $brand->currency_display_unit, $brand->category, $brand->tone]);
+        $this->assertSame(3, $brand->profile_version);
+        $revisions = MemoryItem::query()->pluck('revision', 'key')->all();
+        $this->assertSame(1, $revisions['brand.name']);
+        $this->assertSame(1, $revisions['brand.category']);
+        $this->assertSame(2, $revisions['brand.tone']);
+
+        $this->send('/new محصولات تازه')->assertOk();
+        $this->assertStringContainsString('ساخته شد', $this->lastReply()->text);
+        $this->assertDatabaseCount('projects', 2);
+        $this->assertSame(100, Wallet::sole()->balance_cached);
+        $this->assertDatabaseCount('credit_ledger', 1);
+    }
+
+    public function test_keep_needs_a_current_answer_and_stays_within_its_own_account(): void
+    {
+        $this->send('/start')->assertOk();
+        $this->pressButton($this->lastReply()->buttons[0][0]['callback_data'])->assertOk();
+        // First onboarding has nothing to keep: the required name is still asked.
+        $this->send('/keep')->assertOk();
+        $this->pressButton('onboard:keep:name')->assertOk();
+        $this->assertSame('name', TelegramOnboarding::sole()->step);
+        $this->assertSame([], $this->lastReply()->buttons);
+        $this->send('کیف آوا')->assertOk();
+        $this->pressButton('onboard:keep:unit')->assertOk();
+        $this->assertSame('unit', TelegramOnboarding::sole()->step);
+
+        // Another seller's keep reaches only that seller's own onboarding.
+        $this->send('/start', 777)->assertOk();
+        $this->pressButton($this->lastReply()->buttons[0][0]['callback_data'], 777)->assertOk();
+        $this->pressButton('onboard:keep:unit', 777)->assertOk();
+        $this->assertSame(['unit', 'name'], TelegramOnboarding::query()->orderBy('id')->pluck('step')->all());
+        $this->assertDatabaseCount('memory_items', 0);
+    }
+
     public function test_support_receipts_are_persisted_and_tenant_scoped(): void
     {
         $this->send('/support مشکل در حساب')->assertOk();

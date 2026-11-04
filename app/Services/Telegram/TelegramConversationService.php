@@ -45,7 +45,7 @@ use Illuminate\Support\Str;
  */
 final readonly class TelegramConversationService
 {
-    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
+    private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|keep:(name|unit|category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
     public function __construct(
         private RegisterTelegramUserAction $register,
@@ -145,6 +145,7 @@ final readonly class TelegramConversationService
             '/mybrand' => $this->handleMyBrand($message, $chatId),
             '/brand' => $this->replyOnboarding($message, $chatId, 'edit'),
             '/skip' => $this->replyOnboarding($message, $chatId, 'skip'),
+            '/keep' => $this->replyOnboarding($message, $chatId, 'keep'),
             '/confirm' => $this->replyOnboarding($message, $chatId, 'confirm'),
             '/forget' => $this->replyOnboarding($message, $chatId, 'forget', trim(mb_substr($text, mb_strlen('/forget')))),
             '/terms' => $this->handlePolicyDocument($chatId, 'terms'),
@@ -203,11 +204,15 @@ final readonly class TelegramConversationService
 
             return;
         }
-        $project = $this->createProject->execute($this->workspaceFor($user), $name);
+        $workspace = $this->workspaceFor($user);
+        $project = $this->createProject->execute($workspace, $name);
+        // A returning seller keeps the confirmed brand; it is shown, not asked again.
+        $brand = $this->ensureBrand->execute($workspace);
 
         $this->bot->sendMessage(
             $chatId,
             "پروژه «{$project->name}» ساخته شد.\n".
+            "برند «{$brand->name}» با قیمت به ".$this->unitName($brand->currency_display_unit).' به کار می‌رود؛ برای اصلاح /brand را بفرستید.'."\n".
             'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. تا تأیید نهایی پروژه هر ورودی تازه به همین پروژه می‌رود.'
         );
     }
@@ -301,13 +306,18 @@ final readonly class TelegramConversationService
         }
         $brand = $this->ensureBrand->execute($workspace);
 
-        $name = $brand->name ?? '—';
-        $unit = $brand->currency_display_unit === 'irr' ? 'ریال' : 'تومان';
-
         $this->bot->sendMessage(
             $chatId,
-            "برند: {$name}\nواحد قیمت: {$unit}\nلحن: ".($brand->tone ?? '—')
+            'برند: '.($brand->name ?? '—')."\nواحد قیمت: ".$this->unitName($brand->currency_display_unit).
+            "\nدسته: ".($brand->category ?? '—')."\nلحن: ".($brand->tone ?? '—').
+            "\nدر اصلاح، هر پاسخی را که تغییر نمی‌کند با «بدون تغییر» نگه دارید.",
+            [[['text' => 'اصلاح برند', 'callback_data' => 'onboard:edit']]],
         );
+    }
+
+    private function unitName(?string $unit): string
+    {
+        return $unit === 'irr' ? 'ریال' : 'تومان';
     }
 
     private function handleCallback(array $callback): void
@@ -443,7 +453,7 @@ final readonly class TelegramConversationService
         $data = explode(':', $callbackData);
         $event = $data[1] ?? '';
         $value = match ($event) {
-            'accept', 'unit', 'skip' => $data[2] ?? null,
+            'accept', 'unit', 'skip', 'keep' => $data[2] ?? null,
             'confirm' => isset($data[2], $data[3]) ? "{$data[2]}:{$data[3]}" : null,
             default => null,
         };
@@ -574,6 +584,7 @@ final readonly class TelegramConversationService
             '/brand — اصلاح برند تأییدشده',
             '/forget name|category|tone — حذف یک بخش حافظه برند',
             '/skip — گذشتن از پرسش اختیاری',
+            '/keep — نگه‌داشتن مقدار فعلی هنگام اصلاح برند',
             '/new — ثبت پروژه جدید؛ سپس عکس محصولات را بفرست',
             'عکس یا فایل CSV — به پروژه جاری می‌رود؛ اگر پروژه جاری تأیید شده باشد، پروژه تازه خودکار ساخته می‌شود',
             '/product نام (و قیمت در خط دوم) — ثبت محصول با عکس‌های تازه همین پروژه',

@@ -116,7 +116,7 @@ final readonly class AdvanceTelegramOnboardingAction
                 return new OnboardingReply('برند تأیید شد؛ شناخت اولیه رایگان است. با /new پروژه بسازید و عکس محصولات را بفرستید.');
             }
 
-            if ($event === 'input' || $event === 'skip' || $event === 'unit') {
+            if (in_array($event, ['input', 'skip', 'unit', 'keep'], true)) {
                 $reply = $this->advanceInput($workspace, $state, $event, $value);
                 if ($reply !== null) {
                     return $reply;
@@ -149,7 +149,17 @@ final readonly class AdvanceTelegramOnboardingAction
         if ($event === 'unit' && $step !== 'unit') {
             return $this->prompt($state);
         }
-        if ($event === 'skip' && $value !== null && $value !== $step) {
+        if (($event === 'skip' || $event === 'keep') && $value !== null && $value !== $step) {
+            return $this->prompt($state);
+        }
+        $draft = $state->draft ?? [];
+        if ($event === 'keep') {
+            // Editing a confirmed brand: an answer already in the draft carries over unchanged.
+            if (($draft[$this->draftField($step)] ?? null) === null) {
+                return $this->prompt($state);
+            }
+            $this->onboardings->save($state, $this->nextStep($step), $draft, $state->expected_brand_version);
+
             return $this->prompt($state);
         }
         if ($event === 'skip' && ! in_array($step, ['category', 'tone'], true)) {
@@ -158,7 +168,6 @@ final readonly class AdvanceTelegramOnboardingAction
         if ($event !== 'skip' && ($value === null || trim($value) === '')) {
             return $this->prompt($state);
         }
-        $draft = $state->draft ?? [];
         if ($step === 'unit') {
             $unit = match (trim((string) $value)) {
                 'تومان', 'toman' => 'toman',
@@ -181,22 +190,32 @@ final readonly class AdvanceTelegramOnboardingAction
             $draft[$step] = $event === 'skip' ? null : trim($value);
         }
 
-        $next = match ($step) {
-            'name' => 'unit', 'unit' => 'category', 'category' => 'tone', 'tone' => 'review',
-        };
         $brandVersion = $state->expected_brand_version ?? $this->brands->ensureFor($workspace)->profile_version;
-        $this->onboardings->save($state, $next, $draft, $brandVersion);
+        $this->onboardings->save($state, $this->nextStep($step), $draft, $brandVersion);
 
         return $this->prompt($state);
+    }
+
+    private function nextStep(string $step): string
+    {
+        return match ($step) {
+            'name' => 'unit', 'unit' => 'category', 'category' => 'tone', 'tone' => 'review',
+            default => throw new DomainException('INVALID_ONBOARDING_STEP'),
+        };
+    }
+
+    private function draftField(string $step): string
+    {
+        return $step === 'unit' ? 'currency_display_unit' : $step;
     }
 
     private function prompt(TelegramOnboarding $state): OnboardingReply
     {
         return match ($state->step) {
-            'name' => new OnboardingReply('نام برندتان چیست؟ (برای اصلاح دوباره همین‌جا نام جدید را بفرستید.)'),
-            'unit' => new OnboardingReply('واحد نمایش قیمت را انتخاب کنید: تومان یا ریال.', $this->unitButtons()),
-            'category' => new OnboardingReply('دسته کسب‌وکار چیست؟ اختیاری است؛ /skip را بفرستید.', $this->skipButtons('category')),
-            'tone' => new OnboardingReply('لحن برند چیست؟ اختیاری است؛ /skip را بفرستید.', $this->skipButtons('tone')),
+            'name' => $this->withKeep($state, 'نام برندتان چیست؟ (برای اصلاح دوباره همین‌جا نام جدید را بفرستید.)', []),
+            'unit' => $this->withKeep($state, 'واحد نمایش قیمت را انتخاب کنید: تومان یا ریال.', $this->unitButtons()),
+            'category' => $this->withKeep($state, 'دسته کسب‌وکار چیست؟ اختیاری است؛ /skip را بفرستید.', $this->skipButtons('category')),
+            'tone' => $this->withKeep($state, 'لحن برند چیست؟ اختیاری است؛ /skip را بفرستید.', $this->skipButtons('tone')),
             'review' => new OnboardingReply($this->summary($state->draft ?? []), [[
                 ['text' => 'تأیید برند', 'callback_data' => 'onboard:confirm:'.$this->reviewToken($state)],
                 ['text' => 'اصلاح', 'callback_data' => 'onboard:edit'],
@@ -204,6 +223,27 @@ final readonly class AdvanceTelegramOnboardingAction
             'ready' => new OnboardingReply('برند تأیید شده است. برای مشاهده /mybrand، برای اصلاح /brand و برای شروع پروژه /new را بفرستید؛ عکس محصولات بعد از /new پذیرفته می‌شود.'),
             default => throw new DomainException('INVALID_ONBOARDING_STEP'),
         };
+    }
+
+    /**
+     * A step whose answer is already in the draft (a brand being edited) offers to keep it.
+     *
+     * @param  array<int, array<int, array{text: string, callback_data: string}>>  $buttons
+     */
+    private function withKeep(TelegramOnboarding $state, string $question, array $buttons): OnboardingReply
+    {
+        $current = ($state->draft ?? [])[$this->draftField($state->step)] ?? null;
+        if ($current === null) {
+            return new OnboardingReply($question, $buttons);
+        }
+        $shown = $state->step === 'unit' ? ($current === 'irr' ? 'ریال' : 'تومان') : $current;
+        // An optional answer kept by mistake is cheap; one cleared by mistake is not.
+        $clears = in_array($state->step, ['category', 'tone'], true) ? ' «بعداً» یا /skip آن را خالی می‌کند.' : '';
+
+        return new OnboardingReply(
+            "{$question}\nمقدار فعلی: {$shown}. برای نگه‌داشتن آن /keep را بفرستید.{$clears}",
+            [[['text' => 'بدون تغییر', 'callback_data' => 'onboard:keep:'.$state->step]], ...$buttons],
+        );
     }
 
     private function summary(array $draft): string
