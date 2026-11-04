@@ -74,9 +74,12 @@ revokes API tokens and rejects every later mutation (FR-086). API brand and
 project mutations require consent to the exact approved policy. The Mini App
 privacy page at `/app/privacy` (FR-085) re-authenticates with fresh signed
 initData and calls `POST /api/v1/account/deletion`, the same FR-086 flow.
-Purge of data, backups and keys (FR-087), private-data encryption (NFR-11),
-the operator path and deadline monitoring are not implemented; they remain
-release requirements. The Mini App only signs in accounts created by the bot's
+Live purge (FR-087, [ADR-014](docs/adr/ADR-014-seven-day-database-backups-and-live-purge.md)),
+encryption of private fields and files (NFR-11) and deadline alerts from the
+`privacy:process-deletions` schedule are implemented and tested. Completion
+stays off until backup lifecycle is evidenced; an operator path and proof of
+erasure and restore on staging (QA-19…21) are still missing and remain release
+requirements. The Mini App only signs in accounts created by the bot's
 `/start` ([ADR-012](docs/adr/ADR-012-mini-app-reauthentication-and-sign-in.md)).
 `deploy/Caddyfile` lets only `/app` be framed, and only by
 `https://web.telegram.org`, with a restrictive CSP; every other path keeps

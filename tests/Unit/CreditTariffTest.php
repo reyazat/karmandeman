@@ -124,6 +124,20 @@ class CreditTariffTest extends TestCase
         $this->assertSame(0, $credits['rates']['output_tokens_per_million']);
     }
 
+    public function test_the_production_compose_passes_every_credit_setting_to_the_app(): void
+    {
+        // The app image carries no env file, so a key the compose file leaves out
+        // silently falls back to the code default (the markup percent once did).
+        preg_match_all("/'(KM_CREDITS?_[A-Z_]+)'/", (string) file_get_contents(base_path('config/karmandeman.php')), $keys);
+        $compose = (string) file_get_contents(base_path('compose.prod.reference.yaml'));
+
+        $this->assertNotEmpty($keys[1]);
+        foreach (array_unique($keys[1]) as $key) {
+            $this->assertMatchesRegularExpression("/^\s+{$key}: \\$\\{{$key}:-/m", $compose, "{$key} is not passed to the app");
+        }
+        $this->assertStringContainsString('KM_CREDIT_TARIFF_VERSION: ${KM_CREDIT_TARIFF_VERSION:-usage-v2}', $compose);
+    }
+
     public function test_the_current_tariff_comes_from_configuration(): void
     {
         config(['karmandeman.credits.rates' => ['input_tokens_per_million' => 7, 'output_tokens_per_million' => 8, 'model_request' => 9]]);
