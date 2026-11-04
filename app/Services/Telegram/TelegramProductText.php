@@ -32,10 +32,26 @@ final readonly class TelegramProductText
         if (mb_strlen($name) > 200) {
             return 'نام محصول باید حداکثر ۲۰۰ نویسه باشد.';
         }
+        $price = $this->price($lines[1] ?? '', $help);
+        if (is_string($price)) {
+            return $price;
+        }
+
+        return ['name' => $name, 'price' => $price['amount'] ?? null, 'unit' => $price['unit'] ?? null];
+    }
+
+    /**
+     * One price with its unit, as the seller types it; an empty line is no price.
+     *
+     * @param  string  $help  the format reply of the calling command
+     * @return array{amount: int, unit: 'IRR'|'IRT'}|array{}|string the price, [] for none, or the reply explaining the format
+     */
+    public function price(string $line, string $help): array|string
+    {
         // Direction marks and ZWNJ from Persian keyboards carry no meaning in a price.
-        $priceLine = preg_replace('/[\x{200B}-\x{200F}\x{2066}-\x{2069}]/u', '', $this->text->sku($lines[1] ?? '')) ?? '';
+        $priceLine = preg_replace('/[\x{200B}-\x{200F}\x{2066}-\x{2069}]/u', '', $this->text->sku($line)) ?? '';
         if ($priceLine === '') {
-            return ['name' => $name, 'price' => null, 'unit' => null];
+            return [];
         }
         // Separators only between groups of three: 12.5 or 1,5 is never read as 125 or 15.
         if (preg_match('/^([0-9]{1,3}(?:[,٬.][0-9]{3})+|[0-9]+)\s*(تومان|ریال)?$/u', $priceLine, $match) !== 1) {
@@ -50,6 +66,6 @@ final readonly class TelegramProductText
             return 'قیمت معتبر نیست.';
         }
 
-        return ['name' => $name, 'price' => (int) $digits, 'unit' => $match[2] === 'ریال' ? 'IRR' : 'IRT'];
+        return ['amount' => (int) $digits, 'unit' => $match[2] === 'ریال' ? 'IRR' : 'IRT'];
     }
 }

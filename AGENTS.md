@@ -40,8 +40,10 @@ read-only ledger reconciliation, and one open-for-input rule shared by
 the bot and the API with /projects showing files and credit used,
 and for the test phase (ADR-048) voice kept off, new input refused without
 spendable credit, and a configurable markup percent (default 10) on the
-usage charge, with no charge when Karmandeman fails
-(ADR-016 to ADR-050) with code and tests. These
+usage charge, with no charge when Karmandeman fails,
+and correction of any product field from a reply to its card with
+"label: value" lines, the card showing every value Gate A approves (ADR-051)
+(ADR-016 to ADR-051) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/PDF/ZIP/catalogue exports, export quotes, refunds, operator adjustments,

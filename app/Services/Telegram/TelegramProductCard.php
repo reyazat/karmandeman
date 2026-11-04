@@ -25,7 +25,7 @@ final readonly class TelegramProductCard
     /** UTF-16 units for the suggested values, well under Telegram's 4096 per message. */
     private const SUGGESTED_BUDGET = 3000;
 
-    private const REPLY_HINT = "\nبرای اصلاح، به همین پیام پاسخ (Reply) بده: نام در خط اول، قیمت تازه در خط دوم.";
+    private const REPLY_HINT = "\nبرای اصلاح، به همین پیام پاسخ (Reply) بده: نام در خط اول و قیمت تازه در خط دوم، یا هر مورد در یک خط مثل «جنس: برزنت» یا «قیمت: نامعلوم».";
 
     public function __construct(
         private ProductDraftNormalizer $normalizer,
@@ -59,8 +59,9 @@ final readonly class TelegramProductCard
     {
         $id = "{$product->public_id}:{$revision->revision}";
         $reject = ['text' => 'رد محصول', 'callback_data' => "product:reject:{$id}"];
-        [$suggested, $kept] = $this->review($revision);
+        [$suggested, $kept, $confirmed] = $this->review($revision);
         if ($this->normalizer->fieldsRequiringConfirmation($revision->payload) === []) {
+            $kept = [...$kept, ...$confirmed];
             // Gate A also approves what the model chose without a status, so it is shown here too.
             if ($kept === []) {
                 return new BotReply($text.self::REPLY_HINT, [[['text' => 'تأیید محصول', 'callback_data' => "product:approve:{$id}"], $reject]]);
@@ -76,8 +77,9 @@ final readonly class TelegramProductCard
         $buttons = [];
         if ($suggested !== []) {
             $block = implode("\n", [...$suggested, ...$kept]);
-            if ($this->fits($block)) {
-                $text .= "\n\nمقدارهای پیشنهادی از عکس‌ها (هنوز تأیید نشده‌اند):\n".$block;
+            if ($this->fits($block."\n".implode("\n", $confirmed))) {
+                $text .= "\n\nمقدارهای پیشنهادی از عکس‌ها (هنوز تأیید نشده‌اند):\n".$block
+                    .($confirmed === [] ? '' : "\n\nتأییدشده:\n".implode("\n", $confirmed));
                 $confirm = [['text' => 'تأیید مقدارهای پیشنهادی', 'callback_data' => "product:confirm:{$id}"]];
                 if ($this->priceSuggested($revision)) {
                     $confirm[] = ['text' => 'تأیید بدون قیمت', 'callback_data' => "product:noprice:{$id}"];
@@ -102,9 +104,9 @@ final readonly class TelegramProductCard
      */
     public function confirmable(ProductRevision $revision): bool
     {
-        [$suggested, $kept] = $this->review($revision);
+        [$suggested, $kept, $confirmed] = $this->review($revision);
 
-        return $suggested !== [] && $this->fits(implode("\n", [...$suggested, ...$kept]));
+        return $suggested !== [] && $this->fits(implode("\n", [...$suggested, ...$kept])."\n".implode("\n", $confirmed));
     }
 
     public function priceSuggested(ProductRevision $revision): bool
@@ -113,11 +115,12 @@ final readonly class TelegramProductCard
     }
 
     /**
-     * Every suggested value of the revision, in full, and what a confirm keeps
+     * Every suggested value of the revision, in full; what a confirm keeps
      * without a status: attribute names with no value and the photos the model
-     * chose by their upload position. Nothing is confirmed unseen.
+     * chose by their upload position; and the values already confirmed, which
+     * Gate A approves too (ADR-051). Nothing is approved unseen.
      *
-     * @return array{list<string>, list<string>}
+     * @return array{list<string>, list<string>, list<string>}
      */
     private function review(ProductRevision $revision): array
     {
@@ -132,16 +135,28 @@ final readonly class TelegramProductCard
             $suggested[] = '• '.$this->price($payload);
         }
         $kept = [];
+        // Confirmed values are shown too, so Gate A never approves a value the card hides (ADR-051).
+        $confirmed = [];
+        foreach (['sku' => 'کد', 'description_fa' => 'توضیح'] as $field => $label) {
+            if (($payload[$field]['status'] ?? null) === 'confirmed') {
+                $confirmed[] = "• {$label}: ".$this->shown((string) $payload[$field]['value']);
+            }
+        }
         foreach ($payload['attributes'] ?? [] as $attribute) {
             $name = $this->shown($attribute['name']);
             if ($attribute['status'] === 'suggested') {
                 $suggested[] = "• {$name}: ".$this->shown(implode('، ', $attribute['values'] ?? []));
             } elseif ($attribute['values'] === null) {
                 $kept[] = "• {$name}: نامعلوم";
+            } else {
+                $confirmed[] = "• {$name}: ".$this->shown(implode('، ', $attribute['values']));
             }
         }
-        if (($payload['category_path']['status'] ?? null) === 'suggested') {
-            $suggested[] = '• دسته: '.$this->shown(implode(' › ', $payload['category_path']['value'] ?? []));
+        $category = $payload['category_path'] ?? [];
+        if (($category['status'] ?? null) === 'suggested') {
+            $suggested[] = '• دسته: '.$this->shown(implode(' › ', $category['value'] ?? []));
+        } elseif (($category['value'] ?? null) !== null) {
+            $confirmed[] = '• دسته: '.$this->shown(implode(' › ', $category['value']));
         }
         $images = $payload['image_asset_ids'] ?? [];
         $fromModel = in_array(ProductDraftNormalizer::SOURCE_AI, array_column(
@@ -154,7 +169,7 @@ final readonly class TelegramProductCard
                 .' از عکس‌هایی که در این پروژه فرستادی';
         }
 
-        return [$suggested, $kept];
+        return [$suggested, $kept, $confirmed];
     }
 
     /** One line of model or seller text with no bidi or format controls (ZWNJ and ZWJ stay). */

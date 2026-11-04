@@ -220,7 +220,8 @@ final readonly class ProductDraftNormalizer
      * Keeps the provenance of every value a new revision leaves unchanged
      * (FR-030, ADR-034): confirming a suggested value, or correcting another
      * field, keeps it cited to the photos it came from. Only a changed value
-     * becomes `manual_override`. Attributes are compared by position.
+     * becomes `manual_override`. An attribute is matched by its name and values,
+     * not its position, so removing one keeps the others' citations (ADR-051).
      *
      * @param  array<string, mixed>  $payload  normalized from a manual draft
      * @param  array<string, mixed>  $previous  payload of the revision it replaces
@@ -245,8 +246,16 @@ final readonly class ProductDraftNormalizer
         }
         foreach ($payload['evidence'] as $index => $entry) {
             $field = $entry['field'];
-            if (isset($before[$field]) && $this->evidenceValue($payload, $field) === $this->evidenceValue($previous, $field)) {
-                $payload['evidence'][$index] = $before[$field];
+            $value = $this->evidenceValue($payload, $field);
+            $candidates = str_starts_with($field, 'attributes.')
+                ? array_filter(array_keys($before), fn (string $key): bool => str_starts_with($key, 'attributes.'))
+                : [$field];
+            foreach ($candidates as $key) {
+                if (isset($before[$key]) && $value === $this->evidenceValue($previous, $key)) {
+                    $payload['evidence'][$index] = ['field' => $field] + $before[$key];
+
+                    break;
+                }
             }
             if ($field === 'pricing.regular_price_irr') {
                 $payload['pricing']['source'] = $payload['evidence'][$index]['source'];
