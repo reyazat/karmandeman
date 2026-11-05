@@ -30,7 +30,14 @@ exec 9>"$root/deploy.lock"
 flock -w 900 9 || { echo "another deploy is still running" >&2; exit 75; }
 
 cd "$src"
-git fetch --quiet origin main
+# The host resolver (local BIND) sometimes fails a lookup while it tries
+# IPv6 nameservers the host cannot reach; retry instead of failing the deploy.
+for attempt in 1 2 3 4 5; do
+    git fetch --quiet origin main && break
+    [ "$attempt" -lt 5 ] || { echo "git fetch failed $attempt times" >&2; exit 69; }
+    echo "git fetch failed (attempt $attempt), retrying" >&2
+    sleep $((attempt * 5))
+done
 if ! git merge-base --is-ancestor "$sha" origin/main; then
     echo "commit $sha is not on origin/main" >&2
     exit 65
