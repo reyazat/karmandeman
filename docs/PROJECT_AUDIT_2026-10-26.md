@@ -866,6 +866,16 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 شواهد: PostgreSQL موقت **۴۷۱ تست / ۶۶۴۵ assertion**، SQLite **۴۴۴ پاس / ۲۷ skip**، Pint و PHPStan بدون خطا، `docker compose config` موفق. اندازه‌گیری محلی ۲۰ محصول با عکس ۱۲ مگاپیکسلی: ۱۱ ثانیه و اوج حافظه ۱۵۰ مگابایت. سه استوری نمونه به‌صورت تصویر دیده شدند. Vitest اجرا نشد چون frontend تغییر نکرد. آزموده نشده: گوشی واقعی، ربات و worker زنده، `sendMediaGroup` روی Bot API واقعی و اپ استوری.
 
+### وریفای ۵ نوامبر پس از ADR-054 و ADR-055، و گام PZ-01
+
+[ADR-054](adr/ADR-054-single-host-deploy-next-to-n8n.md) برنامه را روی `5.78.96.78` کنار n8n مستقر کرد و [ADR-055](adr/ADR-055-bot-inline-menu.md) منوی دکمه‌ای ربات را افزود؛ فایل ADR-055 جا افتاده بود و پس از اجرا از روی کد ثبت شد. [ADR-056](adr/ADR-056-verification-fixes-photo-orientation-policy-v5.md) نتیجه وریفای است.
+
+پیش از تغییر: PostgreSQL موقت **۴۷۷ تست / ۶۶۹۲ assertion**، Pint و PHPStan بدون خطا، `composer validate` معتبر و `composer audit` بدون advisory. بازبین مستقل در کد برنامه مورد بحرانی نیافت. اصلاح‌شده در مخزن: گذرواژه دیتابیس در argv `docker run` در `release.sh`؛ `X-Forwarded-Host` و `X-Forwarded-Prefix` مرورگر در vhost Apache؛ لزوم `restrict` در خط کلید deploy (README)؛ آزمون منفی منو. جهت EXIF عکس فایل‌شده اکنون در PDF و استوری اعمال می‌شود (گیت باز ADR-052/053).
+
+گلوگاه مسیر: بسته سیاست فعال v3 و پیش‌نویس v4 AI و خروجی را غیرفعال می‌گویند، پس ربات زنده تا تصویب بسته تازه به فروشنده خدمت نمی‌دهد. پیش‌نویس `pilot-20261105-v5` (تأییدنشده، انتخاب‌نشده) آنچه کد انجام می‌دهد را می‌گوید و OpenAI را تنها پردازشگر نام می‌برد. باز و مسدودکننده انتشار (روی سرور، خارج از مخزن): نقش Postgres n8n ممکن است superuser باشد و به `km_app` برسد؛ editor n8n روی `5678` عمومی، SSH root با گذرواژه و فایروال خاموش؛ release ناموفق خودکار برنمی‌گردد؛ restore آزموده نشده. تصمیم‌های مالک برای v5 در ADR-056 فهرست شده‌اند.
+
+شواهد پس از تغییر: PostgreSQL موقت **۴۸۱ تست / ۶۷۵۵ assertion**، SQLite **۴۵۴ پاس / ۲۷ skip**، Pint و PHPStan بدون خطا، `bash -n` روی `release.sh`. آزموده نشده: vhost و کلید روی سرور، deploy واقعی این تغییر، ربات زنده.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

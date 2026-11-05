@@ -1,5 +1,13 @@
 # Policy bundle history
 
+- `pilot-2026-11-05-v5`: draft for the pilot path (ADR-056). Describes what the
+  product now does: photos with their text and CSV, OpenAI through n8n only
+  after an accepted quote, voice off, credit rules and the catalogue pack.
+  Keeps the v4 deletion and backup limits. Not selected, not approved; owner
+  decisions on OpenAI retention, hosting and prices are listed in
+  `docs/adr/ADR-056-verification-fixes-photo-orientation-policy-v5.md`.
+- `pilot-2026-10-29-v4`: draft aligning backups with ADR-014; superseded by
+  the v5 draft, which keeps its limits.
 - `pilot-2026-10-27-v3`: current candidate; owner's final seven-day complete
   erasure deadline overrides the ordinary fourteen-day backup maximum age.
   Private-data encryption and the account deletion button remain requirements.

@@ -87,4 +87,53 @@ final class CataloguePdfRendererTest extends TestCase
             $this->assertStringContainsString(mb_convert_encoding($alias, 'UTF-16BE', 'UTF-8'), $content);
         }
     }
+
+    /** A 40×20 JPEG, red on the left and blue on the right, with an EXIF orientation tag when given. */
+    private function taggedJpeg(?int $orientation, string $order = 'II'): string
+    {
+        $image = imagecreatetruecolor(40, 20);
+        imagefilledrectangle($image, 0, 0, 19, 19, (int) imagecolorallocate($image, 255, 0, 0));
+        imagefilledrectangle($image, 20, 0, 39, 19, (int) imagecolorallocate($image, 0, 0, 255));
+        ob_start();
+        imagejpeg($image, null, 95);
+        $jpeg = (string) ob_get_clean();
+        if ($orientation === null) {
+            return $jpeg;
+        }
+        [$short, $long] = $order === 'II' ? ['v', 'V'] : ['n', 'N'];
+        $tiff = $order.pack($short, 42).pack($long, 8).pack($short, 1)
+            .pack($short, 0x0112).pack($short, 3).pack($long, 1).pack($short, $orientation).pack($short, 0).pack($long, 0);
+
+        return substr($jpeg, 0, 2)."\xFF\xE1".pack('n', 8 + strlen($tiff))."Exif\0\0".$tiff.substr($jpeg, 2);
+    }
+
+    /** @return array{int, int, string} width, height and whether the top-left corner is red or blue */
+    private function upright(string $jpeg): array
+    {
+        $image = imagecreatefromstring(app(CataloguePhotoEncoder::class)->jpeg($jpeg));
+        $this->assertNotFalse($image);
+        $rgb = imagecolorat($image, 2, 2);
+
+        return [imagesx($image), imagesy($image), (($rgb >> 16) & 0xFF) > ($rgb & 0xFF) ? 'red' : 'blue'];
+    }
+
+    public function test_a_photo_stands_as_its_orientation_tag_says(): void
+    {
+        $this->assertSame([40, 20, 'red'], $this->upright($this->taggedJpeg(null)));
+        $this->assertSame([40, 20, 'red'], $this->upright($this->taggedJpeg(1)));
+        // A quarter turn clockwise: the left side becomes the top.
+        $this->assertSame([20, 40, 'red'], $this->upright($this->taggedJpeg(6)));
+        $this->assertSame([20, 40, 'red'], $this->upright($this->taggedJpeg(6, 'MM')));
+        $this->assertSame([20, 40, 'blue'], $this->upright($this->taggedJpeg(8)));
+        $this->assertSame([40, 20, 'blue'], $this->upright($this->taggedJpeg(3)));
+        $this->assertSame([40, 20, 'blue'], $this->upright($this->taggedJpeg(2)));
+        $this->assertSame([40, 20, 'red'], $this->upright($this->taggedJpeg(4)));
+        // Mirrored and turned: transpose keeps red top-left, transverse ends blue there.
+        $this->assertSame([20, 40, 'red'], $this->upright($this->taggedJpeg(5)));
+        $this->assertSame([20, 40, 'blue'], $this->upright($this->taggedJpeg(7)));
+        // An unknown value or a cut EXIF block changes nothing.
+        $this->assertSame([40, 20, 'red'], $this->upright($this->taggedJpeg(9)));
+        $tagged = $this->taggedJpeg(6);
+        $this->assertSame([40, 20, 'red'], $this->upright(substr($tagged, 0, 4).pack('n', 9).substr($tagged, 6)));
+    }
 }

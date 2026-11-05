@@ -49,8 +49,11 @@ when generation fails (ADR-052), and in the same pack and price one fixed
 1080x1920 story image per approved product, sent with the PDF as a document
 album, at most 20 products per pack (ADR-053), and a single-host deploy on
 5.78.96.78 next to n8n, deployed from GitHub after CI passes on main (ADR-054;
-see `deploy/server/README.md`)
-(ADR-016 to ADR-054) with code and tests. These
+see `deploy/server/README.md`), an inline bot menu that routes to the same
+command handlers (ADR-055), catalogue photos turned upright from their EXIF
+orientation, and an unapproved, unselected policy draft v5 that names OpenAI
+and the catalogue pack (ADR-056)
+(ADR-016 to ADR-056) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/ZIP/online-catalogue exports, a final export price, export quotes, refunds, operator adjustments,

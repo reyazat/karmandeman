@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\ServiceRequest;
 use App\Models\TelegramOnboarding;
 use App\Models\Wallet;
+use App\Models\Workspace;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -116,6 +117,41 @@ final class TelegramOnboardingTest extends TestCase
         $this->pressButton($review)->assertOk();
         $this->assertDatabaseHas('projects', ['state' => 'review_required']);
         $this->assertDatabaseCount('credit_ledger', 1);
+    }
+
+    public function test_menu_buttons_act_only_as_their_commands_would(): void
+    {
+        $this->finishOnboarding();
+        $this->send('/menu')->assertOk();
+        $new = $this->lastReply()->buttons[0][0]['callback_data'];
+
+        // A bundle that is not approved stops every project action, from a button as from /new.
+        config(['pilot_policy.directory' => resource_path('policies/pilot-2026-10-27-v3')]);
+        foreach ([$new, 'menu:done', 'menu:start'] as $button) {
+            $this->pressButton($button)->assertOk();
+        }
+        $this->assertDatabaseCount('projects', 0);
+
+        // An account whose erasure started gets no project from a stale button either.
+        $this->useApprovedPilotPolicy();
+        Workspace::query()->update(['status' => 'deletion_pending']);
+        $this->pressButton($new)->assertOk();
+        $this->assertDatabaseCount('projects', 0);
+    }
+
+    public function test_review_pressed_twice_finishes_the_batch_once(): void
+    {
+        $this->finishOnboarding();
+        $this->send('/new مجموعه آبان')->assertOk();
+        $review = $this->lastReply()->buttons[0][0]['callback_data'];
+        $this->send('/product کیف')->assertOk();
+        $ledger = DB::table('credit_ledger')->count();
+
+        $this->pressButton($review)->assertOk();
+        $this->pressButton($review)->assertOk();
+
+        $this->assertSame('review_required', Project::query()->sole()->state->value);
+        $this->assertSame($ledger, DB::table('credit_ledger')->count());
     }
 
     public function test_stale_project_button_cannot_bypass_new_policy_consent(): void

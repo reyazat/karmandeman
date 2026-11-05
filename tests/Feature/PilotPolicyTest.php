@@ -49,6 +49,26 @@ final class PilotPolicyTest extends TestCase
         $this->assertContains('RETENTION_NOT_APPROVED', $policy->blockers);
     }
 
+    public function test_v5_draft_reads_whole_names_openai_and_stays_blocked_until_approved(): void
+    {
+        config(['pilot_policy.directory' => resource_path('policies/pilot-2026-11-05-v5')]);
+
+        $policy = app(PilotPolicyService::class)->current();
+
+        // Parsed, not POLICY_BUNDLE_INVALID: every file and field is in place for review.
+        $this->assertSame('pilot-20261105-v5', $policy->version);
+        $this->assertSame(['openai'], $policy->aiProviders);
+        $this->assertFalse($policy->allowsAiProvider('openai'));
+        $this->assertFalse($policy->allowsVoiceIntake());
+        foreach (['POLICY_NOT_APPROVED', 'RETENTION_NOT_APPROVED', 'APPROVAL_PRODUCT_OWNER_MISSING', 'EVIDENCE_COMPLETE_ERASURE_AND_RESTORE_MISSING'] as $blocker) {
+            $this->assertContains($blocker, $policy->blockers);
+        }
+        $this->assertNotContains('AI_PROCESSING_INVALID', $policy->blockers);
+        $this->assertStringContainsString('OpenAI', $policy->privacy);
+        $this->assertStringContainsString('ویس نفرستید', $policy->terms);
+        $this->assertStringContainsString('کاتالوگ PDF و تصویر استوری', $policy->retention);
+    }
+
     public function test_approved_fixture_is_bound_to_content_and_telegram_button_is_short(): void
     {
         $this->useApprovedPilotPolicy();

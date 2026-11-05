@@ -40,8 +40,10 @@ compose up -d --no-build --wait --wait-timeout 180 redis openbao openbao_unseale
 log "backing up the database"
 install -d -m 700 "$backups"
 dump="$backups/karmandeman-$(date -u +%Y%m%dT%H%M%SZ)-$KM_RELEASE.dump"
-docker run --rm --network karmandeman_shared_db \
-    -e PGPASSWORD="$(env_value PG_APP_PASSWORD)" \
+# The password reaches the container from this environment, never from argv,
+# so other users of the shared host cannot read it in the process list.
+PGPASSWORD="$(env_value PG_APP_PASSWORD)" docker run --rm --network karmandeman_shared_db \
+    -e PGPASSWORD \
     postgres:17.11-alpine \
     pg_dump -h "$(env_value DB_HOST)" -U "$(env_value PG_APP_USER)" -d "$(env_value PG_APP_DB)" -Fc >"$dump.part"
 mv "$dump.part" "$dump"

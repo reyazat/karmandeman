@@ -39,7 +39,16 @@ Admin: `docker exec karmandeman-garage-1 /garage <command>`.
 `.github/workflows/deploy.yml` runs after Foundation checks pass on a push to
 `main` and runs `ssh deploy@5.78.96.78 "deploy <sha>"`. The key is limited to
 `/opt/karmandeman/bin/deploy`, which accepts only `deploy <sha>`,
-`rollback <sha>` and `status`, for commits on `origin/main`.
+`rollback <sha>` and `status`, for commits on `origin/main`. A forced command
+alone still allows port and socket forwarding (for example to the Docker
+socket, which is root on this host), so the `authorized_keys` line of user
+`deploy` must start with `restrict`:
+
+```text
+restrict,command="/opt/karmandeman/bin/deploy" ssh-ed25519 AAAA... github-deploy
+```
+
+Check it with `sudo grep -n command= ~deploy/.ssh/authorized_keys`.
 
 GitHub repository secrets (Settings -> Secrets and variables -> Actions):
 
