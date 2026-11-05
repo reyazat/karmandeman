@@ -5,15 +5,81 @@ declare(strict_types=1);
 namespace App\Services\Privacy;
 
 use App\Data\Privacy\PilotPolicy;
+use App\Models\Workspace;
+use App\Repositories\Contracts\UserRepositoryInterface;
 use DateTimeImmutable;
 use Throwable;
 
+/**
+ * The policy bundle a seller accepts (FR-002). Everyone gets the selected,
+ * approved bundle. Telegram accounts on the owner's tester list get the
+ * selected test bundle instead (ADR-057): an unapproved draft whose approval
+ * and evidence blockers are waived for them only, under its own "-test"
+ * version and digest, so a tester's consent never counts as consent to a
+ * published bundle and nobody else is let in.
+ */
 final class PilotPolicyService
 {
+    /** Blockers about approval and evidence: the only ones a test bundle may carry. */
+    private const WAIVED_FOR_TESTERS = [
+        'POLICY_NOT_APPROVED', 'RETENTION_NOT_APPROVED', 'APPROVAL_PRODUCT_OWNER_MISSING', 'APPROVAL_PRIVACY_REVIEWER_MISSING',
+        'APPROVAL_DATE_INVALID', 'APPROVAL_DIGEST_MISMATCH', 'EVIDENCE_RETENTION_ENFORCEMENT_MISSING',
+        'EVIDENCE_COMPLETE_ERASURE_AND_RESTORE_MISSING', 'EVIDENCE_ENCRYPTION_AND_KEY_SEPARATION_MISSING',
+        'EVIDENCE_SUPPORT_AND_PROCESSOR_INVENTORY_MISSING',
+    ];
+
+    public function __construct(private UserRepositoryInterface $users) {}
+
+    /** The published bundle: what every seller who is not a tester accepts. */
     public function current(): PilotPolicy
     {
+        return $this->load((string) config('pilot_policy.directory'));
+    }
+
+    /** The bundle for this Telegram account: the test bundle for a tester, otherwise the published one. */
+    public function forTelegramId(int|string|null $telegramId): PilotPolicy
+    {
+        return $telegramId !== null && $this->isTester($telegramId) ? $this->test() : $this->current();
+    }
+
+    /** The bundle for the workspace's owner. */
+    public function forWorkspace(Workspace $workspace): PilotPolicy
+    {
+        $owner = $this->users->find($workspace->owner_id);
+
+        return $this->forTelegramId($owner === null ? null : $this->users->telegramChatId($owner));
+    }
+
+    public function isTester(int|string $telegramId): bool
+    {
+        return (string) config('pilot_policy.test_directory') !== ''
+            && in_array((string) $telegramId, (array) config('pilot_policy.tester_telegram_ids'), true);
+    }
+
+    public function isTesterWorkspace(Workspace $workspace): bool
+    {
+        return $this->forWorkspace($workspace)->testOnly;
+    }
+
+    private function test(): PilotPolicy
+    {
+        $draft = $this->load((string) config('pilot_policy.test_directory'));
+        $blocking = array_values(array_diff($draft->blockers, self::WAIVED_FOR_TESTERS));
+        if ($blocking !== []) {
+            return $draft;
+        }
+
+        return new PilotPolicy(
+            // Its own version and digest: a tester's consent is never consent to the published bundle.
+            $draft->version.'-test', hash('sha256', 'test:'.$draft->digest),
+            PilotPolicy::TEST_NOTICE."\n\n".$draft->terms, $draft->privacy, $draft->retention,
+            [], $draft->aiProviders, $draft->voiceIntake, testOnly: true,
+        );
+    }
+
+    private function load(string $directory): PilotPolicy
+    {
         try {
-            $directory = (string) config('pilot_policy.directory');
             $manifest = json_decode($this->read($directory.'/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
             $terms = $this->read($directory.'/terms.fa.txt');
             $privacy = $this->read($directory.'/privacy.fa.txt');

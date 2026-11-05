@@ -37,7 +37,7 @@ final readonly class AdvanceTelegramOnboardingAction
         return DB::transaction(function () use ($workspace, $user, $event, $value): OnboardingReply {
             $this->lockActive->execute($workspace);
             $state = $this->onboardings->ensure($workspace);
-            $policy = $this->policies->current();
+            $policy = $this->policies->forWorkspace($workspace);
             if (! $policy->isApproved()) {
                 return new OnboardingReply($policy->unavailableNotice());
             }
@@ -134,7 +134,7 @@ final readonly class AdvanceTelegramOnboardingAction
 
     public function isReady(Workspace $workspace): bool
     {
-        $policy = $this->policies->current();
+        $policy = $this->policies->forWorkspace($workspace);
         if (! $policy->isApproved()) {
             return false;
         }

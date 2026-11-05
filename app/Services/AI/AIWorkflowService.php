@@ -7,6 +7,7 @@ namespace App\Services\AI;
 use App\Models\AiWorkflowRun;
 use App\Models\Asset;
 use App\Models\Project;
+use App\Models\Workspace;
 use App\Repositories\Contracts\BrandRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 
@@ -34,20 +35,25 @@ final readonly class AIWorkflowService
 
     /**
      * The checked-in v1 export still calls Gemini: an OpenAI policy must never
-     * unlock that old webhook. Production remains off until a release ADR.
+     * unlock that old webhook. In production only the owner's testers run
+     * extraction, under the test bundle that names OpenAI (ADR-057); everyone
+     * else stays off until a release ADR.
      */
-    public function extractionEnabled(): bool
+    public function extractionEnabled(Workspace $workspace): bool
     {
-        return (bool) config('karmandeman.ai.extraction_enabled') && ! app()->isProduction()
+        $policy = $this->policies->forWorkspace($workspace);
+
+        return (bool) config('karmandeman.ai.extraction_enabled')
+            && (! app()->isProduction() || $policy->testOnly)
             && config('karmandeman.ai.provider') === 'openai'
             && config('karmandeman.ai.workflow_version') === self::OPENAI_WORKFLOW_VERSION
             && config('services.n8n.extraction_webhook_path') === self::OPENAI_WEBHOOK_PATH
-            && $this->policies->current()->allowsAiProvider('openai');
+            && $policy->allowsAiProvider('openai');
     }
 
     public function canProcessRun(AiWorkflowRun $run): bool
     {
-        return $this->extractionEnabled() && $run->workflow_version === self::OPENAI_WORKFLOW_VERSION;
+        return $run->workflow_version === self::OPENAI_WORKFLOW_VERSION && $this->extractionEnabled($run->workspace);
     }
 
     /**

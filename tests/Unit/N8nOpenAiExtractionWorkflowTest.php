@@ -26,7 +26,13 @@ final class N8nOpenAiExtractionWorkflowTest extends N8nExtractionWorkflowTestCas
 
     protected function modelCredential(): array
     {
-        return ['httpHeaderAuth' => ['id' => 'kmOpenAiApiKey', 'name' => 'KM OpenAI API key']];
+        return ['openAiApi' => ['id' => 'kmOpenAiApi', 'name' => 'KM OpenAI']];
+    }
+
+    /** n8n's own OpenAI credential type: the key goes in the Authorization header (ADR-057). */
+    protected function modelAuthentication(): array
+    {
+        return ['predefinedCredentialType', 'openAiApi'];
     }
 
     /** A retry would pay again for a request OpenAI may already have billed (ADR-046). */

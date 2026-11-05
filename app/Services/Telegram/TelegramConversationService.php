@@ -201,7 +201,7 @@ final readonly class TelegramConversationService
 
     private function showMenu(int $telegramId, int|string $chatId): void
     {
-        $policy = $this->policies->current();
+        $policy = $this->policies->forTelegramId($telegramId);
         if (! $policy->isApproved()) {
             $this->bot->sendMessage($chatId, $policy->unavailableNotice(), [self::MENU_FOOTER]);
 
@@ -239,7 +239,8 @@ final readonly class TelegramConversationService
 
     private function handlePolicyDocument(int|string $chatId, string $document): void
     {
-        $policy = $this->policies->current();
+        // A private chat's id is the sender's Telegram id: a tester reads the test bundle they accept.
+        $policy = $this->policies->forTelegramId($chatId);
         if (! $policy->isApproved()) {
             $this->bot->sendMessage($chatId, $policy->unavailableNotice());
 

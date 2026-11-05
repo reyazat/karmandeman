@@ -876,6 +876,12 @@ Migration جدید `2026_10_26_120001_create_api_idempotency_records_table.php` 
 
 شواهد پس از تغییر: PostgreSQL موقت **۴۸۱ تست / ۶۷۵۵ assertion**، SQLite **۴۵۴ پاس / ۲۷ skip**، Pint و PHPStan بدون خطا، `bash -n` روی `release.sh`. آزموده نشده: vhost و کلید روی سرور، deploy واقعی این تغییر، ربات زنده.
 
+### دسترسی تسترها و استخراج زنده (۵ نوامبر ۲۰۲۶)
+
+[ADR-057](adr/ADR-057-tester-access-and-live-extraction.md). به درخواست مالک، شناسه‌های تلگرام فهرست‌شده بسته آزمایشی v5 را با نسخه `-test` می‌پذیرند و در production استخراج OpenAI دارند؛ بقیه پشت پیام بسته می‌مانند. `KM_AI_EXTRACTION_ENABLED` پیش‌تر به کانتینر نمی‌رسید و اکنون در فهرست env compose است. workflow `km-product-extraction-openai-v2` در n8n import و فعال شد (credential استاندارد OpenAI و دو credential HMAC تازه)؛ درخواست بدون امضا 401 می‌گیرد. env سرور پس از بکاپ تنظیم شد.
+
+شواهد: PostgreSQL موقت **۴۸۵ تست / ۶۸۴۰ assertion**، Pint و PHPStan بدون خطا. آزمون زنده ربات و اجرای واقعی OpenAI پس از deploy این commit ثبت می‌شود.
+
 ## شواهد آزمون و محدودیت
 
 | بررسی | نتیجه ثبت‌شده |

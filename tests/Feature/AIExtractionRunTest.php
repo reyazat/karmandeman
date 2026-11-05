@@ -239,9 +239,9 @@ class AIExtractionRunTest extends TestCase
 
         config(['karmandeman.ai.extraction_enabled' => true]);
         $this->app['env'] = 'production';
-        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
         $this->app['env'] = 'testing';
-        $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
         $this->assertSame(0, AiWorkflowRun::query()->count());
     }
 
@@ -252,18 +252,18 @@ class AIExtractionRunTest extends TestCase
         $this->photo($project, 1);
 
         config(['karmandeman.ai.workflow_version' => 'product-extraction.v1']);
-        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
         $this->finish($project)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_HAS_NO_PRODUCTS');
         $this->assertSame(0, AiWorkflowRun::query()->count());
 
         config(['karmandeman.ai.workflow_version' => AIWorkflowService::OPENAI_WORKFLOW_VERSION,
             'services.n8n.extraction_webhook_path' => '/webhook/km-product-extraction-v1']);
-        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
         config(['services.n8n.extraction_webhook_path' => AIWorkflowService::OPENAI_WEBHOOK_PATH]);
-        $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertTrue(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
 
         $this->useApprovedPilotPolicy('google-only', aiProviders: ['google']);
-        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
     }
 
     public function test_switching_provider_or_policy_revokes_claimed_links_and_old_runs(): void
@@ -359,7 +359,7 @@ class AIExtractionRunTest extends TestCase
         $this->photo($project, 1);
 
         // The seller never accepted sending photos to Google: no run, the manual path stays (ADR-037).
-        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled());
+        $this->assertFalse(app(AIWorkflowService::class)->extractionEnabled(Workspace::query()->latest('id')->firstOrFail()));
         $this->finish($project)->assertStatus(409)->assertJsonPath('error.code', 'PROJECT_HAS_NO_PRODUCTS');
         $this->assertSame(0, AiWorkflowRun::query()->count());
     }

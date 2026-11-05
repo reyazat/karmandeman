@@ -65,7 +65,7 @@ final readonly class CreateExtractionQuoteAction
                 if ($project->version !== $version) {
                     throw new DomainException('PROJECT_VERSION_CONFLICT');
                 }
-                $photos = $this->ai->extractionEnabled() ? $this->inputs->photos($workspace, $project) : [];
+                $photos = $this->ai->extractionEnabled($workspace) ? $this->inputs->photos($workspace, $project) : [];
                 // Nothing to pay for: finish-input takes the manual path without a quote.
                 if ($photos === []) {
                     throw new DomainException('EXTRACTION_NOT_NEEDED');

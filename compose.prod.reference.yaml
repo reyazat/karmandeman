@@ -69,8 +69,15 @@ x-app-common: &app-common
     N8N_API_URL: ${N8N_API_URL:-http://n8n:5678}
     N8N_API_KEY: ${N8N_API_KEY:?N8N_API_KEY required}
     N8N_WORKFLOW_AUTH_TOKEN: ${N8N_WORKFLOW_AUTH_TOKEN:?N8N_WORKFLOW_AUTH_TOKEN required}
-    # Empty refuses every n8n callback; extraction is off in production (ADR-032).
+    # Empty refuses every n8n callback. Extraction is off in production except for
+    # the owner's testers (ADR-032, ADR-057), and only with the OpenAI export below.
     N8N_CALLBACK_SECRET: ${N8N_CALLBACK_SECRET:-}
+    N8N_EXTRACTION_WEBHOOK_PATH: ${N8N_EXTRACTION_WEBHOOK_PATH:-/webhook/km-product-extraction-v1}
+    KM_AI_EXTRACTION_ENABLED: ${KM_AI_EXTRACTION_ENABLED:-false}
+    KM_AI_WORKFLOW_VERSION: ${KM_AI_WORKFLOW_VERSION:-product-extraction.v1}
+    # Owner-invited testers use the named unapproved draft bundle; nobody else does (ADR-057).
+    KM_PILOT_TESTER_TELEGRAM_IDS: ${KM_PILOT_TESTER_TELEGRAM_IDS:-}
+    KM_PILOT_TEST_POLICY: ${KM_PILOT_TEST_POLICY:-}
     # Internal address n8n uses for callbacks and photo links; empty uses APP_URL (ADR-033).
     N8N_APP_URL: ${N8N_APP_URL:-}
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN required}

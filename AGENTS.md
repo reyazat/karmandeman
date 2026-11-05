@@ -52,8 +52,11 @@ album, at most 20 products per pack (ADR-053), and a single-host deploy on
 see `deploy/server/README.md`), an inline bot menu that routes to the same
 command handlers (ADR-055), catalogue photos turned upright from their EXIF
 orientation, and an unapproved, unselected policy draft v5 that names OpenAI
-and the catalogue pack (ADR-056)
-(ADR-016 to ADR-056) with code and tests. These
+and the catalogue pack (ADR-056), and owner-invited testers (Telegram ids in
+`KM_PILOT_TESTER_TELEGRAM_IDS`) who use that draft as a marked test bundle and
+run live OpenAI extraction in production through the imported n8n workflow,
+while everyone else stays behind the closed notice (ADR-057)
+(ADR-016 to ADR-057) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
 CSV/ZIP/online-catalogue exports, a final export price, export quotes, refunds, operator adjustments,

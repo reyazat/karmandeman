@@ -30,8 +30,11 @@ abstract class N8nExtractionWorkflowTestCase extends TestCase
     /** The provider word in its model node names, such as "OpenAI". */
     abstract protected function provider(): string;
 
-    /** @return array{httpHeaderAuth: array{id: string, name: string}} */
+    /** @return array<string, array{id: string, name: string}> */
     abstract protected function modelCredential(): array;
+
+    /** @return array{string, string} the request node's authentication mode and credential type */
+    abstract protected function modelAuthentication(): array;
 
     /** @return list<string> the lines that fix the model address in the request node */
     abstract protected function modelAddress(): array;
@@ -108,7 +111,8 @@ abstract class N8nExtractionWorkflowTestCase extends TestCase
         $this->assertSame($nodes['Sign callback']['credentials'], $nodes['Sign claim']['credentials']);
         // The model key travels in a header, never in the URL where an error message could carry it.
         $this->assertSame($this->modelCredential(), $nodes[$call]['credentials']);
-        $this->assertSame(['genericCredentialType', 'httpHeaderAuth'], [$nodes[$call]['parameters']['authentication'], $nodes[$call]['parameters']['genericAuthType']]);
+        $parameters = $nodes[$call]['parameters'];
+        $this->assertSame($this->modelAuthentication(), [$parameters['authentication'], $parameters['genericAuthType'] ?? $parameters['nodeCredentialType'] ?? null]);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.raw }}", $nodes['Sign request']['parameters']['value']);
         $this->assertSame("={{ \$json.timestamp + '.' + \$json.body }}", $nodes['Sign callback']['parameters']['value']);
         $this->assertSame($nodes['Sign callback']['parameters'], $nodes['Sign claim']['parameters']);

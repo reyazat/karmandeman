@@ -19,7 +19,11 @@ final readonly class PilotPolicy
         public array $blockers,
         public array $aiProviders = [],
         public bool $voiceIntake = false,
+        // An unapproved draft opened only to the owner's testers (ADR-057).
+        public bool $testOnly = false,
     ) {}
+
+    public const TEST_NOTICE = 'نسخه آزمایشی: این شرایط هنوز برای استفاده عمومی تأیید نشده‌اند و فقط برای آزمون‌کنندگان دعوت‌شده فعال‌اند. فقط داده آزمایشی یا داده‌ای را بفرستید که برای آزمون مجاز است.';
 
     public function allowsVoiceIntake(): bool
     {

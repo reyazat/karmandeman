@@ -70,7 +70,7 @@ final readonly class FinishProjectInputAction
                 if ($project->version !== $version) {
                     throw new DomainException('PROJECT_VERSION_CONFLICT');
                 }
-                $photos = $this->ai->extractionEnabled() ? $this->inputs->photos($workspace, $project) : [];
+                $photos = $this->ai->extractionEnabled($workspace) ? $this->inputs->photos($workspace, $project) : [];
                 if ($photos !== []) {
                     $quote = $this->acceptedQuote($workspace, $project, $quotePublicId, $photos);
 

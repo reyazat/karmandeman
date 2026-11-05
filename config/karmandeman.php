@@ -39,7 +39,8 @@ return [
         'extraction_enabled' => (bool) env('KM_AI_EXTRACTION_ENABLED', false),
         // The v1 export still calls Gemini. The OpenAI export (ADR-046) is
         // selected only after it is imported and tested against the real API.
-        'workflow_version' => 'product-extraction.v1',
+        // Which export Laravel names in a run; only openai.v2 passes the extraction gate.
+        'workflow_version' => (string) env('KM_AI_WORKFLOW_VERSION', 'product-extraction.v1'),
         'run_timeout_minutes' => (int) env('KM_AI_RUN_TIMEOUT_MINUTES', 15),
         // The workflow and input schema take at most 20 photos; a higher value would only send runs that fail.
         'max_assets_per_run' => min((int) env('KM_AI_MAX_ASSETS_PER_RUN', 20), 20),

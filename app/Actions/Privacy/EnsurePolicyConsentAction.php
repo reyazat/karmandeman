@@ -22,7 +22,7 @@ final readonly class EnsurePolicyConsentAction
      */
     public function execute(Workspace $workspace): void
     {
-        $policy = $this->policies->current();
+        $policy = $this->policies->forWorkspace($workspace);
         if (! $policy->isApproved()
             || $this->consents->find($workspace, $policy->version)?->policy_document_hash !== $policy->digest) {
             throw new DomainException('POLICY_CONSENT_REQUIRED');

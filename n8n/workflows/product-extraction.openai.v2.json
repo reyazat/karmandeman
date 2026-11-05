@@ -361,16 +361,16 @@
       ],
       "onError": "continueRegularOutput",
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "kmOpenAiApiKey",
-          "name": "KM OpenAI API key"
+        "openAiApi": {
+          "id": "kmOpenAiApi",
+          "name": "KM OpenAI"
         }
       },
       "parameters": {
         "method": "POST",
         "url": "={{ $json.url }}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
