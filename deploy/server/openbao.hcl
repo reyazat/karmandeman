@@ -1,16 +1,19 @@
-# OpenBao for workspace keys (ADR-013) on the single host. Reachable only on
-# the internal `secrets` Docker network, so the listener has no TLS.
+# OpenBao for workspace keys (ADR-013) on the single host (ADR-054). Reachable
+# only on the internal `secrets` Docker network. The listener still uses TLS
+# from a private CA, because the app refuses plain HTTP in production.
 ui            = false
 disable_mlock = true
-api_addr      = "http://openbao:8200"
+api_addr      = "https://openbao:8200"
 
 storage "file" {
   path = "/openbao/file"
 }
 
 listener "tcp" {
-  address     = "0.0.0.0:8200"
-  tls_disable = true
+  address       = "0.0.0.0:8200"
+  tls_cert_file = "/openbao/tls/tls.crt"
+  tls_key_file  = "/openbao/tls/tls.key"
+  tls_min_version = "tls13"
 }
 
 # The app holds one long-lived token; rotation is a manual operator step.

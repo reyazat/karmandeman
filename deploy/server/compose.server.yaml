@@ -10,8 +10,9 @@
 #   that Postgres container joins this network, so n8n cannot reach the app.
 # - Apache (ISPConfig) owns ports 80/443 on this host and terminates TLS; Caddy
 #   serves plain HTTP on 127.0.0.1:8090 only.
-# - OpenBao (workspace keys) and Garage (S3-compatible private bucket) run here,
-#   each on an internal network with no published port.
+# - OpenBao (workspace keys, TLS from a private CA) and Garage (S3-compatible
+#   private bucket) run here, each on an internal network with no published
+#   port. Decisions: docs/adr/ADR-054-single-host-deploy-next-to-n8n.md.
 # - Images are built on the server by deploy/server/release.sh and tagged
 #   with the release commit, so every app service runs the same build.
 
@@ -21,6 +22,9 @@ x-server-app: &server-app
   environment:
     # Alias of the n8n Postgres container on karmandeman_shared_db.
     DB_HOST: ${DB_HOST:?DB_HOST required}
+    OPENBAO_CA_CERT: /run/km/openbao-ca.crt
+  volumes:
+    - ${KM_SECRETS_DIR:-/opt/karmandeman/secrets}/openbao-tls/ca.crt:/run/km/openbao-ca.crt:ro
   depends_on: !override
     redis:
       condition: service_healthy
@@ -76,9 +80,12 @@ services:
     image: openbao/openbao:2.4.1
     command: ["server"]
     environment:
-      BAO_ADDR: http://127.0.0.1:8200
+      BAO_ADDR: https://127.0.0.1:8200
+      BAO_CACERT: /openbao/tls/ca.crt
     volumes:
       - ./deploy/server/openbao.hcl:/openbao/config/openbao.hcl:ro
+      # Private CA and listener cert for DNS openbao and 127.0.0.1 (ADR-054).
+      - ${KM_SECRETS_DIR:-/opt/karmandeman/secrets}/openbao-tls:/openbao/tls:ro
       - openbao_data:/openbao/file
     # `bao status` exits 0 only when initialised and unsealed.
     healthcheck:
@@ -92,9 +99,9 @@ services:
     networks:
       - secrets
 
-  # Unseals OpenBao after every restart from a root-only key file (owner's
+  # Unseals OpenBao after every restart from a deploy-user-only key file (owner's
   # choice on 2026-11-05: availability over a manual unseal). The key is read
-  # from stdin, never from argv.
+  # from the mounted file by path (key=@file), never placed in argv.
   openbao_unsealer:
     image: openbao/openbao:2.4.1
     entrypoint: ["/bin/sh", "-c"]
@@ -103,13 +110,16 @@ services:
         while :; do
           bao status >/dev/null 2>&1
           if [ "$$?" = 2 ]; then
-            bao operator unseal - < /run/secrets/openbao_unseal_key >/dev/null 2>&1 \
+            bao write sys/unseal key=@/run/secrets/openbao_unseal_key >/dev/null 2>&1 \
               && echo "openbao unsealed" || echo "openbao unseal failed" >&2
           fi
           sleep 10
         done
     environment:
-      BAO_ADDR: http://openbao:8200
+      BAO_ADDR: https://openbao:8200
+      BAO_CACERT: /run/km/openbao-ca.crt
+    volumes:
+      - ${KM_SECRETS_DIR:-/opt/karmandeman/secrets}/openbao-tls/ca.crt:/run/km/openbao-ca.crt:ro
     user: "0:0"
     secrets:
       - openbao_unseal_key

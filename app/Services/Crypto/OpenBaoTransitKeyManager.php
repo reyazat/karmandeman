@@ -93,9 +93,13 @@ final readonly class OpenBaoTransitKeyManager implements WorkspaceKeyManager
     /** @param array<string, mixed> $config */
     private function client(array $config): PendingRequest
     {
-        return Http::baseUrl(rtrim((string) $config['addr'], '/').'/v1')
+        $request = Http::baseUrl(rtrim((string) $config['addr'], '/').'/v1')
             ->withHeaders(['X-Vault-Token' => (string) $config['token']])
             ->acceptJson()->asJson()
             ->connectTimeout(3)->timeout((int) $config['timeout']);
+        // A private CA (single-host deploy, ADR-054) replaces the system bundle for this channel only.
+        $ca = (string) ($config['ca_cert'] ?? '');
+
+        return $ca === '' ? $request : $request->withOptions(['verify' => $ca]);
     }
 }

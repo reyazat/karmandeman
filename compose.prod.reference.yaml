@@ -55,6 +55,8 @@ x-app-common: &app-common
     OPENBAO_TOKEN: ${OPENBAO_TOKEN:?OPENBAO_TOKEN required}
     OPENBAO_TRANSIT_MOUNT: ${OPENBAO_TRANSIT_MOUNT:-transit}
     OPENBAO_KEY_PREFIX: ${OPENBAO_KEY_PREFIX:-ws-}
+    # CA of a privately signed OpenBao listener (deploy/server, ADR-054); empty uses the system bundle.
+    OPENBAO_CA_CERT: ${OPENBAO_CA_CERT:-}
     # Batch photos (ADR-022): production refuses any disk but the private bucket below.
     KM_ASSET_DISK: ${KM_ASSET_DISK:-s3}
     # Erasure timing (ADR-014); completion stays off until backup lifecycle is evidenced.

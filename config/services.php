@@ -54,6 +54,8 @@ return [
         'transit_mount' => env('OPENBAO_TRANSIT_MOUNT', 'transit'),
         'key_prefix' => env('OPENBAO_KEY_PREFIX', 'ws-'),
         'timeout' => (int) env('OPENBAO_TIMEOUT', 5),
+        // CA file that signed the OpenBao listener; empty uses the system bundle.
+        'ca_cert' => env('OPENBAO_CA_CERT'),
     ],
 
     'telegram' => [
