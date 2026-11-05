@@ -1,0 +1,163 @@
+# Single-host deploy on 5.78.96.78 next to the standalone n8n stack (~/n8n).
+# Layered on compose.prod.reference.yaml, which stays the single list of app
+# environment keys:
+#   docker compose --env-file /opt/karmandeman/.env.production \
+#     -f compose.prod.reference.yaml -f deploy/server/compose.server.yaml ...
+#
+# Differences from the reference topology:
+# - No own Postgres: the app uses its own database and role on the n8n
+#   Postgres container, reached only through the `shared_db` network. Only
+#   that Postgres container joins this network, so n8n cannot reach the app.
+# - Apache (ISPConfig) owns ports 80/443 on this host and terminates TLS; Caddy
+#   serves plain HTTP on 127.0.0.1:8090 only.
+# - OpenBao (workspace keys) and Garage (S3-compatible private bucket) run here,
+#   each on an internal network with no published port.
+# - Images are built on the server by deploy/server/release.sh and tagged
+#   with the release commit, so every app service runs the same build.
+
+x-server-app: &server-app
+  image: karmandeman-app:${KM_RELEASE:?KM_RELEASE required}
+  pull_policy: never
+  environment:
+    # Alias of the n8n Postgres container on karmandeman_shared_db.
+    DB_HOST: ${DB_HOST:?DB_HOST required}
+  depends_on: !override
+    redis:
+      condition: service_healthy
+    openbao:
+      condition: service_healthy
+    garage:
+      condition: service_healthy
+
+services:
+  app:
+    <<: *server-app
+    networks: !override
+      - web_backend
+      - shared_db
+      - queue
+      - secrets
+      - objects
+  horizon:
+    <<: *server-app
+    networks: !override [shared_db, queue, secrets, objects]
+  telegram_worker:
+    <<: *server-app
+    networks: !override [shared_db, queue, secrets, objects]
+  ai_worker:
+    <<: *server-app
+    networks: !override [shared_db, queue, secrets, objects]
+  export_worker:
+    <<: *server-app
+    networks: !override [shared_db, queue, secrets, objects]
+  scheduler:
+    <<: *server-app
+    networks: !override [shared_db, queue, secrets, objects]
+
+  web:
+    image: karmandeman-web:${KM_RELEASE:?KM_RELEASE required}
+    pull_policy: never
+    environment:
+      # Plain HTTP site; Apache in front terminates TLS for PUBLIC_DOMAIN.
+      PUBLIC_DOMAIN: ":80"
+    ports: !override
+      - "127.0.0.1:${KM_WEB_PORT:-8090}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/up || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
+  # Disabled here: the database lives on the n8n Postgres container.
+  postgres_app:
+    profiles: ["bundled-db"]
+
+  openbao:
+    image: openbao/openbao:2.4.1
+    command: ["server"]
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    volumes:
+      - ./deploy/server/openbao.hcl:/openbao/config/openbao.hcl:ro
+      - openbao_data:/openbao/file
+    # `bao status` exits 0 only when initialised and unsealed.
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - secrets
+
+  # Unseals OpenBao after every restart from a root-only key file (owner's
+  # choice on 2026-11-05: availability over a manual unseal). The key is read
+  # from stdin, never from argv.
+  openbao_unsealer:
+    image: openbao/openbao:2.4.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while :; do
+          bao status >/dev/null 2>&1
+          if [ "$$?" = 2 ]; then
+            bao operator unseal - < /run/secrets/openbao_unseal_key >/dev/null 2>&1 \
+              && echo "openbao unsealed" || echo "openbao unseal failed" >&2
+          fi
+          sleep 10
+        done
+    environment:
+      BAO_ADDR: http://openbao:8200
+    user: "0:0"
+    secrets:
+      - openbao_unseal_key
+    depends_on:
+      - openbao
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - secrets
+
+  garage:
+    image: dxflrs/garage:v2.1.0
+    volumes:
+      - ./deploy/server/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    secrets:
+      - garage_rpc_secret
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - objects
+
+volumes:
+  openbao_data:
+  garage_meta:
+  garage_data:
+
+secrets:
+  openbao_unseal_key:
+    file: ${KM_SECRETS_DIR:-/opt/karmandeman/secrets}/openbao-unseal-key
+  garage_rpc_secret:
+    file: ${KM_SECRETS_DIR:-/opt/karmandeman/secrets}/garage-rpc-secret
+
+networks:
+  shared_db:
+    external: true
+    name: karmandeman_shared_db
+  secrets:
+    driver: bridge
+    internal: true
+  objects:
+    driver: bridge
+    internal: true

@@ -22,6 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Only the in-host proxy chain (Caddy, and Apache on the shared host)
+        // connects from private addresses; their X-Forwarded-* headers give the
+        // real scheme and client. A public peer's forwarded headers are ignored.
+        $middleware->trustProxies(at: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.1', '::1']);
         $middleware->redirectGuestsTo(fn (Request $request): ?string => $request->is('api/*') ? null : '/');
         $middleware->alias([
             'telegram.webhook' => VerifyTelegramWebhookSecret::class,

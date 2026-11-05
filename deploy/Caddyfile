@@ -1,4 +1,13 @@
 # PUBLIC_DOMAIN must resolve to the VPS public IP before automatic TLS works.
+# Behind a host proxy (deploy/server: Apache terminates TLS) set PUBLIC_DOMAIN
+# to ":80"; Caddy then keeps that proxy's X-Forwarded-* headers because it
+# connects from a private address. Public clients are never trusted.
+{
+    servers {
+        trusted_proxies static private_ranges
+    }
+}
+
 {$PUBLIC_DOMAIN} {
     encode zstd gzip
     root * /srv/public

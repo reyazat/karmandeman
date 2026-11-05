@@ -1,0 +1,20 @@
+# Garage: S3-compatible private bucket for batch photos and catalogue files
+# (ADR-022). Single node, reachable only on the internal `objects` network.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+# SQLite survives an unclean shutdown better than LMDB on a single node.
+db_engine = "sqlite"
+metadata_auto_snapshot_interval = "6h"
+
+replication_factor = 1
+
+rpc_bind_addr = "0.0.0.0:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret_file = "/run/secrets/garage_rpc_secret"
+# The host file is 0600 and owned by the deploy user; inside the container the
+# bind mount keeps that mode, so this check only guards against a host mistake.
+allow_world_readable_secrets = false
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "0.0.0.0:3900"
