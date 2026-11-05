@@ -101,15 +101,17 @@ final class TelegramCatalogueTest extends TestCase
         }
     }
 
-    /** A one-product batch with a photo, approved from the bot. */
-    private function approvedBatch(int $telegramId): Project
+    /** A batch of products, each with a photo, approved from the bot; the second has no price. */
+    private function approvedBatch(int $telegramId, int $products = 1): Project
     {
         $this->seller($telegramId);
         $this->message(['text' => '/new مجموعه آبان'], $telegramId);
-        $this->message(['photo' => [['file_id' => 'f', 'width' => 64, 'height' => 48, 'file_size' => 100]]], $telegramId);
-        $this->message(['text' => "/product کیف روزمره\n۳۵۰٬۰۰۰ تومان"], $telegramId);
-        $product = Product::query()->latest('id')->firstOrFail();
-        $this->press("product:approve:{$product->public_id}:1", $telegramId);
+        for ($i = 1; $i <= $products; $i++) {
+            $this->message(['photo' => [['file_id' => "f{$i}", 'width' => 64, 'height' => 48, 'file_size' => 100]]], $telegramId);
+            $this->message(['text' => $i === 2 ? '/product شال نخی' : "/product کیف روزمره {$i}\n۳۵۰٬۰۰۰ تومان"], $telegramId);
+            $product = Product::query()->latest('id')->firstOrFail();
+            $this->press("product:approve:{$product->public_id}:1", $telegramId);
+        }
         $this->message(['text' => '/done'], $telegramId);
         $project = Project::query()->latest('id')->firstOrFail();
         $this->press("project:approve:{$project->public_id}:{$project->version}", $telegramId);
@@ -120,6 +122,12 @@ final class TelegramCatalogueTest extends TestCase
     private function lastReply(): string
     {
         return Queue::pushed(SendTelegramMessage::class)->last()->text;
+    }
+
+    /** @return list<string> storage keys of the pack's story images, in order */
+    private function stories(Artifact $artifact): array
+    {
+        return DB::table('artifact_files')->where('artifact_id', $artifact->id)->orderBy('position')->pluck('storage_key')->all();
     }
 
     private function wallet(): Wallet
@@ -145,33 +153,63 @@ final class TelegramCatalogueTest extends TestCase
         return array_column(app(ReconcileCreditLedgerAction::class)->execute()['mismatches'], 'check');
     }
 
-    /** @return array<string, string> multipart fields of each sendDocument call */
+    /** @return list<string> the Bot API methods that sent files, in order */
+    private function fileCalls(): array
+    {
+        return Http::recorded(fn (Request $request): bool => (bool) preg_match('#/(sendDocument|sendMediaGroup)$#', $request->url()))
+            ->map(fn (array $pair): string => (string) preg_replace('#^.*/#', '', $pair[0]->url()))->values()->all();
+    }
+
+    /** @return list<array{document: string, filename: string, type: string, caption: string}> every file sent, alone or in an album, in order */
     private function documents(): array
     {
-        return Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/sendDocument'))
-            ->map(function (array $pair): array {
-                $fields = [];
-                foreach ($pair[0]->data() as $part) {
+        $files = [];
+        foreach (Http::recorded(fn (Request $request): bool => (bool) preg_match('#/(sendDocument|sendMediaGroup)$#', $request->url())) as [$request]) {
+            $fields = [];
+            $parts = [];
+            foreach ($request->data() as $part) {
+                if (isset($part['filename'])) {
+                    $parts[$part['name']] = $part;
+                } else {
                     $fields[$part['name']] = (string) $part['contents'];
-                    if ($part['name'] === 'document') {
-                        $fields['filename'] = (string) $part['filename'];
-                        $fields['type'] = (string) ($part['headers']['Content-Type'] ?? '');
-                    }
                 }
+            }
+            $captions = ['document' => $fields['caption'] ?? ''];
+            if (isset($fields['media'])) {
+                $captions = [];
+                foreach (json_decode($fields['media'], true, 512, JSON_THROW_ON_ERROR) as $media) {
+                    $this->assertSame('document', $media['type']);
+                    $captions[substr($media['media'], strlen('attach://'))] = $media['caption'] ?? '';
+                }
+            }
+            foreach ($captions as $name => $caption) {
+                $files[] = [
+                    'document' => (string) $parts[$name]['contents'], 'filename' => (string) $parts[$name]['filename'],
+                    'type' => (string) ($parts[$name]['headers']['Content-Type'] ?? ''), 'caption' => $caption,
+                ];
+            }
+        }
 
-                return $fields;
-            })->values()->all();
+        return $files;
+    }
+
+    /** @param  array{document: string, filename: string, type: string, caption: string}  $file */
+    private function assertStory(array $file): void
+    {
+        $this->assertSame('image/jpeg', $file['type']);
+        $this->assertStringEndsWith('.jpg', $file['filename']);
+        $this->assertSame([1080, 1920, IMAGETYPE_JPEG], array_slice((array) getimagesizefromstring($file['document']), 0, 3));
     }
 
     public function test_the_first_file_is_made_and_charged_once_and_sent_again_for_free(): void
     {
         $project = $this->approvedBatch(1601);
         $button = "project:pdf:{$project->public_id}:1";
-        $this->assertStringContainsString('کاتالوگ PDF همین نسخه 2 اعتبار است', Queue::pushed(SendTelegramMessage::class, fn ($job) => str_contains($job->text, 'پروژه تأیید شد'))->last()->text);
+        $this->assertStringContainsString('کاتالوگ PDF و استوری هر محصول همین نسخه 2 اعتبار است', Queue::pushed(SendTelegramMessage::class, fn ($job) => str_contains($job->text, 'پروژه تأیید شد'))->last()->text);
 
         $this->press($button, 1601);
         $this->press($button, 1601);
-        $this->assertStringContainsString('در حال ساخت است', $this->lastReply());
+        $this->assertStringContainsString('در حال ساخت‌اند', $this->lastReply());
         $artifact = Artifact::query()->sole();
         $this->assertSame([Artifact::STATUS_QUEUED, 2], [$artifact->status, $artifact->price_credits]);
         Queue::assertPushed(GenerateCatalogueArtifact::class, 1);
@@ -187,13 +225,20 @@ final class TelegramCatalogueTest extends TestCase
         $this->assertStringStartsNotWith('%PDF', $stored);
         $this->assertSame(1, CreditLedgerEntry::query()->where('related_type', CreditLedgerEntry::RELATED_ARTIFACT)->where('type', 'capture')->count());
 
+        foreach ($this->stories($artifact) as $key) {
+            $this->assertStringStartsNotWith("\xFF\xD8", Storage::disk('assets')->get($key));
+        }
+
         $this->deliver();
-        [$document] = $this->documents();
+        [$document, $story] = $this->documents();
+        $this->assertSame(['sendMediaGroup'], $this->fileCalls());
         $this->assertStringStartsWith('%PDF-', $document['document']);
         $this->assertSame('application/pdf', $document['type']);
         $this->assertStringEndsWith('.pdf', $document['filename']);
         $this->assertSame(1, preg_match_all('#/Type /Page\b#', $document['document']));
-        $this->assertStringContainsString('دریافت دوباره همین فایل رایگان است', $document['caption']);
+        $this->assertStringContainsString('کاتالوگ PDF و 1 استوری', $document['caption']);
+        $this->assertStringContainsString('دریافت دوباره همین فایل‌ها رایگان است', $document['caption']);
+        $this->assertStory($story);
 
         // Asking again sends the stored file: no new file, hold or charge.
         $this->press($button, 1601);
@@ -206,7 +251,7 @@ final class TelegramCatalogueTest extends TestCase
 
         // The charge is named in /balance and counted for the project.
         $this->message(['text' => '/balance'], 1601);
-        $this->assertStringContainsString('• 2 اعتبار: کاتالوگ PDF، پروژه «مجموعه آبان»', $this->lastReply());
+        $this->assertStringContainsString('• 2 اعتبار: کاتالوگ و استوری، پروژه «مجموعه آبان»', $this->lastReply());
         $this->message(['text' => '/projects'], 1601);
         $this->assertStringContainsString('2 اعتبار', $this->lastReply());
     }
@@ -221,7 +266,7 @@ final class TelegramCatalogueTest extends TestCase
 
         $this->deliver();
 
-        $this->assertStringContainsString('دوباره ساخته می‌شود؛ هزینه تازه‌ای ندارد', $this->lastReply());
+        $this->assertStringContainsString('دوباره ساخته می‌شوند؛ هزینه تازه‌ای ندارد', $this->lastReply());
         $this->assertSame(Artifact::STATUS_QUEUED, $artifact->fresh()->status);
         $this->generate();
         $this->assertSame(Artifact::STATUS_READY, $artifact->fresh()->status);
@@ -244,6 +289,9 @@ final class TelegramCatalogueTest extends TestCase
         $artifact = Artifact::query()->sole();
         $this->assertSame([Artifact::STATUS_FAILED, 'SNAPSHOT_NOT_CURRENT'], [$artifact->status, $artifact->error_code]);
         $this->assertNull($artifact->storage_key);
+        // Neither the PDF nor a story image stays stored: only the batch photo.
+        $this->assertCount(1, Storage::disk('assets')->allFiles());
+        $this->assertSame([], $this->stories($artifact));
         $this->assertSame([100, 100], [$this->wallet()->fresh()->balance_cached, $this->wallet()->fresh()->available()]);
         Queue::assertNotPushed(DeliverCatalogueArtifact::class);
     }
@@ -340,5 +388,105 @@ final class TelegramCatalogueTest extends TestCase
         $this->assertSame('SNAPSHOT_NOT_CURRENT', Artifact::query()->sole()->error_code);
         $this->assertSame(100, $this->wallet()->fresh()->available());
         $this->assertStringContainsString('نسخه نهایی پروژه پس از درخواست تغییر کرد', $this->lastReply());
+    }
+
+    public function test_a_five_product_pack_is_one_pdf_and_five_stories_made_and_charged_once(): void
+    {
+        $project = $this->approvedBatch(1610, 5);
+        $button = "project:pdf:{$project->public_id}:1";
+        $before = count(Storage::disk('assets')->allFiles());
+
+        $this->press($button, 1610);
+        $this->generate();
+        $artifact = Artifact::query()->sole();
+        $this->assertCount(5, $this->stories($artifact));
+        // The PDF and five stories, each encrypted.
+        $this->assertCount($before + 6, Storage::disk('assets')->allFiles());
+        $this->deliver();
+
+        $files = $this->documents();
+        $this->assertSame(['sendMediaGroup'], $this->fileCalls());
+        $this->assertCount(6, $files);
+        $this->assertSame(5, preg_match_all('#/Type /Page\b#', $files[0]['document']));
+        $this->assertStringContainsString('کاتالوگ PDF و 5 استوری', $files[0]['caption']);
+        foreach (array_slice($files, 1) as $position => $story) {
+            $this->assertStory($story);
+            $this->assertStringStartsWith('story-'.($position + 1).'-', $story['filename']);
+            $this->assertSame('', $story['caption']);
+        }
+        $this->assertSame(98, $this->wallet()->fresh()->balance_cached);
+
+        // Asked again: the same six files from storage, no new file, hold or charge.
+        $this->press($button, 1610);
+        $this->deliver();
+        $again = array_slice($this->documents(), 6);
+        $this->assertSame(array_column($files, 'document'), array_column($again, 'document'));
+        Queue::assertPushed(GenerateCatalogueArtifact::class, 1);
+        $this->assertSame(98, $this->wallet()->fresh()->balance_cached);
+        $this->assertSame(2, CreditLedgerEntry::query()->where('related_type', CreditLedgerEntry::RELATED_ARTIFACT)->count());
+        $this->assertSame([], $this->mismatches());
+    }
+
+    public function test_more_than_ten_files_go_in_albums_of_ten(): void
+    {
+        $project = $this->approvedBatch(1611, 10);
+        $this->press("project:pdf:{$project->public_id}:1", 1611);
+        $this->generate();
+        $this->deliver();
+
+        $this->assertSame(['sendMediaGroup', 'sendDocument'], $this->fileCalls());
+        $files = $this->documents();
+        $this->assertCount(11, $files);
+        $this->assertStory($files[10]);
+        $this->assertSame('', $files[10]['caption']);
+    }
+
+    public function test_a_lost_story_or_a_pack_made_before_stories_is_made_again_without_a_new_charge(): void
+    {
+        $project = $this->approvedBatch(1612, 2);
+        $this->press("project:pdf:{$project->public_id}:1", 1612);
+        $this->generate();
+        $artifact = Artifact::query()->sole();
+        [$first, $second] = $this->stories($artifact);
+        $pdf = $artifact->storage_key;
+        Storage::disk('assets')->delete($second);
+
+        $this->deliver();
+
+        $this->assertStringContainsString('دوباره ساخته می‌شوند؛ هزینه تازه‌ای ندارد', $this->lastReply());
+        $this->assertSame([], $this->documents());
+        $this->generate();
+        // The objects of the pack before are removed; the new pack is complete.
+        $this->assertFalse(Storage::disk('assets')->exists($first));
+        $this->assertFalse(Storage::disk('assets')->exists((string) $pdf));
+        $this->assertCount(2, $this->stories($artifact));
+        $this->deliver();
+        $this->assertCount(3, $this->documents());
+
+        // A pack made before story images existed (ADR-052) has none: also made again for free.
+        DB::table('artifact_files')->where('artifact_id', $artifact->id)->delete();
+        $this->press("project:pdf:{$project->public_id}:1", 1612);
+        $this->deliver();
+        $this->assertSame(Artifact::STATUS_QUEUED, $artifact->fresh()->status);
+        $this->generate();
+        $this->assertCount(2, $this->stories($artifact));
+
+        $this->assertSame(98, $this->wallet()->fresh()->balance_cached);
+        $this->assertSame(1, CreditLedgerEntry::query()->where('type', 'capture')->count());
+        $this->assertSame([], $this->mismatches());
+    }
+
+    public function test_a_batch_larger_than_a_pack_is_refused_before_any_hold(): void
+    {
+        config(['karmandeman.catalogue.max_products' => 1]);
+        $project = $this->approvedBatch(1613, 2);
+
+        $this->press("project:pdf:{$project->public_id}:1", 1613);
+
+        $this->assertStringContainsString('حداکثر 1 محصول', $this->lastReply());
+        $this->assertStringContainsString('اعتباری کسر نشد', $this->lastReply());
+        $this->assertDatabaseCount('artifacts', 0);
+        $this->assertSame(100, $this->wallet()->fresh()->available());
+        Queue::assertNotPushed(GenerateCatalogueArtifact::class);
     }
 }

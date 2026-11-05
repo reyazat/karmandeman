@@ -175,6 +175,10 @@ final class TelegramPhotoTextTest extends TestCase
         $this->assertSame(0, Asset::query()->count());
         $this->assertSame(0, TelegramMediaIntake::query()->count());
         $this->assertStringContainsString('حداکثر 1000 نویسه', $this->lastReply());
+        // A Premium caption longer than 1024 characters is answered too, not dropped by validation.
+        $this->send($this->photo() + ['caption' => str_repeat('م', 2048)], 992);
+        $this->assertSame(0, Asset::query()->count());
+        $this->assertStringContainsString('حداکثر 1000 نویسه', $this->lastReply());
 
         $photo = $this->send($this->photo() + ['caption' => str_repeat('م', Asset::SELLER_TEXT_MAX - 2)], 992);
         $this->send($this->replyTo($photo, 992, 'سه رنگ'), 992);

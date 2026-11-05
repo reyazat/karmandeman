@@ -51,7 +51,7 @@ final readonly class ShowTelegramBalanceAction
         $credits = -$line->entry->amount;
         $output = match (true) {
             $line->outputClass === CreditTariff::CLASS_FILE_TO_TEXT => 'استخراج محصول از '.count($line->run->input_asset_ids ?? []).' عکس',
-            $line->entry->related_type === CreditLedgerEntry::RELATED_ARTIFACT => 'کاتالوگ PDF',
+            $line->entry->related_type === CreditLedgerEntry::RELATED_ARTIFACT => 'کاتالوگ و استوری',
             default => 'خروجی',
         };
         $project = $line->run->project ?? $line->project;

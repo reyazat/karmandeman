@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Actions\Product\ReviseProductDraftAction;
 use App\Jobs\Telegram\SendTelegramMessage;
 use App\Models\Product;
 use App\Models\ProductRevision;
+use App\Models\User;
+use App\Models\Workspace;
 use App\Services\ProductIntake\ProductDraftNormalizer;
 use App\Services\Telegram\TelegramProductCorrection;
 use Illuminate\Support\Facades\Queue;
@@ -241,5 +244,37 @@ final class TelegramFieldCorrectionTest extends TestCase
 
         $this->assertStringContainsString('برای محصول دیگری ثبت شده است', $this->lastReply());
         $this->assertSame(1, Product::query()->orderByDesc('id')->firstOrFail()->current_revision);
+    }
+
+    public function test_a_card_too_long_to_show_its_values_is_never_approved_from_the_bot(): void
+    {
+        $this->extracted(3120, [$this->candidate()]);
+        $product = Product::query()->sole();
+        $id = $product->public_id;
+        $this->text('/done', 3120);
+        $this->press("product:confirm:{$id}:1", 3120);
+        $card = $this->sent('مقدارهای پیشنهادی تأیید شد');
+
+        // A confirmed description longer than the card can show, written through the API.
+        $workspace = Workspace::query()->findOrFail($product->workspace_id);
+        $user = User::query()->latest('id')->firstOrFail();
+        $revise = fn (string $key, int $from, string $description) => app(ReviseProductDraftAction::class)->execute($workspace, $user, $key, $id, $from, [
+            'name' => ['value' => 'کیف چرمی', 'status' => 'confirmed'],
+            'description_fa' => ['value' => $description, 'status' => 'confirmed'],
+        ]);
+        $revise('long', 2, str_repeat('چرم طبیعی ', 400));
+        $this->text('/done', 3120);
+        $long = $this->sent('بیش از حد طولانی‌اند');
+        $this->assertSame([["product:reject:{$id}:3"]], array_map(fn (array $row): array => array_column($row, 'callback_data'), $long->buttons));
+
+        // A forged approve button for that revision approves nothing.
+        $this->press("product:approve:{$id}:3", 3120);
+        $this->assertStringContainsString('از ربات تأیید نمی‌شود', $this->lastReply());
+        $this->assertNull($product->fresh()->approved_revision);
+
+        // Shortened, the card fits again and Gate A works.
+        $revise('short', 3, 'کیف روزمره');
+        $this->press("product:approve:{$id}:4", 3120);
+        $this->assertSame(4, $product->fresh()->approved_revision);
     }
 }

@@ -129,7 +129,7 @@ class TelegramSnapshotDeliveryTest extends TestCase
         $button = "project:json:{$project->public_id}:1";
         Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job) => str_contains($job->text, 'پروژه تأیید شد')
             && $job->buttons === [
-                [['text' => 'کاتالوگ PDF', 'callback_data' => "project:pdf:{$project->public_id}:1"]],
+                [['text' => 'کاتالوگ PDF و استوری', 'callback_data' => "project:pdf:{$project->public_id}:1"]],
                 [['text' => 'دریافت فایل JSON', 'callback_data' => $button]],
             ]);
 

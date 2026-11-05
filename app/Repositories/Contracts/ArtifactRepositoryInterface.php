@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories\Contracts;
 
 use App\Models\Artifact;
+use App\Models\ArtifactFile;
 use App\Models\CreditLedgerEntry;
 use App\Models\ProjectSnapshot;
 use App\Models\User;
@@ -44,4 +45,15 @@ interface ArtifactRepositoryInterface
     public function markReady(Artifact $artifact, string $storageKey, string $contentMac, int $size, CarbonImmutable $at): void;
 
     public function markFailed(Artifact $artifact, string $errorCode): void;
+
+    /** @return list<ArtifactFile> the pack's story images in snapshot order (ADR-053) */
+    public function stories(Artifact $artifact): array;
+
+    /**
+     * Replaces the pack's story images with newly stored ones.
+     *
+     * @param  list<array{public_id: string, storage_key: string, content_mac: string, size_bytes: int}>  $stories  in snapshot order
+     * @return list<string> storage keys of the replaced images, to delete once committed
+     */
+    public function replaceStories(Artifact $artifact, array $stories): array;
 }

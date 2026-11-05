@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories\Eloquents\Artifact;
 
 use App\Models\Artifact;
+use App\Models\ArtifactFile;
 use App\Models\CreditLedgerEntry;
 use App\Models\ProjectSnapshot;
 use App\Models\User;
@@ -92,5 +93,25 @@ final class EloquentArtifactRepository implements ArtifactRepositoryInterface
     public function markFailed(Artifact $artifact, string $errorCode): void
     {
         $artifact->forceFill(['status' => Artifact::STATUS_FAILED, 'error_code' => $errorCode])->save();
+    }
+
+    public function stories(Artifact $artifact): array
+    {
+        return ArtifactFile::query()->where('workspace_id', $artifact->workspace_id)->where('artifact_id', $artifact->id)
+            ->orderBy('position')->get()->all();
+    }
+
+    public function replaceStories(Artifact $artifact, array $stories): array
+    {
+        $old = fn () => ArtifactFile::query()->where('workspace_id', $artifact->workspace_id)->where('artifact_id', $artifact->id);
+        $keys = $old()->pluck('storage_key')->all();
+        $old()->delete();
+        foreach ($stories as $index => $story) {
+            ArtifactFile::query()->create($story + [
+                'workspace_id' => $artifact->workspace_id, 'artifact_id' => $artifact->id, 'position' => $index + 1,
+            ]);
+        }
+
+        return $keys;
     }
 }

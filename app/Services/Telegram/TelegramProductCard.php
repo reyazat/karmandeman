@@ -109,6 +109,23 @@ final readonly class TelegramProductCard
         return $suggested !== [] && $this->fits(implode("\n", [...$suggested, ...$kept])."\n".implode("\n", $confirmed));
     }
 
+    /**
+     * Whether the approve button may act on this revision: the card shows
+     * every value Gate A approves (ADR-051). A revision still to confirm is
+     * left to Gate A, which refuses it with its own answer. The approve
+     * action checks this, so a forged button never approves a hidden value.
+     */
+    public function approvable(ProductRevision $revision): bool
+    {
+        if ($this->normalizer->fieldsRequiringConfirmation($revision->payload) !== []) {
+            return true;
+        }
+        [, $kept, $confirmed] = $this->review($revision);
+        $shown = [...$kept, ...$confirmed];
+
+        return $shown === [] || $this->fits(implode("\n", $shown));
+    }
+
     public function priceSuggested(ProductRevision $revision): bool
     {
         return $this->priceSuggestedIn($revision->payload);

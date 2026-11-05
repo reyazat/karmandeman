@@ -57,6 +57,12 @@ return [
         'callback_tolerance_seconds' => 300,
     ],
 
+    // Output pack of an approved snapshot (ADR-053). A larger batch is refused before any
+    // hold: the pack is made in one export job, which must finish within its timeout.
+    'catalogue' => [
+        'max_products' => max(1, $integer('KM_CATALOGUE_MAX_PRODUCTS', 20)),
+    ],
+
     // A seller's CSV of simple products (ADR-040, FR-023); larger files are refused with a reason.
     'tables' => [
         'max_kilobytes' => (int) env('KM_TABLE_MAX_KILOBYTES', 1024),
@@ -77,8 +83,9 @@ return [
         // Karmandeman's share on top of the usage cost of every charged output (ADR-048).
         'markup_percent' => max(0, $integer('KM_CREDIT_MARKUP_PERCENT', 10)),
         'quote_ttl_minutes' => max(1, $integer('KM_CREDIT_QUOTE_TTL_MINUTES', 15)),
-        // Fixed provisional price of one catalogue file per approved snapshot, set by the owner
-        // for pilot measurement before real pricing (ADR-052). Sending the same file again is free.
+        // Fixed provisional price of one catalogue pack (the PDF and a story image per product)
+        // per approved snapshot, set by the owner for pilot measurement before real pricing
+        // (ADR-052, ADR-053). Sending the same pack again is free.
         'catalogue_pack' => max(1, $integer('KM_CREDITS_CATALOGUE_PACK', 2)),
         'minimum' => [
             'text' => max(1, $integer('KM_CREDITS_MIN_TEXT', 1)),

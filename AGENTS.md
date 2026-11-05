@@ -45,11 +45,13 @@ and correction of any product field from a reply to its card with
 "label: value" lines, the card showing every value Gate A approves (ADR-051),
 and a Persian catalogue PDF of an approved snapshot from the bot at a
 provisional fixed price, made and charged once, resent free, with no charge
-when generation fails (ADR-052)
-(ADR-016 to ADR-052) with code and tests. These
+when generation fails (ADR-052), and in the same pack and price one fixed
+1080x1920 story image per approved product, sent with the PDF as a document
+album, at most 20 products per pack (ADR-053)
+(ADR-016 to ADR-053) with code and tests. These
 are partial foundations, not a completed MVP. An imported OpenAI workflow with a
 real API test, OpenAI voice and text workflows, an approved policy naming OpenAI and voice intake, XLSX intake,
-CSV/ZIP/online-catalogue exports, story images, export quotes, refunds, operator adjustments,
+CSV/ZIP/online-catalogue exports, a final export price, export quotes, refunds, operator adjustments,
 the `text` and `file_output` charge classes and reconciling reported usage
 against the provider's bill are still missing. Read
 `docs/PROJECT_AUDIT_2026-10-26.md` for evidence and open gates, and

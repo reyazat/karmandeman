@@ -43,8 +43,10 @@ final class TelegramWebhookRequest extends FormRequest
             'message.photo.*.width' => ['sometimes', 'integer', 'min:0'],
             'message.photo.*.height' => ['sometimes', 'integer', 'min:0'],
             'message.photo.*.file_size' => ['sometimes', 'integer', 'min:0'],
-            // A batch photo's caption is its seller text (ADR-050); Telegram allows 1024 characters.
-            'message.caption' => ['sometimes', 'string', 'max:1024'],
+            // A batch photo's caption is its seller text (ADR-050). Telegram allows 1024 characters,
+            // and more for Premium accounts: a longer one must reach the action, which refuses it with
+            // a reply. A 422 would make Telegram retry and then drop the photo without an answer.
+            'message.caption' => ['sometimes', 'string', 'max:4096'],
             'message.voice' => ['sometimes', 'array'],
             'message.voice.file_id' => ['required_with:message.voice', 'string', 'max:255'],
             'message.voice.mime_type' => ['sometimes', 'string', 'max:100'],

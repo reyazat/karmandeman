@@ -80,6 +80,33 @@ final readonly class TelegramBotService
     }
 
     /**
+     * Two to ten files as one album (ADR-053), uploaded as documents so images keep their full size.
+     *
+     * @param  list<array{filename: string, contents: string, mime: string}>  $documents
+     */
+    public function sendDocumentGroup(int|string $chatId, array $documents, string $caption): void
+    {
+        $token = $this->token();
+        try {
+            $request = Http::connectTimeout(3)->timeout(60);
+            $media = [];
+            foreach ($documents as $index => $document) {
+                $request = $request->attach("file{$index}", $document['contents'], $document['filename'], ['Content-Type' => $document['mime']]);
+                $media[] = ['type' => 'document', 'media' => "attach://file{$index}"] + ($index === 0 && $caption !== '' ? ['caption' => $caption] : []);
+            }
+            $response = $request->post("https://api.telegram.org/bot{$token}/sendMediaGroup", [
+                'chat_id' => (string) $chatId, 'media' => json_encode($media, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            ]);
+            if (! $response->successful() || $response->json('ok') !== true) {
+                throw new RuntimeException('Telegram album rejected.');
+            }
+        } catch (Throwable) {
+            // HTTP exceptions include the token URL and must not reach failed_jobs/logs.
+            throw new RuntimeException('Telegram album delivery failed.');
+        }
+    }
+
+    /**
      * Bot API file metadata (ADR-024). The file path is valid for about an hour.
      *
      * @return array{path: string, size: int|null}

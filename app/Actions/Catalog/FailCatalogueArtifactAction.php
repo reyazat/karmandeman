@@ -49,8 +49,8 @@ final readonly class FailCatalogueArtifactAction
             $chatId = $user === null ? null : $this->users->telegramChatId($user);
             if ($chatId !== null && $locked->workspace->status === 'active') {
                 $this->replies->sendMessage($chatId, $errorCode === 'SNAPSHOT_NOT_CURRENT'
-                    ? 'کاتالوگ PDF ساخته نشد، چون نسخه نهایی پروژه پس از درخواست تغییر کرد. اعتباری کسر نشد؛ از پیام تأیید تازه دوباره درخواست بده.'
-                    : 'ساخت کاتالوگ PDF انجام نشد و اعتباری کسر نشد. دوباره دکمه کاتالوگ را بزن؛ اگر باز تکرار شد /support را بفرست.');
+                    ? 'کاتالوگ و استوری‌ها ساخته نشدند، چون نسخه نهایی پروژه پس از درخواست تغییر کرد. اعتباری کسر نشد؛ از پیام تأیید تازه دوباره درخواست بده.'
+                    : 'ساخت کاتالوگ و استوری‌ها انجام نشد و اعتباری کسر نشد. دوباره دکمه کاتالوگ را بزن؛ اگر باز تکرار شد /support را بفرست.');
             }
         });
         Log::warning('catalogue.generation_failed', ['artifact' => $artifact->public_id, 'error_code' => $errorCode]);

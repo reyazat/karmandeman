@@ -23,7 +23,7 @@ final readonly class CataloguePdfRenderer
 
     private const PHOTO_HEIGHT = 140.0;
 
-    private const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    public function __construct(private CatalogueText $text) {}
 
     /**
      * @param  list<array{payload: array<string, mixed>, photo: string|null}>  $products  approved payloads in snapshot order, each with its main photo as JPEG bytes
@@ -41,7 +41,7 @@ final readonly class CataloguePdfRenderer
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
         $pdf->SetCreator('Karmandeman');
-        $pdf->SetTitle($this->plain($brand).' — '.$this->plain($collection));
+        $pdf->SetTitle($this->text->plain($brand).' — '.$this->text->plain($collection));
         $pdf->setRTL(true);
         $pdf->SetMargins(15, 15, 15);
         $pdf->SetAutoPageBreak(true, 18);
@@ -54,7 +54,7 @@ final readonly class CataloguePdfRenderer
             $pdf->AddPage();
             $pdf->SetFont('vazirmatnb', '', 13, $bold);
             $pdf->SetTextColor(90, 90, 90);
-            $pdf->Cell(0, 8, $this->plain($brand).' · '.$this->plain($collection), 0, 1, 'R');
+            $pdf->Cell(0, 8, $this->cell($this->text->plain($brand).' · '.$this->text->plain($collection)), 0, 1, 'R');
             $pdf->SetDrawColor(220, 220, 220);
             $pdf->Line(15, $pdf->GetY() + 1, 195, $pdf->GetY() + 1);
             $pdf->Ln(4);
@@ -65,23 +65,23 @@ final readonly class CataloguePdfRenderer
 
             $pdf->SetTextColor(20, 20, 20);
             $pdf->SetFont('vazirmatnb', '', 18, $bold);
-            $pdf->MultiCell(0, 10, $this->plain((string) ($payload['name']['value'] ?? '')), 0, 'R');
+            $pdf->MultiCell(0, 10, $this->cell($this->text->name($payload)), 0, 'R');
             $pdf->SetFont('vazirmatnb', '', 15, $bold);
             $pdf->SetTextColor(0, 102, 85);
-            $pdf->MultiCell(0, 9, $this->price($payload), 0, 'R');
+            $pdf->MultiCell(0, 9, $this->text->price($payload), 0, 'R');
             $pdf->SetTextColor(40, 40, 40);
 
             $pdf->SetFont('vazirmatn', '', 12, $regular);
-            $description = $payload['description_fa']['value'] ?? null;
-            if (is_string($description)) {
+            $description = $this->text->description($payload);
+            if ($description !== null) {
                 $pdf->Ln(2);
-                $pdf->MultiCell(0, 7, $this->plain($description, multiline: true), 0, 'R');
+                $pdf->MultiCell(0, 7, $this->cell($description), 0, 'R');
             }
-            $details = $this->details($payload);
+            $details = $this->text->details($payload);
             if ($details !== []) {
                 $pdf->Ln(2);
                 foreach ($details as $line) {
-                    $pdf->MultiCell(0, 7, '• '.$line, 0, 'R');
+                    $pdf->MultiCell(0, 7, $this->cell('• '.$line), 0, 'R');
                 }
             }
 
@@ -90,11 +90,20 @@ final readonly class CataloguePdfRenderer
             // The footer sits in the bottom margin: without this it would open a page of its own.
             $pdf->SetAutoPageBreak(false);
             $pdf->SetY(-14);
-            $pdf->Cell(0, 6, 'صفحه '.$this->digits((string) ($index + 1)).' از '.$this->digits((string) $count).' · نسخه '.$this->digits((string) $snapshotNumber), 0, 0, 'C');
+            $pdf->Cell(0, 6, 'صفحه '.$this->text->digits((string) ($index + 1)).' از '.$this->text->digits((string) $count).' · نسخه '.$this->text->digits((string) $snapshotNumber), 0, 0, 'C');
             $pdf->SetAutoPageBreak(true, 18);
         }
 
         return $pdf->Output('', 'S');
+    }
+
+    /**
+     * Product text as TCPDF writes it: a zero-width non-joiner beside every brace, so a value such
+     * as "{:pnp:}" is never one of TCPDF's page-number aliases, which it replaces in the whole page.
+     */
+    private function cell(string $text): string
+    {
+        return str_replace(['{', '}'], ["{\u{200C}", "\u{200C}}"], $text);
     }
 
     /** The photo scaled into its box, centred, keeping its proportions. */
@@ -113,57 +122,5 @@ final readonly class CataloguePdfRenderer
         $pdf->Image('@'.$jpeg, 15 + (self::PHOTO_WIDTH - $width) / 2, $top, $width, $height, 'JPG', '', '', true, 150);
         $pdf->setRTL(true);
         $pdf->SetY($top + $height + 5);
-    }
-
-    /** @param  array<string, mixed>  $payload */
-    private function price(array $payload): string
-    {
-        $irr = $payload['pricing']['regular_price_irr'] ?? null;
-        if (! is_int($irr)) {
-            return 'قیمت: از فروشنده بپرسید';
-        }
-        $toman = ($payload['pricing']['display_unit'] ?? null) === 'toman';
-
-        return 'قیمت: '.$this->digits(number_format($toman ? intdiv($irr, 10) : $irr, 0, '', '٬')).($toman ? ' تومان' : ' ریال');
-    }
-
-    /**
-     * Known attributes, then code and category; an attribute without a value is left out.
-     *
-     * @param  array<string, mixed>  $payload
-     * @return list<string>
-     */
-    private function details(array $payload): array
-    {
-        $lines = [];
-        foreach ($payload['attributes'] ?? [] as $attribute) {
-            if (is_array($attribute['values'] ?? null) && $attribute['values'] !== []) {
-                $lines[] = $this->plain((string) $attribute['name']).': '.$this->plain(implode('، ', $attribute['values']));
-            }
-        }
-        $sku = $payload['sku']['value'] ?? null;
-        if (is_string($sku)) {
-            // Embedded left to right, so "BAG-1" is not shown as "1-BAG".
-            $lines[] = 'کد: '."\u{202A}".$this->plain($sku)."\u{202C}";
-        }
-        $path = $payload['category_path']['value'] ?? null;
-        if (is_array($path) && $path !== []) {
-            $lines[] = 'دسته: '.$this->plain(implode(' › ', $path));
-        }
-
-        return $lines;
-    }
-
-    /** Text without bidi or other format controls (ZWNJ and ZWJ stay), so no value reorders a line. */
-    private function plain(string $value, bool $multiline = false): string
-    {
-        $value = (string) preg_replace('/[^\P{Cf}\x{200C}\x{200D}]/u', '', $value);
-
-        return $multiline ? $value : (string) preg_replace('/\s*\R\s*/u', ' / ', $value);
-    }
-
-    private function digits(string $value): string
-    {
-        return str_replace(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'], self::PERSIAN_DIGITS, $value);
     }
 }

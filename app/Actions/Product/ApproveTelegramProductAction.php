@@ -7,8 +7,11 @@ namespace App\Actions\Product;
 use App\Exceptions\ProductRequiresConfirmation;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\ProductRepositoryInterface;
+use App\Services\Telegram\TelegramProductCard;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Gate A from the bot's "approve" button (ADR-026). The button names the exact
@@ -17,10 +20,22 @@ use Illuminate\Auth\Access\AuthorizationException;
  */
 final readonly class ApproveTelegramProductAction
 {
-    public function __construct(private ApproveProductRevisionAction $approve) {}
+    public function __construct(
+        private ApproveProductRevisionAction $approve,
+        private ProductRepositoryInterface $products,
+        private TelegramProductCard $card,
+    ) {}
 
     public function execute(Workspace $workspace, User $user, string $callbackId, string $productPublicId, int $revision): string
     {
+        $product = $this->products->findPublicForWorkspace($workspace, $productPublicId);
+        // The revision the card showed: immutable, so reading it outside the lock is safe.
+        $shown = $product === null ? null : $this->products->revision($product, $revision);
+        // A card too long to show every value has no approve button; a forged one approves nothing (ADR-051).
+        // Every other refusal, such as a missing product or a workspace being erased, is Gate A's answer.
+        if ($shown !== null && Gate::forUser($user)->allows('update', $product) && ! $this->card->approvable($shown)) {
+            return 'جزئیات این محصول برای نمایش در ربات بیش از حد طولانی‌اند و از ربات تأیید نمی‌شود؛ با پاسخ به کارت، متن را کوتاه کن.';
+        }
         try {
             // One key per press, not per revision: a later press re-runs every check, so a
             // button pressed after a revise, reject or cancel never answers "approved" again.

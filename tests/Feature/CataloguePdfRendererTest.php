@@ -73,4 +73,18 @@ final class CataloguePdfRendererTest extends TestCase
 
         app(CataloguePhotoEncoder::class)->jpeg('not an image');
     }
+
+    public function test_product_text_is_never_a_page_number_alias(): void
+    {
+        $pdf = app(CataloguePdfRenderer::class)->render('برند {:ptp:}', 'مجموعه', 1, [
+            ['payload' => $this->payload('کیف {:pnp:} }:ptg:{', 10), 'photo' => null],
+        ]);
+
+        preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $streams);
+        $content = implode('', array_filter(array_map(fn (string $stream): string|false => @gzuncompress($stream), $streams[1])));
+        // The seller's text is written as typed, not replaced by a page count or number.
+        foreach ([':ptp:', ':pnp:', ':ptg:'] as $alias) {
+            $this->assertStringContainsString(mb_convert_encoding($alias, 'UTF-16BE', 'UTF-8'), $content);
+        }
+    }
 }

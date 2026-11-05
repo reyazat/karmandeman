@@ -23,10 +23,11 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 /**
- * The bot's catalogue PDF button (ADR-052). The first file of a snapshot holds
- * its fixed price and is made by the export worker; the hold is spent only
- * when the file is made. A file already made is sent again for free; only an
- * edit, which ends in a new snapshot, makes and charges a new file.
+ * The bot's catalogue button (ADR-052, ADR-053). The first pack of a snapshot,
+ * its PDF and one story image per product, holds its fixed price and is made
+ * by the export worker; the hold is spent only when the pack is made. A pack
+ * already made is sent again for free; only an edit, which ends in a new
+ * snapshot, makes and charges a new pack.
  */
 final readonly class RequestTelegramCatalogueAction
 {
@@ -53,6 +54,10 @@ final readonly class RequestTelegramCatalogueAction
         if ($snapshot->number !== $snapshotNumber) {
             return 'پس از این دکمه نسخه نهایی تازه‌تری ثبت شده است؛ دکمه پیام تأیید تازه را بزن.';
         }
+        $max = (int) config('karmandeman.catalogue.max_products');
+        if (count($snapshot->items) > $max) {
+            return "کاتالوگ و استوری برای حداکثر {$max} محصول ساخته می‌شود و این نسخه ".count($snapshot->items).' محصول دارد. محصولات را در پروژه‌های کوچک‌تر ثبت کن؛ اعتباری کسر نشد.';
+        }
         $limit = 'telegram-catalogue:'.$user->id;
         if (RateLimiter::tooManyAttempts($limit, 5)) {
             return 'فایل‌ها خیلی سریع درخواست شدند؛ یک دقیقه صبر کن.';
@@ -68,17 +73,17 @@ final readonly class RequestTelegramCatalogueAction
                 if ($artifact?->status === Artifact::STATUS_READY) {
                     DeliverCatalogueArtifact::dispatch($artifact->id, $user->id)->onConnection('telegram')->onQueue('telegram')->beforeCommit();
 
-                    return "کاتالوگ PDF نسخه {$snapshot->number} پروژه «{$project->name}» دوباره فرستاده می‌شود؛ هزینه‌ای ندارد.";
+                    return "کاتالوگ PDF و استوری‌های نسخه {$snapshot->number} پروژه «{$project->name}» دوباره فرستاده می‌شوند؛ هزینه‌ای ندارد.";
                 }
                 if ($artifact?->status === Artifact::STATUS_QUEUED) {
-                    return 'کاتالوگ PDF این نسخه در حال ساخت است؛ پس از آماده شدن فرستاده می‌شود.';
+                    return 'کاتالوگ و استوری‌های این نسخه در حال ساخت‌اند؛ پس از آماده شدن فرستاده می‌شوند.';
                 }
                 if ($artifact?->generated_at !== null) {
                     // Made and paid for once, then failed to be made again: never charged twice.
                     $this->artifacts->requeuePaid($artifact, $user->id);
                     GenerateCatalogueArtifact::dispatch($artifact->id)->onConnection('export')->onQueue('export')->beforeCommit();
 
-                    return "کاتالوگ PDF نسخه {$snapshot->number} پروژه «{$project->name}» دوباره ساخته می‌شود؛ هزینه تازه‌ای ندارد.";
+                    return "کاتالوگ و استوری‌های نسخه {$snapshot->number} پروژه «{$project->name}» دوباره ساخته می‌شوند؛ هزینه تازه‌ای ندارد.";
                 }
                 if ($artifact === null) {
                     $artifact = $this->artifacts->create($snapshot, $user, Artifact::KIND_CATALOGUE_PDF, $price);
@@ -94,11 +99,11 @@ final readonly class RequestTelegramCatalogueAction
                 // In the webhook transaction like the outbox (ADR-008): the hold and the job commit together.
                 GenerateCatalogueArtifact::dispatch($artifact->id)->onConnection('export')->onQueue('export')->beforeCommit();
 
-                return "ساخت کاتالوگ PDF نسخه {$snapshot->number} پروژه «{$project->name}» شروع شد. {$price} اعتبار رزرو شد و فقط اگر فایل ساخته شود کسر می‌شود؛ دریافت دوباره همین فایل رایگان است.";
+                return "ساخت کاتالوگ PDF و استوری هر محصول نسخه {$snapshot->number} پروژه «{$project->name}» شروع شد. {$price} اعتبار رزرو شد و فقط اگر فایل‌ها ساخته شوند کسر می‌شود؛ دریافت دوباره همین فایل‌ها رایگان است.";
             });
         } catch (DomainException $e) {
             return match ($e->getMessage()) {
-                'INSUFFICIENT_CREDITS' => "برای ساخت کاتالوگ PDF {$price} اعتبار لازم است و اعتبار قابل استفاده کافی نیست. موجودی را با /balance ببین.",
+                'INSUFFICIENT_CREDITS' => "برای ساخت کاتالوگ و استوری‌ها {$price} اعتبار لازم است و اعتبار قابل استفاده کافی نیست. موجودی را با /balance ببین.",
                 'POLICY_CONSENT_REQUIRED' => 'پیش از ساخت کاتالوگ، شرایط و سیاست داده را با /start بپذیر.',
                 'ACCOUNT_DELETION_PENDING', 'WORKSPACE_NOT_ACTIVE' => 'حساب در حال حذف است و فایل تازه‌ای ساخته نمی‌شود.',
                 default => 'درخواست کاتالوگ انجام نشد؛ دوباره دکمه را بزن.',

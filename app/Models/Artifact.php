@@ -35,6 +35,7 @@ class Artifact extends Model
 {
     use HasPublicId;
 
+    /** The catalogue pack: the PDF on this row and its story images in artifact_files (ADR-053). */
     public const KIND_CATALOGUE_PDF = 'catalogue_pdf';
 
     /** Held and waiting for, or in, generation. */

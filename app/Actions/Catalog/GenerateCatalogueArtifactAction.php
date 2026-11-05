@@ -20,17 +20,20 @@ use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WalletRepositoryInterface;
 use App\Services\Export\CataloguePdfRenderer;
 use App\Services\Export\CataloguePhotoEncoder;
+use App\Services\Export\CatalogueStoryRenderer;
 use App\Services\Storage\PrivateAssetStore;
 use Carbon\CarbonImmutable;
 use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
- * Export worker side of the catalogue PDF (ADR-052): renders exactly the
- * snapshot the file was asked for, after the same verification as every
- * export, stores it encrypted and spends the hold in one transaction with
- * "ready". A file that cannot be made from that snapshot fails without charge.
+ * Export worker side of the catalogue pack (ADR-052, ADR-053): renders the
+ * PDF and one story image per product from exactly the snapshot the pack was
+ * asked for, after the same verification as every export, stores them
+ * encrypted and spends the hold in one transaction with "ready". A file that cannot be made from that snapshot fails without charge.
  * Transport and storage errors are thrown, so the job retries.
  */
 final readonly class GenerateCatalogueArtifactAction
@@ -45,6 +48,7 @@ final readonly class GenerateCatalogueArtifactAction
         private PrivateAssetStore $store,
         private CataloguePhotoEncoder $photos,
         private CataloguePdfRenderer $renderer,
+        private CatalogueStoryRenderer $stories,
         private LockActiveWorkspaceAction $lockActive,
         private WalletRepositoryInterface $wallets,
         private CaptureCreditsAction $capture,
@@ -87,25 +91,46 @@ final readonly class GenerateCatalogueArtifactAction
             return;
         }
 
+        $brand = (string) ($this->brands->forWorkspace($workspace)->name ?? '');
         $products = [];
+        $stories = [];
         foreach ($revisions as $revision) {
-            $products[] = ['payload' => $revision->payload, 'photo' => $this->mainPhoto($artifact, $revision)];
+            $photo = $this->mainPhoto($artifact, $revision);
+            $products[] = ['payload' => $revision->payload, 'photo' => $photo];
+            $stories[] = $this->stories->render($brand, $project->name, $revision->payload, $photo);
         }
-        $bytes = $this->renderer->render(
-            (string) ($this->brands->forWorkspace($workspace)->name ?? ''), $project->name, $snapshot->number, $products,
-        );
+        $bytes = $this->renderer->render($brand, $project->name, $snapshot->number, $products);
 
-        $storageKey = $this->store->put($workspace, $artifact->public_id, $bytes, PrivateAssetStore::KIND_ARTIFACT);
+        // Every object is written before the transaction; whatever does not end "ready" removes them all.
+        $stored = [];
+        try {
+            $storageKey = $stored[] = $this->store->put($workspace, $artifact->public_id, $bytes, PrivateAssetStore::KIND_ARTIFACT);
+            $files = [];
+            foreach ($stories as $story) {
+                $publicId = Str::uuid()->toString();
+                $files[] = [
+                    'public_id' => $publicId,
+                    'storage_key' => $stored[] = $this->store->put($workspace, $publicId, $story, PrivateAssetStore::KIND_ARTIFACT),
+                    'content_mac' => $this->store->contentMac($workspace, $story, PrivateAssetStore::KIND_ARTIFACT),
+                    'size_bytes' => strlen($story),
+                ];
+            }
+        } catch (Throwable $e) {
+            $this->remove($stored);
+
+            throw $e;
+        }
+        $removeStored = fn () => $this->remove($stored);
         $mac = $this->store->contentMac($workspace, $bytes, PrivateAssetStore::KIND_ARTIFACT);
-        $stale = DB::transaction(function () use ($workspace, $artifact, $project, $user, $storageKey, $mac, $bytes): bool {
-            // Whatever undoes "ready" also removes the object, so no unpaid file stays stored.
-            DB::afterRollBack(fn () => rescue(fn () => $this->store->delete($storageKey)));
+        $stale = DB::transaction(function () use ($workspace, $artifact, $project, $user, $storageKey, $mac, $bytes, $files, $removeStored): bool {
+            // Whatever undoes "ready" also removes the objects, so no unpaid file stays stored.
+            DB::afterRollBack($removeStored);
             $this->lockActive->execute($workspace);
             $locked = $this->artifacts->lock($artifact);
-            // A file made once and lost from storage is made again on the first payment (ADR-052).
+            // A pack made once and lost from storage is made again on the first payment (ADR-052).
             $paid = $locked->generated_at !== null;
             if ($locked->status !== Artifact::STATUS_QUEUED || ($locked->hold_entry_id === null && ! $paid)) {
-                $this->store->delete($storageKey);
+                $removeStored();
 
                 return false;
             }
@@ -113,9 +138,14 @@ final readonly class GenerateCatalogueArtifactAction
             $current = $this->projects->findForWorkspace($workspace, $project->id);
             $latest = $current !== null && $current->state->hasApprovedSnapshot() ? $this->snapshots->latestFor($current) : null;
             if ($latest?->id !== $locked->project_snapshot_id) {
-                $this->store->delete($storageKey);
+                $removeStored();
 
                 return true;
+            }
+            // A remade pack replaces the objects of the one before it.
+            $replaced = $this->artifacts->replaceStories($locked, $files);
+            if ($locked->storage_key !== null) {
+                $replaced[] = $locked->storage_key;
             }
             $this->artifacts->markReady($locked, $storageKey, $mac, strlen($bytes), CarbonImmutable::now());
             if (! $paid) {
@@ -124,11 +154,20 @@ final readonly class GenerateCatalogueArtifactAction
                 $this->capture->execute($hold, Artifact::KIND_CATALOGUE_PDF);
             }
             DeliverCatalogueArtifact::dispatch($locked->id, $user->id)->onConnection('telegram')->onQueue('telegram')->beforeCommit();
+            DB::afterCommit(fn () => $this->remove($replaced));
 
             return false;
         });
         if ($stale) {
             $this->fail->execute($artifact, 'SNAPSHOT_NOT_CURRENT');
+        }
+    }
+
+    /** @param  list<string>  $keys  stored objects to delete; a failed delete leaves an orphan the erasure prefix still covers */
+    private function remove(array $keys): void
+    {
+        foreach ($keys as $key) {
+            rescue(fn () => $this->store->delete($key));
         }
     }
 
