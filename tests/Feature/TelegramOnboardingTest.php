@@ -91,6 +91,46 @@ final class TelegramOnboardingTest extends TestCase
         return $confirm;
     }
 
+    public function test_seller_can_open_the_menu_and_manage_projects_in_their_own_chat(): void
+    {
+        $this->send('/menu')->assertOk();
+        $this->assertSame('menu:start', $this->lastReply()->buttons[0][0]['callback_data']);
+        $this->assertDatabaseCount('users', 0);
+
+        $this->finishOnboarding();
+        $this->assertSame('menu:home', $this->lastReply()->buttons[0][0]['callback_data']);
+        $this->send('/start')->assertOk();
+        $this->assertStringContainsString('منوی کارمند من', $this->lastReply()->text);
+        $new = $this->lastReply()->buttons[0][0]['callback_data'];
+        $projects = $this->lastReply()->buttons[0][1]['callback_data'];
+
+        $this->pressButton($new, 777, 555)->assertOk();
+        $this->assertDatabaseCount('projects', 0);
+        $this->pressButton($new)->assertOk();
+        $this->assertDatabaseCount('projects', 1);
+        $review = $this->lastReply()->buttons[0][0]['callback_data'];
+        $this->pressButton($projects)->assertOk();
+        $this->assertStringContainsString(Project::sole()->name.' — در حال دریافت ورودی', $this->lastReply()->text);
+
+        $this->send('/product کیف')->assertOk();
+        $this->pressButton($review)->assertOk();
+        $this->assertDatabaseHas('projects', ['state' => 'review_required']);
+        $this->assertDatabaseCount('credit_ledger', 1);
+    }
+
+    public function test_stale_project_button_cannot_bypass_new_policy_consent(): void
+    {
+        $this->finishOnboarding();
+        $this->send('/menu')->assertOk();
+        $new = $this->lastReply()->buttons[0][0]['callback_data'];
+
+        $this->useApprovedPilotPolicy('test-policy-v2');
+        $this->pressButton($new)->assertOk();
+
+        $this->assertDatabaseCount('projects', 0);
+        $this->assertStringContainsString('پذیرش نسخه test-policy-v2 لازم است', $this->lastReply()->text);
+    }
+
     public function test_consent_and_confirmed_brand_survive_restart_without_credit_charge_or_duplicate_mutation(): void
     {
         $this->send('/start')->assertOk();

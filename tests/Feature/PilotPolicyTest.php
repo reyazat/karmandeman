@@ -220,7 +220,7 @@ final class PilotPolicyTest extends TestCase
         config(['services.telegram.webhook_secret' => 'policy-test-secret']);
         Queue::fake([SendTelegramMessage::class, AnswerTelegramCallback::class]);
         $i = 0;
-        foreach (['/start', 'private brand name', '/new', '/privacy', '/support رسیدگی به حساب', '/delete_data'] as $text) {
+        foreach (['/start', '/menu', 'private brand name', '/new', '/privacy', '/support رسیدگی به حساب', '/delete_data'] as $text) {
             $this->postJson('/api/webhooks/telegram', [
                 'update_id' => ++$i,
                 'message' => ['message_id' => $i, 'text' => $text, 'from' => ['id' => 504], 'chat' => ['id' => 504, 'type' => 'private']],
@@ -233,6 +233,9 @@ final class PilotPolicyTest extends TestCase
         $this->assertDatabaseCount('service_requests', 1);
         $this->assertNull(TelegramOnboarding::sole()->draft);
         Queue::assertPushed(SendTelegramMessage::class, fn ($job) => str_contains($job->text, 'تأیید نشده') && $job->buttons === []);
+        $menu = Queue::pushed(SendTelegramMessage::class)->get(1);
+        $this->assertStringContainsString('فایل تجاری نفرستید', $menu->text);
+        $this->assertSame(['menu:support', 'menu:account'], array_column($menu->buttons[0], 'callback_data'));
 
         $confirm = Queue::pushed(SendTelegramMessage::class)->last()->buttons[0][0]['callback_data'];
         $this->assertStringStartsWith('delete:confirm:', $confirm);

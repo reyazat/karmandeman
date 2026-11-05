@@ -36,6 +36,7 @@ use App\Data\Privacy\ContainedAccount;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\Contracts\WorkspaceRepositoryInterface;
 use App\Services\Privacy\PilotPolicyService;
 use Illuminate\Support\Facades\Gate;
@@ -49,8 +50,20 @@ final readonly class TelegramConversationService
 {
     private const CALLBACK_PATTERN = '/^(onboard:(accept:[a-zA-Z0-9_-]{1,64}|unit:(toman|irr)|skip:(category|tone)|keep:(name|unit|category|tone)|confirm:[0-9]+:[a-f0-9]{16}|edit)|delete:(confirm:[0-9]{1,12}:[a-f0-9]{16}|cancel)|(product:(approve|reject|confirm|noprice)|project:(approve|reopen|json|pdf|cancel|prices|noprices|cards)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]{0,5}|(project:select|quote:accept|table:(go|irt|irr|drop)):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/D';
 
+    private const MENU_PATTERN = '/^menu:(home|start|new|projects|done|brand|balance|support|account|terms|privacy|retention|delete)$/D';
+
+    private const MENU_HOME = [['text' => 'منوی اصلی', 'callback_data' => 'menu:home']];
+
+    private const MENU_REVIEW = [['text' => 'بررسی پروژهٔ جاری', 'callback_data' => 'menu:done']];
+
+    private const MENU_FOOTER = [
+        ['text' => 'پشتیبانی', 'callback_data' => 'menu:support'],
+        ['text' => 'حریم خصوصی و حساب', 'callback_data' => 'menu:account'],
+    ];
+
     public function __construct(
         private RegisterTelegramUserAction $register,
+        private UserRepositoryInterface $users,
         private WorkspaceRepositoryInterface $workspaces,
         private ShowTelegramBalanceAction $balance,
         private EnsureBrandAction $ensureBrand,
@@ -146,7 +159,8 @@ final readonly class TelegramConversationService
 
         match ($command) {
             '/start' => $this->handleStart($message, $chatId),
-            '/help' => $this->bot->sendMessage($chatId, $this->helpText()),
+            '/menu' => $this->showMenu($message['from']['id'], $chatId),
+            '/help' => $this->bot->sendMessage($chatId, $this->helpText(), [self::MENU_HOME]),
             '/balance' => $this->handleBalance($message, $chatId),
             '/new' => $this->handleNew($message, $chatId, $text),
             '/projects' => $this->handleProjects($message, $chatId),
@@ -166,14 +180,61 @@ final readonly class TelegramConversationService
             '/delete_data' => $this->promptDeletion($message, $chatId),
             '/ticket' => $this->handleTicket($message, $chatId, trim(mb_substr($text, mb_strlen('/ticket')))),
             default => str_starts_with($text, '/')
-                ? $this->bot->sendMessage($chatId, 'دستور شناخته نشد؛ /help را بفرستید.')
+                ? $this->bot->sendMessage($chatId, 'دستور شناخته نشد؛ از منوی اصلی یا /help استفاده کن.', [self::MENU_HOME])
                 : $this->replyOnboarding($message, $chatId, 'input', $text),
         };
     }
 
     private function handleStart(array $message, int|string $chatId): void
     {
-        $this->replyOnboarding($message, $chatId, 'prompt');
+        $user = $this->resolveUser($message);
+        $workspace = $this->workspaceFor($user);
+        if ($this->onboarding->isReady($workspace)) {
+            $this->sendSellerMenu($chatId);
+
+            return;
+        }
+
+        $reply = $this->onboarding->execute($workspace, $user);
+        $this->bot->sendMessage($chatId, $reply->text, [...$reply->buttons, self::MENU_FOOTER]);
+    }
+
+    private function showMenu(int $telegramId, int|string $chatId): void
+    {
+        $policy = $this->policies->current();
+        if (! $policy->isApproved()) {
+            $this->bot->sendMessage($chatId, $policy->unavailableNotice(), [self::MENU_FOOTER]);
+
+            return;
+        }
+
+        $user = $this->users->findByIdentity('telegram', (string) $telegramId);
+        if ($user !== null && $this->onboarding->isReady($this->workspaceFor($user))) {
+            $this->sendSellerMenu($chatId);
+
+            return;
+        }
+
+        $this->bot->sendMessage($chatId, 'برای ساخت پروژه، ابتدا شرایط را بپذیر و مشخصات برندت را تأیید کن.', [
+            [['text' => 'شروع یا ادامهٔ راه‌اندازی', 'callback_data' => 'menu:start']],
+            self::MENU_FOOTER,
+        ]);
+    }
+
+    private function sendSellerMenu(int|string $chatId): void
+    {
+        $this->bot->sendMessage($chatId, "منوی کارمند من\nیک پروژه بساز یا پروژه‌ای را از فهرست انتخاب کن. عکس‌ها یا فایل CSV را همین‌جا بفرست و بعد «بررسی پروژهٔ جاری» را بزن.", [
+            [
+                ['text' => 'ساخت پروژهٔ جدید', 'callback_data' => 'menu:new'],
+                ['text' => 'پروژه‌های من', 'callback_data' => 'menu:projects'],
+            ],
+            self::MENU_REVIEW,
+            [
+                ['text' => 'اعتبار من', 'callback_data' => 'menu:balance'],
+                ['text' => 'برند من', 'callback_data' => 'menu:brand'],
+            ],
+            self::MENU_FOOTER,
+        ]);
     }
 
     private function handlePolicyDocument(int|string $chatId, string $document): void
@@ -224,7 +285,8 @@ final readonly class TelegramConversationService
             $chatId,
             "پروژه «{$project->name}» ساخته شد.\n".
             "برند «{$brand->name}» با قیمت به ".$this->unitName($brand->currency_display_unit).' به کار می‌رود؛ برای اصلاح /brand را بفرستید.'."\n".
-            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. تا تأیید نهایی پروژه هر ورودی تازه به همین پروژه می‌رود.'
+            'عکس محصولات این پروژه را همین‌جا بفرست (JPEG، PNG یا WebP، حداکثر ۱۰ مگابایت). فهرست محصولات را هم می‌توانی به‌صورت فایل CSV با ستون «نام» بفرستی. تا تأیید نهایی پروژه هر ورودی تازه به همین پروژه می‌رود.',
+            [self::MENU_REVIEW, self::MENU_HOME],
         );
     }
 
@@ -365,12 +427,14 @@ final readonly class TelegramConversationService
         $chat = $callback['message']['chat'] ?? [];
         $data = (string) ($callback['data'] ?? '');
         if (($chat['type'] ?? null) !== 'private' || ($chat['id'] ?? null) !== $from['id']
-            || preg_match(self::CALLBACK_PATTERN, $data) !== 1) {
+            || (preg_match(self::CALLBACK_PATTERN, $data) !== 1 && preg_match(self::MENU_PATTERN, $data) !== 1)) {
             return;
         }
         $contained = $this->containedAccounts->execute($from['id']);
         if ($contained !== null) {
             $this->bot->sendMessage($chat['id'], $this->containedNotice($contained));
+        } elseif (str_starts_with($data, 'menu:')) {
+            $this->handleMenuCallback($from, $chat['id'], $callback['id'], substr($data, strlen('menu:')));
         } elseif (str_starts_with($data, 'delete:')) {
             $this->handleDeletionCallback($from['id'], $chat['id'], $data);
         } elseif (str_starts_with($data, 'product:')) {
@@ -384,6 +448,33 @@ final readonly class TelegramConversationService
         } else {
             $this->handleOnboardingCallback($from, $chat, $data);
         }
+    }
+
+    private function handleMenuCallback(array $from, int|string $chatId, string $callbackId, string $action): void
+    {
+        $message = ['from' => $from];
+        match ($action) {
+            'home' => $this->showMenu($from['id'], $chatId),
+            'start' => $this->handleStart($message, $chatId),
+            'new' => $this->handleNew($message, $chatId, '/new'),
+            'projects' => $this->handleProjects($message, $chatId),
+            'done' => $this->handleDone($message, $chatId, 'menu-done:'.$callbackId),
+            'brand' => $this->handleMyBrand($message, $chatId),
+            'balance' => $this->handleBalance($message, $chatId),
+            'support' => $this->handleSupport($message, $chatId, ''),
+            'account' => $this->bot->sendMessage($chatId, 'حریم خصوصی و حساب', [
+                [
+                    ['text' => 'شرایط استفاده', 'callback_data' => 'menu:terms'],
+                    ['text' => 'سیاست داده', 'callback_data' => 'menu:privacy'],
+                ],
+                [['text' => 'مدت نگهداری داده', 'callback_data' => 'menu:retention']],
+                [['text' => 'مراحل حذف حساب', 'callback_data' => 'menu:delete']],
+                self::MENU_HOME,
+            ]),
+            'terms', 'privacy', 'retention' => $this->handlePolicyDocument($chatId, $action),
+            'delete' => $this->promptDeletion($message, $chatId),
+            default => null,
+        };
     }
 
     private function handleProductCallback(array $from, array $chat, string $callbackId, string $callbackData): void
@@ -472,14 +563,14 @@ final readonly class TelegramConversationService
         $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
     }
 
-    private function handleDone(array $message, int|string $chatId): void
+    private function handleDone(array $message, int|string $chatId, ?string $callbackKey = null): void
     {
         $user = $this->resolveUser($message);
         if (! $this->readyForProject($user, $chatId)) {
             return;
         }
         $replies = $this->finishBatch->execute(
-            $this->workspaceFor($user), $user, $this->subjects->message($chatId, $message['message_id'] ?? Str::uuid()->toString()),
+            $this->workspaceFor($user), $user, $this->subjects->message($chatId, $callbackKey ?? $message['message_id'] ?? Str::uuid()->toString()),
         );
         foreach ($replies as $reply) {
             $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
@@ -549,8 +640,12 @@ final readonly class TelegramConversationService
     private function replyOnboarding(array $message, int|string $chatId, string $event, ?string $value = null): void
     {
         $user = $this->resolveUser($message);
-        $reply = $this->onboarding->execute($this->workspaceFor($user), $user, $event, $value);
-        $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
+        $workspace = $this->workspaceFor($user);
+        $reply = $this->onboarding->execute($workspace, $user, $event, $value);
+        $buttons = $event === 'confirm' && $this->onboarding->isReady($workspace)
+            ? [...$reply->buttons, self::MENU_HOME]
+            : $reply->buttons;
+        $this->bot->sendMessage($chatId, $reply->text, $buttons);
     }
 
     private function readyForProject(User $user, int|string $chatId): bool
@@ -618,6 +713,7 @@ final readonly class TelegramConversationService
     {
         return implode("\n", [
             'دستورهای موجود:',
+            '/menu — منوی اصلی و دسترسی به پروژه‌ها، اعتبار و برند',
             '/start — شروع و فعال‌سازی حساب',
             '/brand — اصلاح برند تأییدشده',
             '/forget name|category|tone — حذف یک بخش حافظه برند',
