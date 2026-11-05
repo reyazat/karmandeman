@@ -33,6 +33,7 @@ use App\Actions\Project\SelectTelegramProjectAction;
 use App\Actions\Wallet\ShowTelegramBalanceAction;
 use App\Actions\Workspace\RecordServiceRequestAction;
 use App\Data\Privacy\ContainedAccount;
+use App\Data\Telegram\BotReply;
 use App\Data\Telegram\TelegramUserData;
 use App\Models\User;
 use App\Models\Workspace;
@@ -52,9 +53,9 @@ final readonly class TelegramConversationService
 
     private const MENU_PATTERN = '/^menu:(home|start|new|projects|done|brand|balance|support|account|terms|privacy|retention|delete)$/D';
 
-    private const MENU_HOME = [['text' => 'منوی اصلی', 'callback_data' => 'menu:home']];
+    private const MENU_HOME = TelegramInputGuide::HOME;
 
-    private const MENU_REVIEW = [['text' => 'بررسی پروژهٔ جاری', 'callback_data' => 'menu:done']];
+    private const MENU_REVIEW = TelegramInputGuide::REVIEW;
 
     private const MENU_FOOTER = [
         ['text' => 'پشتیبانی', 'callback_data' => 'menu:support'],
@@ -380,8 +381,10 @@ final readonly class TelegramConversationService
 
             return;
         }
-        $reply = $this->photoText->execute($this->workspaceFor($user), $user, $this->subjects->message($chatId, $photoMessageId), $text);
-        $this->bot->sendMessage($chatId, $reply ?? 'این عکس در هیچ پروژه‌ای ثبت نشده است؛ عکس را دوباره با مشخصات در کپشن بفرست.');
+        $reply = $this->photoText->execute($this->workspaceFor($user), $user, $this->subjects->message($chatId, $photoMessageId), $text)
+            ?? 'این عکس در هیچ پروژه‌ای ثبت نشده است؛ عکس را دوباره با مشخصات در کپشن بفرست.';
+        $reply = is_string($reply) ? new BotReply($reply) : $reply;
+        $this->bot->sendMessage($chatId, $reply->text, $reply->buttons);
     }
 
     private function handleProjects(array $message, int|string $chatId): void

@@ -141,8 +141,20 @@ final class TelegramPhotoTextTest extends TestCase
         $this->assertNull(Asset::query()->sole()->seller_text);
         $this->assertStringContainsString('با Reply روی همین عکس', $this->lastReply());
 
+        // Each receipt names the next step and carries its buttons (ADR-058).
+        $this->assertNextStep();
+
         $this->send($this->replyTo($photo, 991, 'کیف چرم؛ ۲۰۰ هزار تومان'), 991);
         $this->assertSame('کیف چرم؛ ۲۰۰ هزار تومان', Asset::query()->sole()->seller_text);
+        $this->assertStringContainsString('مشخصات برای همین عکس در پروژه', $this->lastReply());
+        $this->assertNextStep();
+    }
+
+    private function assertNextStep(): void
+    {
+        $reply = Queue::pushed(SendTelegramMessage::class)->last();
+        $this->assertStringContainsString('مرحله بعد: عکس محصول بعدی را بفرست', $reply->text);
+        $this->assertSame([['menu:done'], ['menu:home']], array_map(fn (array $row): array => array_column($row, 'callback_data'), $reply->buttons));
     }
 
     public function test_the_same_photo_again_keeps_the_first_text_and_says_so(): void

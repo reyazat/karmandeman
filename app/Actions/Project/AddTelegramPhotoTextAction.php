@@ -7,6 +7,7 @@ namespace App\Actions\Project;
 use App\Actions\Privacy\EnsurePolicyConsentAction;
 use App\Actions\Wallet\EnsureInputCreditAction;
 use App\Actions\Workspace\LockActiveWorkspaceAction;
+use App\Data\Telegram\BotReply;
 use App\Models\Asset;
 use App\Models\Project;
 use App\Models\User;
@@ -16,6 +17,7 @@ use App\Repositories\Contracts\AssetRepositoryInterface;
 use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
+use App\Services\Telegram\TelegramInputGuide;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -40,11 +42,11 @@ final readonly class AddTelegramPhotoTextAction
 
     /**
      * @param  string  $photoMessageKey  subject key of the photo message replied to
-     * @return string|null the reply, or null when that message is no photo of this account
+     * @return BotReply|string|null the reply, or null when that message is no photo of this account
      */
-    public function execute(Workspace $workspace, User $user, string $photoMessageKey, #[\SensitiveParameter] string $text): ?string
+    public function execute(Workspace $workspace, User $user, string $photoMessageKey, #[\SensitiveParameter] string $text): BotReply|string|null
     {
-        return DB::transaction(function () use ($workspace, $user, $photoMessageKey, $text): ?string {
+        return DB::transaction(function () use ($workspace, $user, $photoMessageKey, $text): BotReply|string|null {
             $this->lockActive->execute($workspace);
             $asset = $this->assets->lockBySourceMessage($workspace, $photoMessageKey);
             if ($asset === null) {
@@ -80,7 +82,7 @@ final readonly class AddTelegramPhotoTextAction
             // The run input changed: an earlier quote no longer prices it (ADR-039).
             $this->projects->bumpVersion($workspace, $project->id);
 
-            return "مشخصات برای همین عکس در پروژه «{$project->name}» ثبت شد.";
+            return TelegramInputGuide::afterInput("مشخصات برای همین عکس در پروژه «{$project->name}» ثبت شد.");
         });
     }
 

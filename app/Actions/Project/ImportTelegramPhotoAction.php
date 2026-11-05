@@ -19,6 +19,7 @@ use App\Repositories\Contracts\ProjectRepositoryInterface;
 use App\Repositories\Contracts\TelegramMediaIntakeRepositoryInterface;
 use App\Services\Crypto\WorkspaceFieldCipher;
 use App\Services\Telegram\TelegramBotService;
+use App\Services\Telegram\TelegramInputGuide;
 use App\Services\Telegram\TelegramProductTablePreview;
 use App\Services\Telegram\TelegramReplyService;
 use DomainException;
@@ -153,9 +154,10 @@ final readonly class ImportTelegramPhotoAction
         }
 
         $this->finish($intake, $replayed || $asset->wasRecentlyCreated
-            ? "عکس به پروژه «{$project->name}» اضافه شد.".($asset->seller_text === null
-                ? ' مشخصات این محصول را می‌توانی با Reply روی همین عکس بنویسی.'
-                : ' متن همراه آن هم برای همین عکس ثبت شد.')
+            // The receipt says what comes next, so the seller is never left waiting (ADR-058).
+            ? TelegramInputGuide::afterInput("عکس به پروژه «{$project->name}» اضافه شد.".($asset->seller_text === null
+                ? ' مشخصات این محصول (نام، قیمت با واحد، تعداد، رنگ یا سایز) را با Reply روی همین عکس بنویس.'
+                : ' متن همراه آن هم برای همین عکس ثبت شد.'))
             : "این عکس قبلاً در پروژه «{$project->name}» ثبت شده بود.".($intake->seller_text === null ? ''
                 // The first photo keeps its text (ADR-050); say so rather than drop this one silently.
                 : ' متن همراه این پیام ثبت نشد؛ برای افزودن آن، روی پیام اول همان عکس Reply کن.'), $notice);
