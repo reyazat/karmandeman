@@ -76,6 +76,28 @@ docker compose --project-directory src --env-file .env.production -f src/compose
 If `deploy-entry.sh` changes, reinstall it as root:
 `install -m 755 /opt/karmandeman/src/deploy/server/deploy-entry.sh /opt/karmandeman/bin/deploy`.
 
+## n8n extraction workflow
+
+Workflow `km-product-extraction-openai-v2` (id `pFV688OueCPywHfy`) on
+`https://ai.smartystudio.co.uk`, imported from
+`n8n/workflows/product-extraction.openai.v2.json` (ADR-057). After every
+import, set these by hand in n8n; none of them is in the export:
+
+- In node "Check envelope", replace `'__KM_APP_BASE_URL__'` with
+  `'https://karmandeman.ir'`. This is the address n8n reaches Laravel at; the
+  n8n container reaches it through Cloudflare. While the placeholder is in
+  place, n8n answers every start with 401 and the run ends `DISPATCH_FAILED`.
+- Credentials: "KM extraction start token" (crypto, value
+  `N8N_WORKFLOW_AUTH_TOKEN`), "KM extraction callback secret" (crypto, value
+  `N8N_CALLBACK_SECRET`) and "OpenAi" (`openAiApi`).
+- Keep `N8N_CALLBACK_URL` empty, so Laravel builds links from `APP_URL`
+  (`https://karmandeman.ir`), which must equal the base above.
+
+Check without spending model credit: send a signed start for a run id that
+does not exist (as `N8nWorkflowClient::start` does). n8n must answer 202, and
+the claim must reach Laravel and get 404 (`docker logs karmandeman-web-1`).
+An unsigned start must get 401.
+
 ## Open items
 
 - Telegram bot token and webhook registration.
